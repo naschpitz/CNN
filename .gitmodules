@@ -1,0 +1,6 @@
+[submodule "extern/ANN"]
+	path = extern/ANN
+	url = https://github.com/naschpitz/ANN.git
+[submodule "extern/OpenCLWrapper"]
+	path = extern/OpenCLWrapper
+	url = https://github.com/naschpitz/openCLWrapper.git
