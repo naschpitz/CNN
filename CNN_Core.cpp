@@ -1,5 +1,6 @@
 #include "CNN_Core.hpp"
 #include "CNN_CoreCPU.hpp"
+#include "CNN_CoreGPU.hpp"
 
 #include <ANN_Utils.hpp>
 
@@ -15,7 +16,7 @@ std::unique_ptr<Core<T>> Core<T>::makeCore(const CoreConfig<T>& config) {
     case DeviceType::CPU:
       return std::make_unique<CoreCPU<T>>(config);
     case DeviceType::GPU:
-      throw std::runtime_error("GPU mode is not yet implemented");
+      return std::make_unique<CoreGPU<T>>(config);
     default:
       throw std::runtime_error("Unknown device type");
   }
@@ -24,7 +25,8 @@ std::unique_ptr<Core<T>> Core<T>::makeCore(const CoreConfig<T>& config) {
 //===================================================================================================================//
 
 template <typename T>
-Core<T>::Core(const CoreConfig<T>& coreConfig) {
+Core<T>::Core(const CoreConfig<T>& coreConfig)
+    : coreConfig(coreConfig) {
   this->sanityCheck(coreConfig);
 
   this->deviceType = coreConfig.deviceType;

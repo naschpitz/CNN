@@ -15,6 +15,8 @@ namespace CNN {
     ulong totalSamples;
     T epochLoss;        // Average loss for completed epoch (0 if epoch not complete)
     T sampleLoss;       // Loss for current sample
+    int gpuIndex = -1;  // GPU index (-1 = epoch-level summary)
+    int totalGPUs = 0;  // Total number of GPUs (0 = CPU mode)
   };
 
   template <typename T>

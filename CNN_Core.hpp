@@ -52,6 +52,7 @@ namespace CNN {
       void predictStart();
       PredictMetadata<T> predictEnd();
 
+      CoreConfig<T> coreConfig;
       DeviceType deviceType;
       ModeType modeType;
       Shape3D inputShape;
