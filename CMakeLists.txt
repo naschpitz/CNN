@@ -67,5 +67,11 @@ target_include_directories(CNN PUBLIC ${LIB_NLOHMANN_DIR})
 
 
 # Test executable
-add_executable(test_cnn tests/test_cnn.cpp)
+add_executable(test_cnn
+  tests/test_main.cpp
+  tests/test_conv2d.cpp
+  tests/test_layers.cpp
+  tests/test_integration.cpp
+  tests/test_gpu.cpp
+)
 target_link_libraries(test_cnn PRIVATE CNN)
