@@ -203,8 +203,8 @@ template <typename T>
 void CoreGPUWorker<T>::allocateBuffers() {
   if (this->verbose) std::cout << "Loading CNN OpenCL kernels...\n";
 
-  this->oclwCore.addSourceFile("CNN_Defines.hpp.cl");
-  this->oclwCore.addSourceFile("CNN_Kernels.cpp.cl");
+  this->oclwCore.addSourceFile("opencl/CNN_Defines.hpp.cl");
+  this->oclwCore.addSourceFile("opencl/CNN_Kernels.cpp.cl");
 
   if (this->verbose) std::cout << "CNN OpenCL kernels loaded.\n";
 

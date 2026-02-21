@@ -26,7 +26,7 @@ add_library(CNN STATIC
   CNN_CoreCPU.hpp CNN_CoreCPU.cpp
   CNN_CoreGPU.hpp CNN_CoreGPU.cpp
   CNN_CoreGPUWorker.hpp CNN_CoreGPUWorker.cpp
-  CNN_Defines.hpp.cl CNN_Kernels.cpp.cl
+  opencl/CNN_Defines.hpp.cl opencl/CNN_Kernels.cpp.cl
   CNN_Types.hpp
   CNN_Device.hpp CNN_Device.cpp
   CNN_Mode.hpp CNN_Mode.cpp
