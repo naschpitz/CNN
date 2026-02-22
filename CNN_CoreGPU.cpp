@@ -105,22 +105,12 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
       totalLoss += gpuLosses[i];
     }
 
-    // Merge CNN gradients across workers and update CNN weights
+    // Merge CNN and ANN gradients across workers, then unified update
     this->mergeCNNGradients();
+    this->mergeANNGradients();
 
     for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-      this->gpuWorkers[gpuIdx]->updateCNN(numSamples);
-    }
-
-    // Update ANN on each worker with its local gradients, then average parameters
-    for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-      ulong localN = workItems[static_cast<int>(gpuIdx)].endIdx
-                   - workItems[static_cast<int>(gpuIdx)].startIdx;
-      this->gpuWorkers[gpuIdx]->updateANN(localN);
-    }
-
-    if (this->numGPUs > 1) {
-      this->mergeANNParameters();
+      this->gpuWorkers[gpuIdx]->update(numSamples);
     }
 
     T avgEpochLoss = totalLoss / static_cast<T>(numSamples);
@@ -246,54 +236,39 @@ void CoreGPU<T>::mergeCNNGradients() {
 }
 
 //===================================================================================================================//
-//-- Multi-GPU parameter merging: ANN --//
+//-- Multi-GPU gradient merging: ANN --//
 //===================================================================================================================//
 
 template <typename T>
-void CoreGPU<T>::mergeANNParameters() {
-  // Read ANN parameters from each worker and average element-wise
-  ANN::Parameters<T> avgParams = this->gpuWorkers[0]->getANNParameters();
-  T scale = static_cast<T>(1) / static_cast<T>(this->numGPUs);
+void CoreGPU<T>::mergeANNGradients() {
+  if (this->numGPUs <= 1) return;
 
-  // Sum parameters from all workers (starting from worker 1, adding to worker 0's)
-  for (size_t gpuIdx = 1; gpuIdx < this->numGPUs; gpuIdx++) {
-    ANN::Parameters<T> workerParams = this->gpuWorkers[gpuIdx]->getANNParameters();
+  ANN::Tensor1D<T> totalAccumWeights;
+  ANN::Tensor1D<T> totalAccumBiases;
 
-    // Sum weights: [layer][neuron][prevNeuron]
-    for (size_t l = 0; l < workerParams.weights.size(); l++) {
-      for (size_t j = 0; j < workerParams.weights[l].size(); j++) {
-        for (size_t k = 0; k < workerParams.weights[l][j].size(); k++) {
-          avgParams.weights[l][j][k] += workerParams.weights[l][j][k];
-        }
-      }
-    }
-
-    // Sum biases: [layer][neuron]
-    for (size_t l = 0; l < workerParams.biases.size(); l++) {
-      for (size_t j = 0; j < workerParams.biases[l].size(); j++) {
-        avgParams.biases[l][j] += workerParams.biases[l][j];
-      }
-    }
-  }
-
-  // Scale to average
-  for (size_t l = 0; l < avgParams.weights.size(); l++) {
-    for (size_t j = 0; j < avgParams.weights[l].size(); j++) {
-      for (size_t k = 0; k < avgParams.weights[l][j].size(); k++) {
-        avgParams.weights[l][j][k] *= scale;
-      }
-    }
-  }
-
-  for (size_t l = 0; l < avgParams.biases.size(); l++) {
-    for (size_t j = 0; j < avgParams.biases[l].size(); j++) {
-      avgParams.biases[l][j] *= scale;
-    }
-  }
-
-  // Broadcast averaged parameters to all workers
   for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-    this->gpuWorkers[gpuIdx]->setANNParameters(avgParams);
+    ANN::Tensor1D<T> workerWeights;
+    ANN::Tensor1D<T> workerBiases;
+
+    this->gpuWorkers[gpuIdx]->readANNAccumulatedGradients(workerWeights, workerBiases);
+
+    if (gpuIdx == 0) {
+      totalAccumWeights = workerWeights;
+      totalAccumBiases = workerBiases;
+    } else {
+      for (size_t i = 0; i < workerWeights.size(); i++) {
+        totalAccumWeights[i] += workerWeights[i];
+      }
+
+      for (size_t i = 0; i < workerBiases.size(); i++) {
+        totalAccumBiases[i] += workerBiases[i];
+      }
+    }
+  }
+
+  // Write merged gradients back to all workers
+  for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
+    this->gpuWorkers[gpuIdx]->setANNAccumulators(totalAccumWeights, totalAccumBiases);
   }
 }
 

@@ -3,5 +3,22 @@
 
 #define TYPE float
 
+//===================================================================================================================//
+// ANN types (must match C++ ANN::ActvFuncType and ANN::Layer)
+// Defined here so they are available when ANN kernels are loaded with skipDefines=true.
+//===================================================================================================================//
+
+typedef enum {
+  ACTV_RELU = 0,
+  ACTV_SIGMOID = 1,
+  ACTV_TANH = 2,
+  ACTV_UNKNOWN = 3
+} ActvFuncType;
+
+typedef struct {
+  ulong numNeurons;
+  ActvFuncType actvFuncType;
+} Layer;
+
 #endif // CNN_DEFINES_HPP_CL
 

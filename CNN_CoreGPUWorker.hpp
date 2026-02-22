@@ -3,7 +3,7 @@
 
 #include "CNN_Core.hpp"
 
-#include <ANN_Core.hpp>
+#include <ANN_CoreGPUWorker.hpp>
 #include <OCLW_Core.hpp>
 
 #include <memory>
@@ -14,7 +14,13 @@ namespace CNN {
   template <typename T>
   class CoreGPUWorker {
     public:
+      // Standalone constructor — creates its own OpenCL core
       CoreGPUWorker(const CoreConfig<T>& config);
+
+      // Shared-core constructor — uses externally-provided OpenCL core.
+      // Only initializes parameters and computes offsets. Caller must invoke
+      // loadSources(), allocateBuffers() manually.
+      CoreGPUWorker(const CoreConfig<T>& config, OpenCLWrapper::Core& sharedCore);
 
       //-- Predict --//
       Output<T> predict(const Input<T>& input);
@@ -31,22 +37,33 @@ namespace CNN {
       void accumulate();
       void resetAccumulators();
 
-      //-- Gradient access (for multi-GPU merging) --//
+      //-- CNN gradient access (for multi-GPU merging) --//
       void readAccumulatedGradients(std::vector<T>& accumFilters, std::vector<T>& accumBiases);
       void setAccumulators(const std::vector<T>& accumFilters, const std::vector<T>& accumBiases);
 
+      //-- ANN gradient access (for multi-GPU merging) --//
+      void readANNAccumulatedGradients(ANN::Tensor1D<T>& accumWeights, ANN::Tensor1D<T>& accumBiases);
+      void setANNAccumulators(const ANN::Tensor1D<T>& accumWeights, const ANN::Tensor1D<T>& accumBiases);
+
       //-- Weight update --//
       void update(ulong numSamples);
-      void updateCNN(ulong numSamples);
-      void updateANN(ulong numSamples);
 
       //-- Parameter synchronization --//
       void syncParametersFromGPU();
 
       //-- Parameter access --//
       const Parameters<T>& getParameters() const { return parameters; }
-      ANN::Parameters<T> getANNParameters() const;
-      void setANNParameters(const ANN::Parameters<T>& params);
+
+      //-- Shared-core integration: source loading and buffer allocation --//
+      void loadSources(bool skipDefines);
+      void allocateBuffers();
+
+      //-- Shared-core integration: kernel building blocks --//
+      void addForwardKernels();
+      void addCopyBridgeKernels();
+      void addBackwardKernels();
+      void addCNNAccumulateKernels();
+      void addCNNUpdateKernels(ulong numSamples);
 
     private:
       //-- Configuration --//
@@ -86,38 +103,30 @@ namespace CNN {
       ulong totalPoolIndexSize = 0;
 
       //-- OpenCL state --//
-      OpenCLWrapper::Core oclwCore;
+      std::unique_ptr<OpenCLWrapper::Core> ownedCore;  // Owned core (standalone mode)
+      OpenCLWrapper::Core* core = nullptr;              // Pointer to active core (owned or shared)
 
-      //-- ANN core for dense layers (CPU mode) --//
-      std::unique_ptr<ANN::Core<T>> annCore;
+      //-- ANN GPU worker (dense layers on shared core) --//
+      std::unique_ptr<ANN::CoreGPUWorker<T>> annGPUWorker;
 
       //-- Kernel setup flags --//
       bool predictKernelsSetup = false;
-      bool backpropagateKernelsSetup = false;
-      bool accumulateKernelsSetup = false;
+      bool trainingKernelsSetup = false;
       bool updateKernelsSetup = false;
 
       //-- Initialization --//
       void computeLayerOffsets();
       void initializeConvParams();
-      void allocateBuffers();
-      void buildANNCore();
+      void buildANNWorker();
 
-      //-- Kernel setup --//
+      //-- Kernel setup (standalone mode) --//
       void setupPredictKernels();
-      void setupBackpropagateKernels();
-      void setupAccumulateKernels();
+      void setupTrainingKernels();
       void setupUpdateKernels(ulong numSamples);
-
-      //-- Kernel building blocks --//
-      void addForwardKernels();
-      void addBackwardKernels();
-      void addAccumulateKernels();
 
       //-- Helpers --//
       void invalidateAllKernelFlags();
       T calculateLoss(const Output<T>& predicted, const Output<T>& expected);
-      ANN::CoreConfig<T> buildANNConfig();
   };
 }
 

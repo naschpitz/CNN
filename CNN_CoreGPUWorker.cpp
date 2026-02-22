@@ -5,8 +5,7 @@
 #include "CNN_Pool.hpp"
 #include "CNN_Flatten.hpp"
 
-#include <ANN_Core.hpp>
-#include <ANN_ActvFunc.hpp>
+#include <ANN_CoreGPUWorker.hpp>
 #include <OCLW_Core.hpp>
 
 #include <QDebug>
@@ -18,17 +17,18 @@
 using namespace CNN;
 
 //===================================================================================================================//
-//-- Constructor --//
+//-- Constructors --//
 //===================================================================================================================//
 
 template <typename T>
 CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
     : coreConfig(config),
       parameters(config.parameters),
-      verbose(config.verbose),
-      oclwCore(OpenCLWrapper::Core(false)) {
+      verbose(config.verbose) {
 
-  this->oclwCore.setVerbose(this->verbose);
+  this->ownedCore = std::make_unique<OpenCLWrapper::Core>(false);
+  this->core = this->ownedCore.get();
+  this->core->setVerbose(this->verbose);
 
   // Compute CNN output shape
   this->cnnOutputShape = config.layersConfig.validateShapes(config.inputShape);
@@ -40,11 +40,36 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
   // Compute buffer offsets for all layers
   this->computeLayerOffsets();
 
-  // Allocate GPU buffers and write initial parameters
-  this->allocateBuffers();
+  // Load OpenCL sources (defines first, then kernels)
+  this->loadSources(false);
 
-  // Build ANN core for dense layers (CPU mode)
-  this->buildANNCore();
+  // Build ANN GPU worker on the shared core (loads ANN sources + allocates ANN buffers)
+  this->buildANNWorker();
+
+  // Allocate CNN GPU buffers and write initial parameters
+  this->allocateBuffers();
+}
+
+//===================================================================================================================//
+
+template <typename T>
+CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config, OpenCLWrapper::Core& sharedCore)
+    : coreConfig(config),
+      parameters(config.parameters),
+      verbose(config.verbose),
+      core(&sharedCore) {
+
+  // Compute CNN output shape
+  this->cnnOutputShape = config.layersConfig.validateShapes(config.inputShape);
+  this->flattenSize = this->cnnOutputShape.size();
+
+  // Initialize conv parameters (He initialization if not loaded)
+  this->initializeConvParams();
+
+  // Compute buffer offsets for all layers
+  this->computeLayerOffsets();
+
+  // Caller must call loadSources(), buildANNWorker(), allocateBuffers() manually
 }
 
 //===================================================================================================================//
@@ -196,44 +221,55 @@ void CoreGPUWorker<T>::initializeConvParams() {
 }
 
 //===================================================================================================================//
-//-- Initialization: allocate GPU buffers --//
+//-- Initialization: load OpenCL sources --//
 //===================================================================================================================//
 
 template <typename T>
-void CoreGPUWorker<T>::allocateBuffers() {
+void CoreGPUWorker<T>::loadSources(bool skipDefines) {
   if (this->verbose) std::cout << "Loading CNN OpenCL kernels...\n";
 
   // Resolve .cl file paths relative to the source file's directory (via __FILE__),
   // so the kernels are found regardless of the current working directory.
   std::string srcFile = __FILE__;
   std::string srcDir = srcFile.substr(0, srcFile.find_last_of("/\\") + 1);
-  this->oclwCore.addSourceFile(srcDir + "opencl/CNN_Defines.hpp.cl");
-  this->oclwCore.addSourceFile(srcDir + "opencl/CNN_Kernels.cpp.cl");
+
+  if (!skipDefines) {
+    this->core->addSourceFile(srcDir + "opencl/CNN_Defines.hpp.cl");
+  }
+
+  this->core->addSourceFile(srcDir + "opencl/CNN_Kernels.cpp.cl");
 
   if (this->verbose) std::cout << "CNN OpenCL kernels loaded.\n";
+}
 
+//===================================================================================================================//
+//-- Initialization: allocate GPU buffers --//
+//===================================================================================================================//
+
+template <typename T>
+void CoreGPUWorker<T>::allocateBuffers() {
   if (this->verbose) std::cout << "Allocating CNN GPU buffers...\n";
 
   // Activation and gradient buffers (same layout)
-  this->oclwCore. template allocateBuffer<T>("cnn_actvs", this->totalActvSize);
-  this->oclwCore. template allocateBuffer<T>("cnn_grads", this->totalActvSize);
+  this->core->template allocateBuffer<T>("cnn_actvs", this->totalActvSize);
+  this->core->template allocateBuffer<T>("cnn_grads", this->totalActvSize);
 
   // Filter and bias parameter buffers
   if (this->totalFilterSize > 0) {
-    this->oclwCore. template allocateBuffer<T>("cnn_filters", this->totalFilterSize);
-    this->oclwCore. template allocateBuffer<T>("cnn_dFilters", this->totalFilterSize);
-    this->oclwCore. template allocateBuffer<T>("cnn_accum_dFilters", this->totalFilterSize);
+    this->core->template allocateBuffer<T>("cnn_filters", this->totalFilterSize);
+    this->core->template allocateBuffer<T>("cnn_dFilters", this->totalFilterSize);
+    this->core->template allocateBuffer<T>("cnn_accum_dFilters", this->totalFilterSize);
   }
 
   if (this->totalBiasSize > 0) {
-    this->oclwCore. template allocateBuffer<T>("cnn_biases", this->totalBiasSize);
-    this->oclwCore. template allocateBuffer<T>("cnn_dBiases", this->totalBiasSize);
-    this->oclwCore. template allocateBuffer<T>("cnn_accum_dBiases", this->totalBiasSize);
+    this->core->template allocateBuffer<T>("cnn_biases", this->totalBiasSize);
+    this->core->template allocateBuffer<T>("cnn_dBiases", this->totalBiasSize);
+    this->core->template allocateBuffer<T>("cnn_accum_dBiases", this->totalBiasSize);
   }
 
   // Pool index buffer
   if (this->totalPoolIndexSize > 0) {
-    this->oclwCore. template allocateBuffer<ulong>("cnn_pool_indices", this->totalPoolIndexSize);
+    this->core->template allocateBuffer<ulong>("cnn_pool_indices", this->totalPoolIndexSize);
   }
 
   // Write initial filter/bias values to GPU
@@ -249,7 +285,7 @@ void CoreGPUWorker<T>::allocateBuffers() {
       }
     }
 
-    this->oclwCore. template writeBuffer<T>("cnn_filters", flatFilters, 0);
+    this->core->template writeBuffer<T>("cnn_filters", flatFilters, 0);
   }
 
   if (this->totalBiasSize > 0) {
@@ -264,36 +300,18 @@ void CoreGPUWorker<T>::allocateBuffers() {
       }
     }
 
-    this->oclwCore. template writeBuffer<T>("cnn_biases", flatBiases, 0);
+    this->core->template writeBuffer<T>("cnn_biases", flatBiases, 0);
   }
 
   if (this->verbose) std::cout << "CNN GPU buffers allocated.\n";
 }
 
 //===================================================================================================================//
-//-- Initialization: build ANN configuration --//
+//-- Initialization: build ANN GPU worker --//
 //===================================================================================================================//
 
 template <typename T>
-ANN::CoreConfig<T> CoreGPUWorker<T>::buildANNConfig() {
-  ANN::CoreConfig<T> annConfig;
-
-  // Map CNN mode to ANN mode
-  switch (this->coreConfig.modeType) {
-    case ModeType::TRAIN:
-      annConfig.modeType = ANN::ModeType::TRAIN;
-      break;
-    case ModeType::TEST:
-      annConfig.modeType = ANN::ModeType::TEST;
-      break;
-    default:
-      annConfig.modeType = ANN::ModeType::PREDICT;
-      break;
-  }
-
-  // Dense layers run on CPU for step-by-step orchestration
-  annConfig.deviceType = ANN::DeviceType::CPU;
-
+void CoreGPUWorker<T>::buildANNWorker() {
   // Build ANN layers: first layer = flatten size (input), rest from denseLayers
   ANN::LayersConfig annLayers;
 
@@ -309,28 +327,22 @@ ANN::CoreConfig<T> CoreGPUWorker<T>::buildANNConfig() {
     annLayers.push_back(layer);
   }
 
-  annConfig.layersConfig = annLayers;
-
   // Training config
-  annConfig.trainingConfig.numEpochs = this->coreConfig.trainingConfig.numEpochs;
-  annConfig.trainingConfig.learningRate = this->coreConfig.trainingConfig.learningRate;
-  annConfig.trainingConfig.numThreads = 1;
+  ANN::TrainingConfig<T> annTrainingConfig;
+  annTrainingConfig.numEpochs = this->coreConfig.trainingConfig.numEpochs;
+  annTrainingConfig.learningRate = this->coreConfig.trainingConfig.learningRate;
+  annTrainingConfig.numThreads = 1;
 
-  // Dense parameters (if loaded from file)
-  annConfig.parameters = this->coreConfig.parameters.denseParams;
-  annConfig.verbose = this->coreConfig.verbose;
+  // Create ANN GPU worker on the shared core
+  this->annGPUWorker = std::make_unique<ANN::CoreGPUWorker<T>>(
+      annLayers, annTrainingConfig, this->coreConfig.parameters.denseParams,
+      *this->core, this->verbose);
 
-  return annConfig;
-}
+  // Load ANN sources (skip defines — CNN_Defines.hpp.cl already defined TYPE, ActvFuncType, Layer)
+  this->annGPUWorker->loadSources(true);
 
-//===================================================================================================================//
-//-- Initialization: build ANN core --//
-//===================================================================================================================//
-
-template <typename T>
-void CoreGPUWorker<T>::buildANNCore() {
-  ANN::CoreConfig<T> annConfig = this->buildANNConfig();
-  this->annCore = ANN::Core<T>::makeCore(annConfig);
+  // Allocate ANN GPU buffers
+  this->annGPUWorker->allocateBuffers();
 }
 
 
@@ -363,26 +375,26 @@ void CoreGPUWorker<T>::addForwardKernels() {
         ulong nElements = conv.numFilters * outH * outW;
 
         std::string kernelId = "conv2d_forward_layer" + layerStr;
-        this->oclwCore.addKernel(kernelId, "conv2d_forward", nElements, 0);
-        this->oclwCore. template addArgument<T>(kernelId, "cnn_actvs");
-        this->oclwCore. template addArgument<T>(kernelId, "cnn_filters");
-        this->oclwCore. template addArgument<T>(kernelId, "cnn_biases");
-        this->oclwCore. template addArgument<ulong>(kernelId, inOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, outOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, this->convInfos[convIdx].filterOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, this->convInfos[convIdx].biasOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, currentShape.c);
-        this->oclwCore. template addArgument<ulong>(kernelId, currentShape.h);
-        this->oclwCore. template addArgument<ulong>(kernelId, currentShape.w);
-        this->oclwCore. template addArgument<ulong>(kernelId, conv.numFilters);
-        this->oclwCore. template addArgument<ulong>(kernelId, conv.filterH);
-        this->oclwCore. template addArgument<ulong>(kernelId, conv.filterW);
-        this->oclwCore. template addArgument<ulong>(kernelId, conv.strideY);
-        this->oclwCore. template addArgument<ulong>(kernelId, conv.strideX);
-        this->oclwCore. template addArgument<ulong>(kernelId, padY);
-        this->oclwCore. template addArgument<ulong>(kernelId, padX);
-        this->oclwCore. template addArgument<ulong>(kernelId, outH);
-        this->oclwCore. template addArgument<ulong>(kernelId, outW);
+        this->core->addKernel(kernelId, "conv2d_forward", nElements, 0);
+        this->core->template addArgument<T>(kernelId, "cnn_actvs");
+        this->core->template addArgument<T>(kernelId, "cnn_filters");
+        this->core->template addArgument<T>(kernelId, "cnn_biases");
+        this->core->template addArgument<ulong>(kernelId, inOffset);
+        this->core->template addArgument<ulong>(kernelId, outOffset);
+        this->core->template addArgument<ulong>(kernelId, this->convInfos[convIdx].filterOffset);
+        this->core->template addArgument<ulong>(kernelId, this->convInfos[convIdx].biasOffset);
+        this->core->template addArgument<ulong>(kernelId, currentShape.c);
+        this->core->template addArgument<ulong>(kernelId, currentShape.h);
+        this->core->template addArgument<ulong>(kernelId, currentShape.w);
+        this->core->template addArgument<ulong>(kernelId, conv.numFilters);
+        this->core->template addArgument<ulong>(kernelId, conv.filterH);
+        this->core->template addArgument<ulong>(kernelId, conv.filterW);
+        this->core->template addArgument<ulong>(kernelId, conv.strideY);
+        this->core->template addArgument<ulong>(kernelId, conv.strideX);
+        this->core->template addArgument<ulong>(kernelId, padY);
+        this->core->template addArgument<ulong>(kernelId, padX);
+        this->core->template addArgument<ulong>(kernelId, outH);
+        this->core->template addArgument<ulong>(kernelId, outW);
 
         currentShape = {conv.numFilters, outH, outW};
         convIdx++;
@@ -391,11 +403,11 @@ void CoreGPUWorker<T>::addForwardKernels() {
       case LayerType::RELU: {
         ulong size = currentShape.size();
         std::string kernelId = "relu_forward_layer" + layerStr;
-        this->oclwCore.addKernel(kernelId, "relu_forward", size, 0);
-        this->oclwCore. template addArgument<T>(kernelId, "cnn_actvs");
-        this->oclwCore. template addArgument<ulong>(kernelId, inOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, outOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, size);
+        this->core->addKernel(kernelId, "relu_forward", size, 0);
+        this->core->template addArgument<T>(kernelId, "cnn_actvs");
+        this->core->template addArgument<ulong>(kernelId, inOffset);
+        this->core->template addArgument<ulong>(kernelId, outOffset);
+        this->core->template addArgument<ulong>(kernelId, size);
         break;
       }
       case LayerType::POOL: {
@@ -405,28 +417,28 @@ void CoreGPUWorker<T>::addForwardKernels() {
         ulong nElements = currentShape.c * outH * outW;
 
         std::string kernelId = "maxpool_forward_layer" + layerStr;
-        this->oclwCore.addKernel(kernelId, "maxpool_forward", nElements, 0);
-        this->oclwCore. template addArgument<T>(kernelId, "cnn_actvs");
-        this->oclwCore. template addArgument<ulong>(kernelId, "cnn_pool_indices");
-        this->oclwCore. template addArgument<ulong>(kernelId, inOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, outOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, this->poolInfos[poolIdx].indexOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, currentShape.c);
-        this->oclwCore. template addArgument<ulong>(kernelId, currentShape.h);
-        this->oclwCore. template addArgument<ulong>(kernelId, currentShape.w);
-        this->oclwCore. template addArgument<ulong>(kernelId, pool.poolH);
-        this->oclwCore. template addArgument<ulong>(kernelId, pool.poolW);
-        this->oclwCore. template addArgument<ulong>(kernelId, pool.strideY);
-        this->oclwCore. template addArgument<ulong>(kernelId, pool.strideX);
-        this->oclwCore. template addArgument<ulong>(kernelId, outH);
-        this->oclwCore. template addArgument<ulong>(kernelId, outW);
+        this->core->addKernel(kernelId, "maxpool_forward", nElements, 0);
+        this->core->template addArgument<T>(kernelId, "cnn_actvs");
+        this->core->template addArgument<ulong>(kernelId, "cnn_pool_indices");
+        this->core->template addArgument<ulong>(kernelId, inOffset);
+        this->core->template addArgument<ulong>(kernelId, outOffset);
+        this->core->template addArgument<ulong>(kernelId, this->poolInfos[poolIdx].indexOffset);
+        this->core->template addArgument<ulong>(kernelId, currentShape.c);
+        this->core->template addArgument<ulong>(kernelId, currentShape.h);
+        this->core->template addArgument<ulong>(kernelId, currentShape.w);
+        this->core->template addArgument<ulong>(kernelId, pool.poolH);
+        this->core->template addArgument<ulong>(kernelId, pool.poolW);
+        this->core->template addArgument<ulong>(kernelId, pool.strideY);
+        this->core->template addArgument<ulong>(kernelId, pool.strideX);
+        this->core->template addArgument<ulong>(kernelId, outH);
+        this->core->template addArgument<ulong>(kernelId, outW);
 
         currentShape = {currentShape.c, outH, outW};
         poolIdx++;
         break;
       }
       case LayerType::FLATTEN: {
-        // No GPU kernel needed for flatten - data is read back to CPU
+        // No GPU kernel needed for flatten - data stays in cnn_actvs at same offset
         break;
       }
     }
@@ -503,72 +515,72 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         // conv2d_backward_filters
         ulong nFilterElems = this->convInfos[convIdx].numFilterElems;
         std::string filterId = "conv2d_backward_filters_layer" + layerStr;
-        this->oclwCore.addKernel(filterId, "conv2d_backward_filters", nFilterElems, 0);
-        this->oclwCore. template addArgument<T>(filterId, "cnn_grads");
-        this->oclwCore. template addArgument<T>(filterId, "cnn_actvs");
-        this->oclwCore. template addArgument<T>(filterId, "cnn_dFilters");
-        this->oclwCore. template addArgument<ulong>(filterId, gradOutOffset);
-        this->oclwCore. template addArgument<ulong>(filterId, actvInOffset);
-        this->oclwCore. template addArgument<ulong>(filterId, this->convInfos[convIdx].filterOffset);
-        this->oclwCore. template addArgument<ulong>(filterId, inShape.c);
-        this->oclwCore. template addArgument<ulong>(filterId, inShape.h);
-        this->oclwCore. template addArgument<ulong>(filterId, inShape.w);
-        this->oclwCore. template addArgument<ulong>(filterId, conv.numFilters);
-        this->oclwCore. template addArgument<ulong>(filterId, conv.filterH);
-        this->oclwCore. template addArgument<ulong>(filterId, conv.filterW);
-        this->oclwCore. template addArgument<ulong>(filterId, conv.strideY);
-        this->oclwCore. template addArgument<ulong>(filterId, conv.strideX);
-        this->oclwCore. template addArgument<ulong>(filterId, padY);
-        this->oclwCore. template addArgument<ulong>(filterId, padX);
-        this->oclwCore. template addArgument<ulong>(filterId, outH);
-        this->oclwCore. template addArgument<ulong>(filterId, outW);
+        this->core->addKernel(filterId, "conv2d_backward_filters", nFilterElems, 0);
+        this->core->template addArgument<T>(filterId, "cnn_grads");
+        this->core->template addArgument<T>(filterId, "cnn_actvs");
+        this->core->template addArgument<T>(filterId, "cnn_dFilters");
+        this->core->template addArgument<ulong>(filterId, gradOutOffset);
+        this->core->template addArgument<ulong>(filterId, actvInOffset);
+        this->core->template addArgument<ulong>(filterId, this->convInfos[convIdx].filterOffset);
+        this->core->template addArgument<ulong>(filterId, inShape.c);
+        this->core->template addArgument<ulong>(filterId, inShape.h);
+        this->core->template addArgument<ulong>(filterId, inShape.w);
+        this->core->template addArgument<ulong>(filterId, conv.numFilters);
+        this->core->template addArgument<ulong>(filterId, conv.filterH);
+        this->core->template addArgument<ulong>(filterId, conv.filterW);
+        this->core->template addArgument<ulong>(filterId, conv.strideY);
+        this->core->template addArgument<ulong>(filterId, conv.strideX);
+        this->core->template addArgument<ulong>(filterId, padY);
+        this->core->template addArgument<ulong>(filterId, padX);
+        this->core->template addArgument<ulong>(filterId, outH);
+        this->core->template addArgument<ulong>(filterId, outW);
 
         // conv2d_backward_biases
         std::string biasId = "conv2d_backward_biases_layer" + layerStr;
-        this->oclwCore.addKernel(biasId, "conv2d_backward_biases", conv.numFilters, 0);
-        this->oclwCore. template addArgument<T>(biasId, "cnn_grads");
-        this->oclwCore. template addArgument<T>(biasId, "cnn_dBiases");
-        this->oclwCore. template addArgument<ulong>(biasId, gradOutOffset);
-        this->oclwCore. template addArgument<ulong>(biasId, this->convInfos[convIdx].biasOffset);
-        this->oclwCore. template addArgument<ulong>(biasId, conv.numFilters);
-        this->oclwCore. template addArgument<ulong>(biasId, outH);
-        this->oclwCore. template addArgument<ulong>(biasId, outW);
+        this->core->addKernel(biasId, "conv2d_backward_biases", conv.numFilters, 0);
+        this->core->template addArgument<T>(biasId, "cnn_grads");
+        this->core->template addArgument<T>(biasId, "cnn_dBiases");
+        this->core->template addArgument<ulong>(biasId, gradOutOffset);
+        this->core->template addArgument<ulong>(biasId, this->convInfos[convIdx].biasOffset);
+        this->core->template addArgument<ulong>(biasId, conv.numFilters);
+        this->core->template addArgument<ulong>(biasId, outH);
+        this->core->template addArgument<ulong>(biasId, outW);
 
         // conv2d_backward_input (skip if first layer — no one reads the gradient)
         if (i > 0) {
           ulong nInputElems = inShape.size();
           std::string inputId = "conv2d_backward_input_layer" + layerStr;
-          this->oclwCore.addKernel(inputId, "conv2d_backward_input", nInputElems, 0);
-          this->oclwCore. template addArgument<T>(inputId, "cnn_grads");
-          this->oclwCore. template addArgument<T>(inputId, "cnn_filters");
-          this->oclwCore. template addArgument<ulong>(inputId, gradOutOffset);
-          this->oclwCore. template addArgument<ulong>(inputId, gradInOffset);
-          this->oclwCore. template addArgument<ulong>(inputId, this->convInfos[convIdx].filterOffset);
-          this->oclwCore. template addArgument<ulong>(inputId, inShape.c);
-          this->oclwCore. template addArgument<ulong>(inputId, inShape.h);
-          this->oclwCore. template addArgument<ulong>(inputId, inShape.w);
-          this->oclwCore. template addArgument<ulong>(inputId, conv.numFilters);
-          this->oclwCore. template addArgument<ulong>(inputId, conv.filterH);
-          this->oclwCore. template addArgument<ulong>(inputId, conv.filterW);
-          this->oclwCore. template addArgument<ulong>(inputId, conv.strideY);
-          this->oclwCore. template addArgument<ulong>(inputId, conv.strideX);
-          this->oclwCore. template addArgument<ulong>(inputId, padY);
-          this->oclwCore. template addArgument<ulong>(inputId, padX);
-          this->oclwCore. template addArgument<ulong>(inputId, outH);
-          this->oclwCore. template addArgument<ulong>(inputId, outW);
+          this->core->addKernel(inputId, "conv2d_backward_input", nInputElems, 0);
+          this->core->template addArgument<T>(inputId, "cnn_grads");
+          this->core->template addArgument<T>(inputId, "cnn_filters");
+          this->core->template addArgument<ulong>(inputId, gradOutOffset);
+          this->core->template addArgument<ulong>(inputId, gradInOffset);
+          this->core->template addArgument<ulong>(inputId, this->convInfos[convIdx].filterOffset);
+          this->core->template addArgument<ulong>(inputId, inShape.c);
+          this->core->template addArgument<ulong>(inputId, inShape.h);
+          this->core->template addArgument<ulong>(inputId, inShape.w);
+          this->core->template addArgument<ulong>(inputId, conv.numFilters);
+          this->core->template addArgument<ulong>(inputId, conv.filterH);
+          this->core->template addArgument<ulong>(inputId, conv.filterW);
+          this->core->template addArgument<ulong>(inputId, conv.strideY);
+          this->core->template addArgument<ulong>(inputId, conv.strideX);
+          this->core->template addArgument<ulong>(inputId, padY);
+          this->core->template addArgument<ulong>(inputId, padX);
+          this->core->template addArgument<ulong>(inputId, outH);
+          this->core->template addArgument<ulong>(inputId, outW);
         }
         break;
       }
       case LayerType::RELU: {
         ulong size = inShape.size();
         std::string kernelId = "relu_backward_layer" + layerStr;
-        this->oclwCore.addKernel(kernelId, "relu_backward", size, 0);
-        this->oclwCore. template addArgument<T>(kernelId, "cnn_grads");
-        this->oclwCore. template addArgument<T>(kernelId, "cnn_actvs");
-        this->oclwCore. template addArgument<ulong>(kernelId, gradInOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, gradOutOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, actvInOffset);
-        this->oclwCore. template addArgument<ulong>(kernelId, size);
+        this->core->addKernel(kernelId, "relu_backward", size, 0);
+        this->core->template addArgument<T>(kernelId, "cnn_grads");
+        this->core->template addArgument<T>(kernelId, "cnn_actvs");
+        this->core->template addArgument<ulong>(kernelId, gradInOffset);
+        this->core->template addArgument<ulong>(kernelId, gradOutOffset);
+        this->core->template addArgument<ulong>(kernelId, actvInOffset);
+        this->core->template addArgument<ulong>(kernelId, size);
         break;
       }
       case LayerType::POOL: {
@@ -577,24 +589,24 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         // Zero the input gradient region first
         ulong inSize = inShape.size();
         std::string zeroId = "zero_pool_grad_layer" + layerStr;
-        this->oclwCore.addKernel(zeroId, "zero_buffer", inSize, 0);
-        this->oclwCore. template addArgument<T>(zeroId, "cnn_grads");
-        this->oclwCore. template addArgument<ulong>(zeroId, gradInOffset);
-        this->oclwCore. template addArgument<ulong>(zeroId, inSize);
+        this->core->addKernel(zeroId, "zero_buffer", inSize, 0);
+        this->core->template addArgument<T>(zeroId, "cnn_grads");
+        this->core->template addArgument<ulong>(zeroId, gradInOffset);
+        this->core->template addArgument<ulong>(zeroId, inSize);
 
         // maxpool_backward
         ulong outSize = outShape.size();
         std::string poolId = "maxpool_backward_layer" + layerStr;
-        this->oclwCore.addKernel(poolId, "maxpool_backward", outSize, 0);
-        this->oclwCore. template addArgument<T>(poolId, "cnn_grads");
-        this->oclwCore. template addArgument<ulong>(poolId, "cnn_pool_indices");
-        this->oclwCore. template addArgument<ulong>(poolId, gradOutOffset);
-        this->oclwCore. template addArgument<ulong>(poolId, this->poolInfos[poolIdx].indexOffset);
-        this->oclwCore. template addArgument<ulong>(poolId, outSize);
+        this->core->addKernel(poolId, "maxpool_backward", outSize, 0);
+        this->core->template addArgument<T>(poolId, "cnn_grads");
+        this->core->template addArgument<ulong>(poolId, "cnn_pool_indices");
+        this->core->template addArgument<ulong>(poolId, gradOutOffset);
+        this->core->template addArgument<ulong>(poolId, this->poolInfos[poolIdx].indexOffset);
+        this->core->template addArgument<ulong>(poolId, outSize);
         break;
       }
       case LayerType::FLATTEN: {
-        // No GPU kernel needed - gradient is written to cnn_grads by CPU
+        // No GPU kernel needed - gradient is written to cnn_grads by bridge kernel
         break;
       }
     }
@@ -603,69 +615,122 @@ void CoreGPUWorker<T>::addBackwardKernels() {
 
 
 //===================================================================================================================//
-//-- Kernel building: accumulate gradients --//
+//-- Kernel building: CNN accumulate gradients --//
 //===================================================================================================================//
 
 template <typename T>
-void CoreGPUWorker<T>::addAccumulateKernels() {
+void CoreGPUWorker<T>::addCNNAccumulateKernels() {
   if (this->totalFilterSize > 0) {
-    this->oclwCore.addKernel("cnn_accumulate_filters", "cnn_accumulate", this->totalFilterSize, 0);
-    this->oclwCore. template addArgument<T>("cnn_accumulate_filters", "cnn_accum_dFilters");
-    this->oclwCore. template addArgument<T>("cnn_accumulate_filters", "cnn_dFilters");
-    this->oclwCore. template addArgument<ulong>("cnn_accumulate_filters", static_cast<ulong>(0));
-    this->oclwCore. template addArgument<ulong>("cnn_accumulate_filters", this->totalFilterSize);
+    this->core->addKernel("cnn_accumulate_filters", "cnn_accumulate", this->totalFilterSize, 0);
+    this->core->template addArgument<T>("cnn_accumulate_filters", "cnn_accum_dFilters");
+    this->core->template addArgument<T>("cnn_accumulate_filters", "cnn_dFilters");
+    this->core->template addArgument<ulong>("cnn_accumulate_filters", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("cnn_accumulate_filters", this->totalFilterSize);
   }
 
   if (this->totalBiasSize > 0) {
-    this->oclwCore.addKernel("cnn_accumulate_biases", "cnn_accumulate", this->totalBiasSize, 0);
-    this->oclwCore. template addArgument<T>("cnn_accumulate_biases", "cnn_accum_dBiases");
-    this->oclwCore. template addArgument<T>("cnn_accumulate_biases", "cnn_dBiases");
-    this->oclwCore. template addArgument<ulong>("cnn_accumulate_biases", static_cast<ulong>(0));
-    this->oclwCore. template addArgument<ulong>("cnn_accumulate_biases", this->totalBiasSize);
+    this->core->addKernel("cnn_accumulate_biases", "cnn_accumulate", this->totalBiasSize, 0);
+    this->core->template addArgument<T>("cnn_accumulate_biases", "cnn_accum_dBiases");
+    this->core->template addArgument<T>("cnn_accumulate_biases", "cnn_dBiases");
+    this->core->template addArgument<ulong>("cnn_accumulate_biases", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("cnn_accumulate_biases", this->totalBiasSize);
   }
 }
 
 //===================================================================================================================//
-//-- Kernel setup: predict (forward only) --//
+//-- Kernel building: CNN update parameters --//
+//===================================================================================================================//
+
+template <typename T>
+void CoreGPUWorker<T>::addCNNUpdateKernels(ulong numSamples) {
+  if (this->totalFilterSize > 0) {
+    this->core->addKernel("cnn_update_filters", "cnn_update", this->totalFilterSize, 0);
+    this->core->template addArgument<T>("cnn_update_filters", "cnn_filters");
+    this->core->template addArgument<T>("cnn_update_filters", "cnn_accum_dFilters");
+    this->core->template addArgument<ulong>("cnn_update_filters", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("cnn_update_filters", this->totalFilterSize);
+    this->core->template addArgument<ulong>("cnn_update_filters", numSamples);
+    this->core->template addArgument<float>("cnn_update_filters",
+        static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+  }
+
+  if (this->totalBiasSize > 0) {
+    this->core->addKernel("cnn_update_biases", "cnn_update", this->totalBiasSize, 0);
+    this->core->template addArgument<T>("cnn_update_biases", "cnn_biases");
+    this->core->template addArgument<T>("cnn_update_biases", "cnn_accum_dBiases");
+    this->core->template addArgument<ulong>("cnn_update_biases", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("cnn_update_biases", this->totalBiasSize);
+    this->core->template addArgument<ulong>("cnn_update_biases", numSamples);
+    this->core->template addArgument<float>("cnn_update_biases",
+        static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+  }
+}
+
+//===================================================================================================================//
+//-- Kernel building: copy bridge (CNN output → ANN input) --//
+//===================================================================================================================//
+
+template <typename T>
+void CoreGPUWorker<T>::addCopyBridgeKernels() {
+  ulong lastLayerIdx = this->layerInfos.size() - 1;
+  ulong cnnOutputOffset = this->layerInfos[lastLayerIdx].actvOffset;
+
+  this->core->addKernel("copy_cnn_to_ann", this->flattenSize, 0);
+  this->core->template addArgument<T>("copy_cnn_to_ann", "cnn_actvs");
+  this->core->template addArgument<T>("copy_cnn_to_ann", "actvs");
+  this->core->template addArgument<ulong>("copy_cnn_to_ann", cnnOutputOffset);
+  this->core->template addArgument<ulong>("copy_cnn_to_ann", this->flattenSize);
+}
+
+//===================================================================================================================//
+//-- Kernel setup: predict (CNN forward → bridge → ANN forward) --//
 //===================================================================================================================//
 
 template <typename T>
 void CoreGPUWorker<T>::setupPredictKernels() {
-  this->oclwCore.clearKernels();
+  this->core->clearKernels();
   this->invalidateAllKernelFlags();
 
   this->addForwardKernels();
+  this->addCopyBridgeKernels();
+  this->annGPUWorker->addPropagateKernels();
 
   this->predictKernelsSetup = true;
 }
 
 //===================================================================================================================//
-//-- Kernel setup: backpropagate (backward + accumulate) --//
+//-- Kernel setup: training (full forward + backward + accumulate pipeline) --//
 //===================================================================================================================//
 
 template <typename T>
-void CoreGPUWorker<T>::setupBackpropagateKernels() {
-  this->oclwCore.clearKernels();
+void CoreGPUWorker<T>::setupTrainingKernels() {
+  this->core->clearKernels();
   this->invalidateAllKernelFlags();
+
+  // Forward pipeline: CNN forward → copy → ANN forward
+  this->addForwardKernels();
+  this->addCopyBridgeKernels();
+  this->annGPUWorker->addPropagateKernels();
+
+  // Backward pipeline: ANN backward (with input gradients) → reverse bridge → CNN backward
+  this->annGPUWorker->addBackpropagateKernels(true);
+
+  // Reverse bridge: copy ANN input gradients to CNN gradient buffer
+  ulong lastLayerIdx = this->layerInfos.size() - 1;
+  ulong cnnOutputOffset = this->layerInfos[lastLayerIdx].actvOffset;
+  this->core->addKernel("copy_ann_grad_to_cnn", this->flattenSize, 0);
+  this->core->template addArgument<T>("copy_ann_grad_to_cnn", "dCost_dActvs");
+  this->core->template addArgument<T>("copy_ann_grad_to_cnn", "cnn_grads");
+  this->core->template addArgument<ulong>("copy_ann_grad_to_cnn", cnnOutputOffset);
+  this->core->template addArgument<ulong>("copy_ann_grad_to_cnn", this->flattenSize);
 
   this->addBackwardKernels();
-  this->addAccumulateKernels();
 
-  this->backpropagateKernelsSetup = true;
-}
+  // Accumulate: CNN + ANN
+  this->addCNNAccumulateKernels();
+  this->annGPUWorker->addAccumulateKernels();
 
-//===================================================================================================================//
-//-- Kernel setup: accumulate only --//
-//===================================================================================================================//
-
-template <typename T>
-void CoreGPUWorker<T>::setupAccumulateKernels() {
-  this->oclwCore.clearKernels();
-  this->invalidateAllKernelFlags();
-
-  this->addAccumulateKernels();
-
-  this->accumulateKernelsSetup = true;
+  this->trainingKernelsSetup = true;
 }
 
 //===================================================================================================================//
@@ -674,30 +739,11 @@ void CoreGPUWorker<T>::setupAccumulateKernels() {
 
 template <typename T>
 void CoreGPUWorker<T>::setupUpdateKernels(ulong numSamples) {
-  this->oclwCore.clearKernels();
+  this->core->clearKernels();
   this->invalidateAllKernelFlags();
 
-  if (this->totalFilterSize > 0) {
-    this->oclwCore.addKernel("cnn_update_filters", "cnn_update", this->totalFilterSize, 0);
-    this->oclwCore. template addArgument<T>("cnn_update_filters", "cnn_filters");
-    this->oclwCore. template addArgument<T>("cnn_update_filters", "cnn_accum_dFilters");
-    this->oclwCore. template addArgument<ulong>("cnn_update_filters", static_cast<ulong>(0));
-    this->oclwCore. template addArgument<ulong>("cnn_update_filters", this->totalFilterSize);
-    this->oclwCore. template addArgument<ulong>("cnn_update_filters", numSamples);
-    this->oclwCore. template addArgument<float>("cnn_update_filters",
-        static_cast<float>(this->coreConfig.trainingConfig.learningRate));
-  }
-
-  if (this->totalBiasSize > 0) {
-    this->oclwCore.addKernel("cnn_update_biases", "cnn_update", this->totalBiasSize, 0);
-    this->oclwCore. template addArgument<T>("cnn_update_biases", "cnn_biases");
-    this->oclwCore. template addArgument<T>("cnn_update_biases", "cnn_accum_dBiases");
-    this->oclwCore. template addArgument<ulong>("cnn_update_biases", static_cast<ulong>(0));
-    this->oclwCore. template addArgument<ulong>("cnn_update_biases", this->totalBiasSize);
-    this->oclwCore. template addArgument<ulong>("cnn_update_biases", numSamples);
-    this->oclwCore. template addArgument<float>("cnn_update_biases",
-        static_cast<float>(this->coreConfig.trainingConfig.learningRate));
-  }
+  this->addCNNUpdateKernels(numSamples);
+  this->annGPUWorker->addUpdateKernels(numSamples);
 
   this->updateKernelsSetup = true;
 }
@@ -709,8 +755,7 @@ void CoreGPUWorker<T>::setupUpdateKernels(ulong numSamples) {
 template <typename T>
 void CoreGPUWorker<T>::invalidateAllKernelFlags() {
   this->predictKernelsSetup = false;
-  this->backpropagateKernelsSetup = false;
-  this->accumulateKernelsSetup = false;
+  this->trainingKernelsSetup = false;
   this->updateKernelsSetup = false;
 }
 
@@ -721,27 +766,20 @@ void CoreGPUWorker<T>::invalidateAllKernelFlags() {
 
 template <typename T>
 Output<T> CoreGPUWorker<T>::predict(const Input<T>& input) {
-  // Set up forward kernels if needed
+  // Set up predict kernels if needed (CNN forward → bridge → ANN forward)
   if (!this->predictKernelsSetup) {
     this->setupPredictKernels();
   }
 
   // Write input to cnn_actvs at offset 0
   std::vector<T> inputVec(input.data.begin(), input.data.end());
-  this->oclwCore. template writeBuffer<T>("cnn_actvs", inputVec, 0);
+  this->core->template writeBuffer<T>("cnn_actvs", inputVec, 0);
 
-  // Run forward CNN kernels
-  this->oclwCore.run();
+  // Single run: CNN forward → copy_cnn_to_ann → ANN forward
+  this->core->run();
 
-  // Read CNN output from the last CNN layer's activation region
-  ulong lastLayerIdx = this->layerInfos.size() - 1;
-  ulong outputOffset = this->layerInfos[lastLayerIdx].actvOffset;
-  std::vector<T> cnnOutput(this->flattenSize);
-  this->oclwCore. template readBuffer<T>("cnn_actvs", cnnOutput, outputOffset);
-
-  // Forward through ANN dense layers
-  ANN::Input<T> annInput(cnnOutput.begin(), cnnOutput.end());
-  ANN::Output<T> annOutput = this->annCore->predict(annInput);
+  // Read ANN output
+  ANN::Output<T> annOutput = this->annGPUWorker->readOutput();
 
   return Output<T>(annOutput.begin(), annOutput.end());
 }
@@ -758,9 +796,13 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, ulong startIdx, ulong
 
   T subsetLoss = static_cast<T>(0);
 
-  // Reset accumulators
+  // Reset CNN and ANN accumulators
   this->resetAccumulators();
-  this->annCore->resetAccumulators();
+
+  // Set up training kernels once (full forward + backward + accumulate pipeline)
+  if (!this->trainingKernelsSetup) {
+    this->setupTrainingKernels();
+  }
 
   // Progress reporting
   ulong progressReports = this->coreConfig.trainingConfig.progressReports;
@@ -768,45 +810,27 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, ulong startIdx, ulong
   const ulong progressInterval = std::max(static_cast<ulong>(1), numSamplesInSubset / progressReports);
   ulong lastReportedSample = 0;
 
+  ulong lastANNLayerNeurons = this->annGPUWorker->getParameters().biases.back().size();
+
   for (ulong s = startIdx; s < endIdx; s++) {
     const Sample<T>& sample = samples[s];
 
-    // === Phase 1: Forward CNN on GPU ===
-    if (!this->predictKernelsSetup) {
-      this->setupPredictKernels();
-    }
-
+    // Write CNN input to GPU
     std::vector<T> inputVec(sample.input.data.begin(), sample.input.data.end());
-    this->oclwCore. template writeBuffer<T>("cnn_actvs", inputVec, 0);
-    this->oclwCore.run();
+    this->core->template writeBuffer<T>("cnn_actvs", inputVec, 0);
 
-    // Read CNN output
-    ulong lastLayerIdx = this->layerInfos.size() - 1;
-    ulong outputOffset = this->layerInfos[lastLayerIdx].actvOffset;
-    std::vector<T> cnnOutput(this->flattenSize);
-    this->oclwCore. template readBuffer<T>("cnn_actvs", cnnOutput, outputOffset);
+    // Write ANN expected output to GPU (for loss computation in backward pass)
+    std::vector<T> expectedVec(sample.output.begin(), sample.output.end());
+    this->core->template writeBuffer<T>("outputs", expectedVec, 0);
 
-    // === Phase 2: ANN forward + backward on CPU ===
-    ANN::Input<T> annInput(cnnOutput.begin(), cnnOutput.end());
-    ANN::Output<T> annOutput = this->annCore->predict(annInput);
+    // Single run: CNN forward → bridge → ANN forward → ANN backward → reverse bridge → CNN backward → accumulate
+    this->core->run();
 
+    // Read ANN output for loss calculation
+    ANN::Output<T> annOutput = this->annGPUWorker->readOutput();
     Output<T> predicted(annOutput.begin(), annOutput.end());
     T sampleLoss = this->calculateLoss(predicted, sample.output);
     subsetLoss += sampleLoss;
-
-    ANN::Output<T> annExpected(sample.output.begin(), sample.output.end());
-    ANN::Tensor1D<T> dFlatInput = this->annCore->backpropagate(annExpected);
-    this->annCore->accumulate();
-
-    // === Phase 3: Backward + Accumulate CNN on GPU ===
-    if (!this->backpropagateKernelsSetup) {
-      this->setupBackpropagateKernels();
-    }
-
-    // Write gradient to the CNN output region in cnn_grads
-    std::vector<T> gradVec(dFlatInput.begin(), dFlatInput.end());
-    this->oclwCore. template writeBuffer<T>("cnn_grads", gradVec, outputOffset);
-    this->oclwCore.run();
 
     // Report progress
     ulong currentSample = s - startIdx + 1;
@@ -849,50 +873,30 @@ T CoreGPUWorker<T>::testSubset(const Samples<T>& samples, ulong startIdx, ulong 
 
 template <typename T>
 void CoreGPUWorker<T>::backpropagateSample(const Input<T>& input, const Output<T>& expected) {
-  // Forward CNN on GPU
-  if (!this->predictKernelsSetup) {
-    this->setupPredictKernels();
+  // Set up full training pipeline if needed
+  if (!this->trainingKernelsSetup) {
+    this->setupTrainingKernels();
   }
 
+  // Write CNN input to GPU
   std::vector<T> inputVec(input.data.begin(), input.data.end());
-  this->oclwCore. template writeBuffer<T>("cnn_actvs", inputVec, 0);
-  this->oclwCore.run();
+  this->core->template writeBuffer<T>("cnn_actvs", inputVec, 0);
 
-  // Read CNN output
-  ulong lastLayerIdx = this->layerInfos.size() - 1;
-  ulong outputOffset = this->layerInfos[lastLayerIdx].actvOffset;
-  std::vector<T> cnnOutput(this->flattenSize);
-  this->oclwCore. template readBuffer<T>("cnn_actvs", cnnOutput, outputOffset);
+  // Write ANN expected output to GPU
+  std::vector<T> expectedVec(expected.begin(), expected.end());
+  this->core->template writeBuffer<T>("outputs", expectedVec, 0);
 
-  // ANN forward + backward on CPU
-  ANN::Input<T> annInput(cnnOutput.begin(), cnnOutput.end());
-  this->annCore->predict(annInput);
-
-  ANN::Output<T> annExpected(expected.begin(), expected.end());
-  ANN::Tensor1D<T> dFlatInput = this->annCore->backpropagate(annExpected);
-  this->annCore->accumulate();
-
-  // Backward + Accumulate CNN on GPU
-  if (!this->backpropagateKernelsSetup) {
-    this->setupBackpropagateKernels();
-  }
-
-  std::vector<T> gradVec(dFlatInput.begin(), dFlatInput.end());
-  this->oclwCore. template writeBuffer<T>("cnn_grads", gradVec, outputOffset);
-  this->oclwCore.run();
+  // Single run: full forward + backward + accumulate
+  this->core->run();
 }
 
 //===================================================================================================================//
-//-- Step-by-step: accumulate --//
+//-- Step-by-step: accumulate (no-op — accumulation is baked into training pipeline) --//
 //===================================================================================================================//
 
 template <typename T>
 void CoreGPUWorker<T>::accumulate() {
-  if (!this->accumulateKernelsSetup) {
-    this->setupAccumulateKernels();
-  }
-
-  this->oclwCore.run();
+  // No-op: accumulation is part of the training kernel pipeline
 }
 
 //===================================================================================================================//
@@ -901,19 +905,23 @@ void CoreGPUWorker<T>::accumulate() {
 
 template <typename T>
 void CoreGPUWorker<T>::resetAccumulators() {
+  // Reset CNN accumulators
   if (this->totalFilterSize > 0) {
     std::vector<T> zeros(this->totalFilterSize, static_cast<T>(0));
-    this->oclwCore. template writeBuffer<T>("cnn_accum_dFilters", zeros, 0);
+    this->core->template writeBuffer<T>("cnn_accum_dFilters", zeros, 0);
   }
 
   if (this->totalBiasSize > 0) {
     std::vector<T> zeros(this->totalBiasSize, static_cast<T>(0));
-    this->oclwCore. template writeBuffer<T>("cnn_accum_dBiases", zeros, 0);
+    this->core->template writeBuffer<T>("cnn_accum_dBiases", zeros, 0);
   }
+
+  // Reset ANN accumulators
+  this->annGPUWorker->resetAccumulators();
 }
 
 //===================================================================================================================//
-//-- Gradient access (for multi-GPU merging) --//
+//-- CNN Gradient access (for multi-GPU merging) --//
 //===================================================================================================================//
 
 template <typename T>
@@ -922,11 +930,11 @@ void CoreGPUWorker<T>::readAccumulatedGradients(std::vector<T>& accumFilters, st
   accumBiases.resize(this->totalBiasSize);
 
   if (this->totalFilterSize > 0) {
-    this->oclwCore. template readBuffer<T>("cnn_accum_dFilters", accumFilters, 0);
+    this->core->template readBuffer<T>("cnn_accum_dFilters", accumFilters, 0);
   }
 
   if (this->totalBiasSize > 0) {
-    this->oclwCore. template readBuffer<T>("cnn_accum_dBiases", accumBiases, 0);
+    this->core->template readBuffer<T>("cnn_accum_dBiases", accumBiases, 0);
   }
 }
 
@@ -935,14 +943,29 @@ void CoreGPUWorker<T>::readAccumulatedGradients(std::vector<T>& accumFilters, st
 template <typename T>
 void CoreGPUWorker<T>::setAccumulators(const std::vector<T>& accumFilters, const std::vector<T>& accumBiases) {
   if (this->totalFilterSize > 0) {
-    this->oclwCore. template writeBuffer<T>("cnn_accum_dFilters", accumFilters, 0);
+    this->core->template writeBuffer<T>("cnn_accum_dFilters", accumFilters, 0);
   }
 
   if (this->totalBiasSize > 0) {
-    this->oclwCore. template writeBuffer<T>("cnn_accum_dBiases", accumBiases, 0);
+    this->core->template writeBuffer<T>("cnn_accum_dBiases", accumBiases, 0);
   }
 }
 
+//===================================================================================================================//
+//-- ANN Gradient access (for multi-GPU merging) --//
+//===================================================================================================================//
+
+template <typename T>
+void CoreGPUWorker<T>::readANNAccumulatedGradients(ANN::Tensor1D<T>& accumWeights, ANN::Tensor1D<T>& accumBiases) {
+  this->annGPUWorker->readAccumulatedGradients(accumWeights, accumBiases);
+}
+
+//===================================================================================================================//
+
+template <typename T>
+void CoreGPUWorker<T>::setANNAccumulators(const ANN::Tensor1D<T>& accumWeights, const ANN::Tensor1D<T>& accumBiases) {
+  this->annGPUWorker->setAccumulators(accumWeights, accumBiases);
+}
 
 //===================================================================================================================//
 //-- Weight update --//
@@ -950,27 +973,9 @@ void CoreGPUWorker<T>::setAccumulators(const std::vector<T>& accumFilters, const
 
 template <typename T>
 void CoreGPUWorker<T>::update(ulong numSamples) {
-  this->updateCNN(numSamples);
-  this->updateANN(numSamples);
-}
-
-//===================================================================================================================//
-
-template <typename T>
-void CoreGPUWorker<T>::updateCNN(ulong numSamples) {
-  if (!this->updateKernelsSetup) {
-    this->setupUpdateKernels(numSamples);
-  }
-
-  this->oclwCore.run();
+  this->setupUpdateKernels(numSamples);
+  this->core->run();
   this->invalidateAllKernelFlags();
-}
-
-//===================================================================================================================//
-
-template <typename T>
-void CoreGPUWorker<T>::updateANN(ulong numSamples) {
-  this->annCore->update(numSamples);
 }
 
 //===================================================================================================================//
@@ -979,10 +984,10 @@ void CoreGPUWorker<T>::updateANN(ulong numSamples) {
 
 template <typename T>
 void CoreGPUWorker<T>::syncParametersFromGPU() {
-  // Read filters from GPU and scatter back to per-layer parameters
+  // Read CNN filters from GPU and scatter back to per-layer parameters
   if (this->totalFilterSize > 0) {
     std::vector<T> flatFilters(this->totalFilterSize);
-    this->oclwCore. template readBuffer<T>("cnn_filters", flatFilters, 0);
+    this->core->template readBuffer<T>("cnn_filters", flatFilters, 0);
 
     for (ulong i = 0; i < this->convInfos.size(); i++) {
       ulong offset = this->convInfos[i].filterOffset;
@@ -993,10 +998,10 @@ void CoreGPUWorker<T>::syncParametersFromGPU() {
     }
   }
 
-  // Read biases from GPU and scatter back to per-layer parameters
+  // Read CNN biases from GPU and scatter back to per-layer parameters
   if (this->totalBiasSize > 0) {
     std::vector<T> flatBiases(this->totalBiasSize);
-    this->oclwCore. template readBuffer<T>("cnn_biases", flatBiases, 0);
+    this->core->template readBuffer<T>("cnn_biases", flatBiases, 0);
 
     for (ulong i = 0; i < this->convInfos.size(); i++) {
       ulong offset = this->convInfos[i].biasOffset;
@@ -1007,24 +1012,9 @@ void CoreGPUWorker<T>::syncParametersFromGPU() {
     }
   }
 
-  // Sync ANN dense layer parameters
-  this->parameters.denseParams = this->annCore->getParameters();
-}
-
-//===================================================================================================================//
-//-- Parameter access: ANN dense layers --//
-//===================================================================================================================//
-
-template <typename T>
-ANN::Parameters<T> CoreGPUWorker<T>::getANNParameters() const {
-  return this->annCore->getParameters();
-}
-
-//===================================================================================================================//
-
-template <typename T>
-void CoreGPUWorker<T>::setANNParameters(const ANN::Parameters<T>& params) {
-  this->annCore->setParameters(params);
+  // Sync ANN dense layer parameters from GPU
+  this->annGPUWorker->syncParametersFromGPU();
+  this->parameters.denseParams = this->annGPUWorker->getParameters();
 }
 
 //===================================================================================================================//

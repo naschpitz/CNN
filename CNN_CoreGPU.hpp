@@ -29,7 +29,7 @@ namespace CNN {
 
       //-- Training coordination --//
       void mergeCNNGradients();
-      void mergeANNParameters();
+      void mergeANNGradients();
   };
 }
 
