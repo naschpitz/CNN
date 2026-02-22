@@ -203,8 +203,12 @@ template <typename T>
 void CoreGPUWorker<T>::allocateBuffers() {
   if (this->verbose) std::cout << "Loading CNN OpenCL kernels...\n";
 
-  this->oclwCore.addSourceFile("opencl/CNN_Defines.hpp.cl");
-  this->oclwCore.addSourceFile("opencl/CNN_Kernels.cpp.cl");
+  // Resolve .cl file paths relative to the source file's directory (via __FILE__),
+  // so the kernels are found regardless of the current working directory.
+  std::string srcFile = __FILE__;
+  std::string srcDir = srcFile.substr(0, srcFile.find_last_of("/\\") + 1);
+  this->oclwCore.addSourceFile(srcDir + "opencl/CNN_Defines.hpp.cl");
+  this->oclwCore.addSourceFile(srcDir + "opencl/CNN_Kernels.cpp.cl");
 
   if (this->verbose) std::cout << "CNN OpenCL kernels loaded.\n";
 
