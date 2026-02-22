@@ -41,7 +41,6 @@ add_library(CNN STATIC
   CNN_TrainingMetadata.hpp
   CNN_PredictMetadata.hpp
   CNN_TestResult.hpp
-  CNN_Utils.hpp CNN_Utils.cpp
   CNN_Conv2D.hpp CNN_Conv2D.cpp
   CNN_ReLU.hpp CNN_ReLU.cpp
   CNN_Pool.hpp CNN_Pool.cpp
@@ -61,9 +60,7 @@ target_link_libraries(CNN
 
 target_compile_definitions(CNN PRIVATE CNN_LIBRARY)
 
-# nlohmann JSON library (header-only)
-set(LIB_NLOHMANN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libs/nlohmann")
-target_include_directories(CNN PUBLIC ${LIB_NLOHMANN_DIR})
+
 
 
 # Test executable

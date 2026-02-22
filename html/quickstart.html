@@ -101,30 +101,11 @@ target_link_libraries(your_app <span class="keyword">PRIVATE</span> CNN)
 }
 </code></pre>
 
-<h2>JSON Configuration</h2>
-<p>Networks can also be configured via JSON (used by <a href="../../NN-CLI/html/index.html">NN-CLI</a>):</p>
-<pre><code>{
-  <span class="string">"mode"</span>: <span class="string">"train"</span>,
-  <span class="string">"device"</span>: <span class="string">"cpu"</span>,
-  <span class="string">"inputShape"</span>: { <span class="string">"c"</span>: <span class="number">1</span>, <span class="string">"h"</span>: <span class="number">28</span>, <span class="string">"w"</span>: <span class="number">28</span> },
-  <span class="string">"cnnLayersConfig"</span>: [
-    { <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">8</span>, <span class="string">"filterH"</span>: <span class="number">3</span>, <span class="string">"filterW"</span>: <span class="number">3</span>,
-      <span class="string">"strideY"</span>: <span class="number">1</span>, <span class="string">"strideX"</span>: <span class="number">1</span>, <span class="string">"slidingStrategy"</span>: <span class="string">"valid"</span> },
-    { <span class="string">"type"</span>: <span class="string">"relu"</span> },
-    { <span class="string">"type"</span>: <span class="string">"pool"</span>, <span class="string">"poolType"</span>: <span class="string">"max"</span>, <span class="string">"poolH"</span>: <span class="number">2</span>, <span class="string">"poolW"</span>: <span class="number">2</span>,
-      <span class="string">"strideY"</span>: <span class="number">2</span>, <span class="string">"strideX"</span>: <span class="number">2</span> },
-    { <span class="string">"type"</span>: <span class="string">"flatten"</span> }
-  ],
-  <span class="string">"denseLayersConfig"</span>: [
-    { <span class="string">"numNeurons"</span>: <span class="number">64</span>, <span class="string">"actvFunc"</span>: <span class="string">"relu"</span> },
-    { <span class="string">"numNeurons"</span>: <span class="number">10</span>, <span class="string">"actvFunc"</span>: <span class="string">"sigmoid"</span> }
-  ],
-  <span class="string">"trainingConfig"</span>: {
-    <span class="string">"numEpochs"</span>: <span class="number">10</span>,
-    <span class="string">"learningRate"</span>: <span class="number">0.01</span>
-  }
-}
-</code></pre>
+<div class="tip-box">
+  CNN is a pure computational library — it has no built-in file I/O. The calling application
+  (e.g. <a href="../../NN-CLI/html/index.html">NN-CLI</a>) is responsible for loading configuration
+  and saving trained models.
+</div>
 
 </main>
 </div>

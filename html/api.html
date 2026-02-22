@@ -39,7 +39,7 @@
     <li><a href="#corecpu">CoreCPU&lt;T&gt;</a></li>
     <li><a href="#coregpu">CoreGPU&lt;T&gt; &amp; CoreGPUWorker&lt;T&gt;</a></li>
     <li><a href="#layers">Layer Classes</a></li>
-    <li><a href="#utils">Utils&lt;T&gt;</a></li>
+
   </ol>
 </div>
 
@@ -263,14 +263,7 @@
   <tr><td><code>backpropagate(dOut, inputShape)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Reshape 1D → 3D</td></tr>
 </table>
 
-<h2 id="utils">8. Utils&lt;T&gt;</h2>
-<table>
-  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-  <tr><td><code>load(configFilePath)</code></td><td><code>unique_ptr&lt;Core&lt;T&gt;&gt;</code></td><td>Load model from JSON config file</td></tr>
-  <tr><td><code>save(core)</code></td><td><code>string</code></td><td>Serialise model to JSON string</td></tr>
-  <tr><td><code>save(core, filePath)</code></td><td><code>void</code></td><td>Serialise model to JSON file</td></tr>
-  <tr><td><code>loadSamples(path, inputShape)</code></td><td><code>Samples&lt;T&gt;</code></td><td>Load samples from JSON file, reshape to inputShape</td></tr>
-</table>
+
 
 <div class="info-box">
   <strong>Template instantiations:</strong> All classes are explicitly instantiated for <code>int</code>, <code>float</code>, and <code>double</code>.

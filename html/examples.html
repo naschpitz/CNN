@@ -158,25 +158,7 @@ std::cout &lt;&lt; <span class="string">"Total loss: "</span> &lt;&lt; result.to
 std::cout &lt;&lt; <span class="string">"Average loss: "</span> &lt;&lt; result.averageLoss &lt;&lt; std::endl;
 </code></pre>
 
-<h2>5. Save &amp; Load</h2>
-
-<p>Persist and restore trained models:</p>
-
-<pre><code><span class="comment">// Save model to JSON file</span>
-CNN::Utils&lt;<span class="type">float</span>&gt;::<span class="func">save</span>(*core, <span class="string">"model.json"</span>);
-
-<span class="comment">// Load model from file</span>
-<span class="keyword">auto</span> loadedCore = CNN::Utils&lt;<span class="type">float</span>&gt;::<span class="func">load</span>(<span class="string">"model.json"</span>);
-
-<span class="comment">// Use loaded model for prediction</span>
-CNN::Output&lt;<span class="type">float</span>&gt; output = loadedCore-&gt;<span class="func">predict</span>(input);
-</code></pre>
-
-<div class="info-box">
-  The saved JSON file includes all layer parameters, configuration, and training metadata. This allows you to resume training or deploy the model in production.
-</div>
-
-<h2>6. GPU Training</h2>
+<h2>5. GPU Training</h2>
 
 <p>Switch to GPU acceleration with minimal code changes:</p>
 
@@ -201,7 +183,7 @@ core-&gt;<span class="func">train</span>(samples);
   Set <code>numGPUs = 0</code> to automatically use all available GPUs, or specify a number to use that many GPUs. GPU training requires OpenCL 1.2 or later.
 </div>
 
-<h2>7. Step-by-Step Training</h2>
+<h2>6. Step-by-Step Training</h2>
 
 <p>Manual epoch loop with custom callbacks:</p>
 
