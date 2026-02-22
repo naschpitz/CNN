@@ -35,6 +35,7 @@ Core<T>::Core(const CoreConfig<T>& coreConfig)
   this->layersConfig = coreConfig.layersConfig;
   this->trainingConfig = coreConfig.trainingConfig;
   this->parameters = coreConfig.parameters;
+  this->progressReports = coreConfig.progressReports;
   this->verbose = coreConfig.verbose;
 }
 

@@ -39,7 +39,7 @@ static void testEndToEnd() {
 
   config.trainingConfig.numEpochs = 100;
   config.trainingConfig.learningRate = 0.5f;
-  config.trainingConfig.progressReports = 0;
+  config.progressReports = 0;
 
   // "bright" (gradient-fill) → 1, "dark" (all 0s) → 0
   CNN::Samples<double> samples(2);
@@ -123,7 +123,7 @@ static void testMultiConvStack() {
   config.parameters.convParams = {initConv1, initConv2};
   config.trainingConfig.numEpochs = 500;
   config.trainingConfig.learningRate = 0.5f;
-  config.trainingConfig.progressReports = 0;
+  config.progressReports = 0;
 
   CNN::Samples<double> samples(2);
   samples[0].input = makeGradientInput<double>({1, 8, 8});
@@ -198,7 +198,7 @@ static void testConvPoolConv() {
   config.parameters.convParams = {initConv1, initConv2};
   config.trainingConfig.numEpochs = 500;
   config.trainingConfig.learningRate = 0.5f;
-  config.trainingConfig.progressReports = 0;
+  config.progressReports = 0;
 
   CNN::Samples<double> samples(2);
   samples[0].input = makeGradientInput<double>({1, 10, 10});
@@ -257,7 +257,7 @@ static void testMultiChannelInput() {
 
   config.trainingConfig.numEpochs = 200;
   config.trainingConfig.learningRate = 0.1f;
-  config.trainingConfig.progressReports = 0;
+  config.progressReports = 0;
 
   CNN::Samples<double> samples(2);
   samples[0].input = makeGradientInput<double>({3, 6, 6}, 0.3, 1.0);
@@ -315,7 +315,7 @@ static void testParameterRoundTrip() {
 
   config.trainingConfig.numEpochs = 50;
   config.trainingConfig.learningRate = 0.5f;
-  config.trainingConfig.progressReports = 0;
+  config.progressReports = 0;
 
   auto core = CNN::Core<double>::makeCore(config);
 
@@ -397,7 +397,7 @@ static void testMultipleOutputNeurons() {
 
   config.trainingConfig.numEpochs = 500;
   config.trainingConfig.learningRate = 0.5f;
-  config.trainingConfig.progressReports = 0;
+  config.progressReports = 0;
 
   CNN::Samples<double> samples(2);
   samples[0].input = makeGradientInput<double>({1, 8, 8});

@@ -393,8 +393,8 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
     qDebug() << "CNN Training: " << numEpochs << " epochs, " << numSamples << " samples";
   }
 
-  ulong progressInterval = (this->trainingConfig.progressReports > 0)
-    ? std::max(static_cast<ulong>(1), numSamples / this->trainingConfig.progressReports)
+  ulong progressInterval = (this->progressReports > 0)
+    ? std::max(static_cast<ulong>(1), numSamples / this->progressReports)
     : 0;
 
   for (ulong e = 0; e < numEpochs; e++) {

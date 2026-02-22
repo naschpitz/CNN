@@ -805,7 +805,7 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, ulong startIdx, ulong
   }
 
   // Progress reporting
-  ulong progressReports = this->coreConfig.trainingConfig.progressReports;
+  ulong progressReports = this->coreConfig.progressReports;
   if (progressReports == 0) progressReports = 1000;
   const ulong progressInterval = std::max(static_cast<ulong>(1), numSamplesInSubset / progressReports);
   ulong lastReportedSample = 0;

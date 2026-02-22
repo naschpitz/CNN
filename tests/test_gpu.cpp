@@ -40,7 +40,7 @@ static void testGPUEndToEnd() {
 
   config.trainingConfig.numEpochs = 100;
   config.trainingConfig.learningRate = 0.5f;
-  config.trainingConfig.progressReports = 0;
+  config.progressReports = 0;
   config.trainingConfig.numGPUs = 1;
 
   // "bright" (gradient-fill) → 1, "dark" (all 0s) → 0
@@ -115,7 +115,7 @@ static void testGPUPredictOnly() {
 
   cpuConfig.trainingConfig.numEpochs = 50;
   cpuConfig.trainingConfig.learningRate = 0.5f;
-  cpuConfig.trainingConfig.progressReports = 0;
+  cpuConfig.progressReports = 0;
 
   auto cpuCore = CNN::Core<float>::makeCore(cpuConfig);
 
@@ -207,7 +207,7 @@ static void testGPUWithPoolLayer() {
   config.parameters.convParams = {initConv1, initConv2};
   config.trainingConfig.numEpochs = 500;
   config.trainingConfig.learningRate = 0.5f;
-  config.trainingConfig.progressReports = 0;
+  config.progressReports = 0;
   config.trainingConfig.numGPUs = 1;
 
   CNN::Samples<float> samples(2);
@@ -279,7 +279,7 @@ static void testGPUMultiConvStack() {
   config.parameters.convParams = {initConv1, initConv2};
   config.trainingConfig.numEpochs = 200;
   config.trainingConfig.learningRate = 0.1f;
-  config.trainingConfig.progressReports = 0;
+  config.progressReports = 0;
   config.trainingConfig.numGPUs = 1;
 
   CNN::Samples<float> samples(2);

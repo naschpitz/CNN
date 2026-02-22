@@ -19,6 +19,7 @@ namespace CNN {
     LayersConfig layersConfig;
     TrainingConfig<T> trainingConfig;
     Parameters<T> parameters;
+    ulong progressReports = 1000;  // Number of progress reports (0 = no reports, default = 1000)
     bool verbose = false;
   };
 }
