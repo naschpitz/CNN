@@ -393,10 +393,6 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
     qDebug() << "CNN Training: " << numEpochs << " epochs, " << numSamples << " samples";
   }
 
-  ulong progressInterval = (this->progressReports > 0)
-    ? std::max(static_cast<ulong>(1), numSamples / this->progressReports)
-    : 0;
-
   for (ulong e = 0; e < numEpochs; e++) {
     // Reset accumulators for this epoch
     resetCNNAccumulators();
@@ -443,7 +439,7 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
       accumulateCNNGradients(dConvFilters, dConvBiases);
 
       // Report progress
-      if (progressInterval > 0 && this->trainingCallback && ((s + 1) % progressInterval == 0 || s == numSamples - 1)) {
+      if (this->trainingCallback) {
         TrainingProgress<T> progress;
         progress.currentEpoch = e + 1;
         progress.totalEpochs = numEpochs;

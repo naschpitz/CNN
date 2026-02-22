@@ -804,12 +804,6 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, ulong startIdx, ulong
     this->setupTrainingKernels();
   }
 
-  // Progress reporting
-  ulong progressReports = this->coreConfig.progressReports;
-  if (progressReports == 0) progressReports = 1000;
-  const ulong progressInterval = std::max(static_cast<ulong>(1), numSamplesInSubset / progressReports);
-  ulong lastReportedSample = 0;
-
   ulong lastANNLayerNeurons = this->annGPUWorker->getParameters().biases.back().size();
 
   for (ulong s = startIdx; s < endIdx; s++) {
@@ -833,9 +827,7 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, ulong startIdx, ulong
     subsetLoss += sampleLoss;
 
     // Report progress
-    ulong currentSample = s - startIdx + 1;
-    if (callback && currentSample >= lastReportedSample + progressInterval) {
-      lastReportedSample = currentSample;
+    if (callback) {
       TrainingProgress<T> progress;
       progress.currentEpoch = epoch;
       progress.totalEpochs = totalEpochs;
