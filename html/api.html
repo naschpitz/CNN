@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>API Reference — CNN Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+</head>
+<body>
+<header class="site-header">
+  <button class="hamburger" aria-label="Menu">☰</button>
+  <h1>CNN</h1><span class="subtitle">Convolutional Neural Network Library</span>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav>
+  <div class="section-title">Getting Started</div>
+  <a href="index.html">Home</a>
+  <a href="quickstart.html">Quick Start &amp; Build</a>
+  <a href="examples.html">Code Examples</a>
+  <div class="section-title">Reference</div>
+  <a href="api.html" class="active">API Reference</a>
+  <a href="architecture.html">Architecture</a>
+  <div class="section-title">Deep Dive</div>
+  <a href="layers.html">Layer Documentation</a>
+  <a href="math.html">Mathematical Foundations</a>
+  <a href="gpu.html">GPU Implementation</a>
+</nav></aside>
+<main class="main">
+
+<h1>API Reference</h1>
+
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#types">Types &amp; Aliases</a></li>
+    <li><a href="#enums">Enumerations</a></li>
+    <li><a href="#configs">Configuration Structs</a></li>
+    <li><a href="#core">Core&lt;T&gt; (Base Class)</a></li>
+    <li><a href="#corecpu">CoreCPU&lt;T&gt;</a></li>
+    <li><a href="#coregpu">CoreGPU&lt;T&gt; &amp; CoreGPUWorker&lt;T&gt;</a></li>
+    <li><a href="#layers">Layer Classes</a></li>
+    <li><a href="#utils">Utils&lt;T&gt;</a></li>
+  </ol>
+</div>
+
+<h2 id="types">1. Types &amp; Aliases</h2>
+<table>
+  <tr><th>Type</th><th>Definition</th><th>Description</th></tr>
+  <tr><td><code>Shape3D</code></td><td>struct { ulong c, h, w; }</td><td>3D tensor shape (channels, height, width)</td></tr>
+  <tr><td><code>Tensor3D&lt;T&gt;</code></td><td>struct { Shape3D shape; vector&lt;T&gt; data; }</td><td>3D tensor in flat NCHW layout</td></tr>
+  <tr><td><code>Tensor1D&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>1D tensor</td></tr>
+  <tr><td><code>Input&lt;T&gt;</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Network input (3D image tensor)</td></tr>
+  <tr><td><code>Output&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>Network output (1D classification vector)</td></tr>
+  <tr><td><code>Sample&lt;T&gt;</code></td><td>struct { Input&lt;T&gt; input; Output&lt;T&gt; output; }</td><td>Training/test sample</td></tr>
+  <tr><td><code>Samples&lt;T&gt;</code></td><td><code>std::vector&lt;Sample&lt;T&gt;&gt;</code></td><td>Collection of samples</td></tr>
+</table>
+
+<h3>Shape3D Methods</h3>
+<table>
+  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+  <tr><td><code>size()</code></td><td><code>ulong</code></td><td>Returns <code>c × h × w</code></td></tr>
+  <tr><td><code>operator==()</code></td><td><code>bool</code></td><td>Equality comparison</td></tr>
+</table>
+
+<h3>Tensor3D&lt;T&gt; Methods</h3>
+<table>
+  <tr><th>Method</th><th>Description</th></tr>
+  <tr><td><code>at(c, h, w)</code></td><td>Element access at channel c, row h, column w</td></tr>
+  <tr><td><code>size()</code></td><td>Returns total number of elements</td></tr>
+  <tr><td><code>resize(newShape)</code></td><td>Resize data to new shape</td></tr>
+  <tr><td><code>resize(newShape, value)</code></td><td>Resize and fill with value</td></tr>
+  <tr><td><code>fill(value)</code></td><td>Fill all elements with value</td></tr>
+</table>
+
+<div class="info-box">
+  <strong>NCHW Layout:</strong> <code>data[c * H * W + h * W + w]</code>. Channels are contiguous — all height×width values for channel 0 come first, then channel 1, etc.
+</div>
+
+<h2 id="enums">2. Enumerations</h2>
+
+<h3>DeviceType</h3>
+<table>
+  <tr><th>Value</th><th>Description</th></tr>
+  <tr><td><code>CPU</code></td><td>Multi-threaded CPU execution</td></tr>
+  <tr><td><code>GPU</code></td><td>OpenCL GPU execution</td></tr>
+</table>
+
+<h3>ModeType</h3>
+<table>
+  <tr><th>Value</th><th>Description</th></tr>
+  <tr><td><code>TRAIN</code></td><td>Training mode (forward + backward + update)</td></tr>
+  <tr><td><code>PREDICT</code></td><td>Inference mode (forward only)</td></tr>
+  <tr><td><code>TEST</code></td><td>Evaluation mode (forward + loss calculation)</td></tr>
+</table>
+
+<h3>LayerType</h3>
+<table>
+  <tr><th>Value</th><th>Description</th></tr>
+  <tr><td><code>CONV</code></td><td>2D convolution layer</td></tr>
+  <tr><td><code>RELU</code></td><td>ReLU activation layer</td></tr>
+  <tr><td><code>POOL</code></td><td>Pooling layer (max or average)</td></tr>
+  <tr><td><code>FLATTEN</code></td><td>3D → 1D reshape layer</td></tr>
+</table>
+
+<h3>SlidingStrategyType</h3>
+<table>
+  <tr><th>Value</th><th>Padding</th><th>Effect</th></tr>
+  <tr><td><code>VALID</code></td><td>0</td><td>No padding — output shrinks</td></tr>
+  <tr><td><code>SAME</code></td><td>⌊kernel/2⌋</td><td>Output same size as input (stride=1)</td></tr>
+  <tr><td><code>FULL</code></td><td>kernel − 1</td><td>Maximum padding — output grows</td></tr>
+</table>
+
+<h3>PoolTypeEnum</h3>
+<table>
+  <tr><th>Value</th><th>Description</th></tr>
+  <tr><td><code>MAX</code></td><td>Maximum pooling (stores indices for backprop)</td></tr>
+  <tr><td><code>AVG</code></td><td>Average pooling (distributes gradient evenly)</td></tr>
+</table>
+
+<h2 id="configs">3. Configuration Structs</h2>
+
+<h3>ConvLayerConfig</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>numFilters</code></td><td><code>ulong</code></td><td>Number of output feature maps</td></tr>
+  <tr><td><code>filterH</code></td><td><code>ulong</code></td><td>Filter height</td></tr>
+  <tr><td><code>filterW</code></td><td><code>ulong</code></td><td>Filter width</td></tr>
+  <tr><td><code>strideY</code></td><td><code>ulong</code></td><td>Vertical stride</td></tr>
+  <tr><td><code>strideX</code></td><td><code>ulong</code></td><td>Horizontal stride</td></tr>
+  <tr><td><code>slidingStrategy</code></td><td><code>SlidingStrategyType</code></td><td>Padding strategy (VALID, SAME, FULL)</td></tr>
+</table>
+
+<h3>PoolLayerConfig</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>poolType</code></td><td><code>PoolTypeEnum</code></td><td>MAX or AVG</td></tr>
+  <tr><td><code>poolH</code></td><td><code>ulong</code></td><td>Pool window height</td></tr>
+  <tr><td><code>poolW</code></td><td><code>ulong</code></td><td>Pool window width</td></tr>
+  <tr><td><code>strideY</code></td><td><code>ulong</code></td><td>Vertical stride</td></tr>
+  <tr><td><code>strideX</code></td><td><code>ulong</code></td><td>Horizontal stride</td></tr>
+</table>
+
+<h3>CNNLayerConfig</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>type</code></td><td><code>LayerType</code></td><td>CONV, RELU, POOL, or FLATTEN</td></tr>
+  <tr><td><code>config</code></td><td><code>std::variant&lt;...&gt;</code></td><td>Layer-specific configuration</td></tr>
+</table>
+
+<h3>DenseLayerConfig</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>numNeurons</code></td><td><code>ulong</code></td><td>Number of neurons</td></tr>
+  <tr><td><code>actvFuncType</code></td><td><code>ANN::ActvFuncType</code></td><td>Activation function (RELU, SIGMOID, TANH)</td></tr>
+</table>
+
+<h3>LayersConfig</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>cnnLayers</code></td><td><code>vector&lt;CNNLayerConfig&gt;</code></td><td>Convolutional/pooling/activation layers</td></tr>
+  <tr><td><code>denseLayers</code></td><td><code>vector&lt;DenseLayerConfig&gt;</code></td><td>Fully connected layers (after flatten)</td></tr>
+</table>
+
+<h3>ConvParameters&lt;T&gt;</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>filters</code></td><td><code>vector&lt;T&gt;</code></td><td>Flat: numFilters × inputC × filterH × filterW</td></tr>
+  <tr><td><code>biases</code></td><td><code>vector&lt;T&gt;</code></td><td>One bias per filter</td></tr>
+  <tr><td><code>filterAt(f,c,h,w)</code></td><td><code>T&amp;</code></td><td>Access filter weight at [f][c][h][w]</td></tr>
+</table>
+
+<h3>CoreConfig&lt;T&gt;</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>deviceType</code></td><td><code>DeviceType</code></td><td>CPU or GPU</td></tr>
+  <tr><td><code>modeType</code></td><td><code>ModeType</code></td><td>TRAIN, PREDICT, or TEST</td></tr>
+  <tr><td><code>inputShape</code></td><td><code>Shape3D</code></td><td>Input tensor shape (C, H, W)</td></tr>
+  <tr><td><code>layersConfig</code></td><td><code>LayersConfig</code></td><td>CNN + dense layer configs</td></tr>
+  <tr><td><code>trainingConfig</code></td><td><code>TrainingConfig&lt;T&gt;</code></td><td>Training hyperparameters</td></tr>
+  <tr><td><code>parameters</code></td><td><code>Parameters&lt;T&gt;</code></td><td>Pre-trained parameters (optional)</td></tr>
+  <tr><td><code>verbose</code></td><td><code>bool</code></td><td>Verbose logging</td></tr>
+</table>
+
+<h2 id="core">4. Core&lt;T&gt; — Abstract Base Class</h2>
+<p>Defined in <code>CNN_Core.hpp</code>. All CNN operations go through this interface.</p>
+
+<table>
+  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+  <tr><td><code>makeCore(config)</code></td><td><code>unique_ptr&lt;Core&lt;T&gt;&gt;</code></td><td><strong>Factory:</strong> creates CoreCPU or CoreGPU</td></tr>
+  <tr><td><code>predict(input)</code></td><td><code>Output&lt;T&gt;</code></td><td>Forward pass — CNN → Flatten → ANN</td></tr>
+  <tr><td><code>train(samples)</code></td><td><code>void</code></td><td>Full training loop with SGD</td></tr>
+  <tr><td><code>test(samples)</code></td><td><code>TestResult&lt;T&gt;</code></td><td>Evaluate loss on a test set</td></tr>
+  <tr><td><code>setTrainingCallback(cb)</code></td><td><code>void</code></td><td>Attach progress callback</td></tr>
+  <tr><td><code>getParameters()</code></td><td><code>const Parameters&lt;T&gt;&amp;</code></td><td>Get current conv + dense parameters</td></tr>
+  <tr><td><code>getTrainingMetadata()</code></td><td><code>TrainingMetadata&lt;T&gt;</code></td><td>Timing and loss from last train()</td></tr>
+  <tr><td><code>getPredictMetadata()</code></td><td><code>PredictMetadata&lt;T&gt;</code></td><td>Timing from last predict()</td></tr>
+</table>
+
+<h2 id="corecpu">5. CoreCPU&lt;T&gt;</h2>
+<p>CPU implementation using the ANN library as the dense-layer backend.</p>
+
+<table>
+  <tr><th>Internal Method</th><th>Description</th></tr>
+  <tr><td><code>forwardCNN(input)</code></td><td>Run input through all CNN layers</td></tr>
+  <tr><td><code>forwardCNN(input, intermediates, poolMaxIndices)</code></td><td>Forward pass storing all intermediate activations (for training)</td></tr>
+  <tr><td><code>backwardCNN(dCNNOut, intermediates, poolMaxIndices, dFilters, dBiases)</code></td><td>Backpropagate through CNN layers</td></tr>
+  <tr><td><code>initializeConvParams()</code></td><td>He initialisation for conv filters</td></tr>
+  <tr><td><code>resetCNNAccumulators()</code></td><td>Zero gradient accumulators</td></tr>
+  <tr><td><code>accumulateCNNGradients()</code></td><td>Add sample gradients to accumulators</td></tr>
+  <tr><td><code>updateCNNParameters(numSamples)</code></td><td>SGD update for conv parameters</td></tr>
+</table>
+
+<h2 id="coregpu">6. CoreGPU&lt;T&gt; &amp; CoreGPUWorker&lt;T&gt;</h2>
+<p><code>CoreGPU</code> orchestrates multiple <code>CoreGPUWorker</code> instances for multi-GPU training.</p>
+
+<h3>CoreGPU&lt;T&gt;</h3>
+<table>
+  <tr><th>Method</th><th>Description</th></tr>
+  <tr><td><code>initializeWorkers()</code></td><td>Create one CoreGPUWorker per GPU</td></tr>
+  <tr><td><code>mergeCNNGradients()</code></td><td>Sum CNN accumulators across all GPUs</td></tr>
+  <tr><td><code>mergeANNParameters()</code></td><td>Average dense-layer parameters across GPUs</td></tr>
+</table>
+
+<h3>CoreGPUWorker&lt;T&gt;</h3>
+<table>
+  <tr><th>Method</th><th>Description</th></tr>
+  <tr><td><code>predict(input)</code></td><td>Single-sample inference on GPU</td></tr>
+  <tr><td><code>trainSubset(samples, start, end, ...)</code></td><td>Train on a range of samples</td></tr>
+  <tr><td><code>testSubset(samples, start, end)</code></td><td>Evaluate a range of samples</td></tr>
+  <tr><td><code>readAccumulatedGradients()</code></td><td>Read gradient buffers from GPU</td></tr>
+  <tr><td><code>setAccumulators()</code></td><td>Write merged gradients back to GPU</td></tr>
+  <tr><td><code>update(numSamples)</code></td><td>Run SGD update kernels</td></tr>
+</table>
+
+<h2 id="layers">7. Layer Classes</h2>
+<p>All layer classes are stateless — they expose only <code>static</code> methods.</p>
+
+<h3>Conv2D&lt;T&gt;</h3>
+<table>
+  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+  <tr><td><code>predict(input, config, params)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Forward convolution with padding</td></tr>
+  <tr><td><code>backpropagate(dOut, input, config, params, dFilters, dBiases)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Compute gradients for filters, biases, and input</td></tr>
+</table>
+
+<h3>ReLU&lt;T&gt;</h3>
+<table>
+  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+  <tr><td><code>predict(input)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Element-wise max(0, x)</td></tr>
+  <tr><td><code>backpropagate(dOut, input)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Pass gradient where input &gt; 0</td></tr>
+</table>
+
+<h3>Pool&lt;T&gt;</h3>
+<table>
+  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+  <tr><td><code>predict(input, config, maxIndices)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Max or average pooling; stores max indices</td></tr>
+  <tr><td><code>backpropagate(dOut, inputShape, config, maxIndices)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Route/distribute gradient back through pool</td></tr>
+</table>
+
+<h3>Flatten&lt;T&gt;</h3>
+<table>
+  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+  <tr><td><code>predict(input)</code></td><td><code>Tensor1D&lt;T&gt;</code></td><td>Reshape 3D → 1D (zero-copy)</td></tr>
+  <tr><td><code>backpropagate(dOut, inputShape)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Reshape 1D → 3D</td></tr>
+</table>
+
+<h2 id="utils">8. Utils&lt;T&gt;</h2>
+<table>
+  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+  <tr><td><code>load(configFilePath)</code></td><td><code>unique_ptr&lt;Core&lt;T&gt;&gt;</code></td><td>Load model from JSON config file</td></tr>
+  <tr><td><code>save(core)</code></td><td><code>string</code></td><td>Serialise model to JSON string</td></tr>
+  <tr><td><code>save(core, filePath)</code></td><td><code>void</code></td><td>Serialise model to JSON file</td></tr>
+  <tr><td><code>loadSamples(path, inputShape)</code></td><td><code>Samples&lt;T&gt;</code></td><td>Load samples from JSON file, reshape to inputShape</td></tr>
+</table>
+
+<div class="info-box">
+  <strong>Template instantiations:</strong> All classes are explicitly instantiated for <code>int</code>, <code>float</code>, and <code>double</code>.
+</div>
+
+</main>
+</div>
+<footer class="site-footer">CNN Library Documentation</footer>
+</body></html>
+

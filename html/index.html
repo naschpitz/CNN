@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>CNN — Convolutional Neural Network Library</title>
+  <link rel="stylesheet" href="style.css">
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+</head>
+<body>
+<header class="site-header">
+  <button class="hamburger" aria-label="Menu">☰</button>
+  <h1>CNN</h1><span class="subtitle">Convolutional Neural Network Library</span>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav>
+  <div class="section-title">Getting Started</div>
+  <a href="index.html" class="active">Home</a>
+  <a href="quickstart.html">Quick Start &amp; Build</a>
+  <a href="examples.html">Code Examples</a>
+  <div class="section-title">Reference</div>
+  <a href="api.html">API Reference</a>
+  <a href="architecture.html">Architecture</a>
+  <div class="section-title">Deep Dive</div>
+  <a href="layers.html">Layer Documentation</a>
+  <a href="math.html">Mathematical Foundations</a>
+  <a href="gpu.html">GPU Implementation</a>
+</nav></aside>
+<main class="main">
+
+<h1>CNN — Convolutional Neural Network Library</h1>
+<p>A high-performance, template-based C++17 library for building, training, and running convolutional neural networks. CNN supports both CPU and GPU (OpenCL) execution with multi-GPU training.</p>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin:2rem 0">
+  <div class="card" style="text-align:center">
+    <h3>🧩 Layer Types</h3>
+    <p>Conv2D, ReLU, Pool (Max &amp; Avg), Flatten — compose any architecture</p>
+  </div>
+  <div class="card" style="text-align:center">
+    <h3>⚡ GPU Accelerated</h3>
+    <p>OpenCL kernels for every layer — forward &amp; backward</p>
+  </div>
+  <div class="card" style="text-align:center">
+    <h3>🔗 ANN Integration</h3>
+    <p>Dense layers delegated to ANN library for full pipeline</p>
+  </div>
+  <div class="card" style="text-align:center">
+    <h3>📐 Template-based</h3>
+    <p>Works with <code>int</code>, <code>float</code>, <code>double</code></p>
+  </div>
+</div>
+
+<h2>Overview</h2>
+<p>The CNN library implements a complete convolutional neural network pipeline: 3D tensor input passes through configurable convolutional, activation, and pooling layers, then flattens into a 1D vector for dense layers (handled by the <a href="../../ANN/html/index.html">ANN library</a>). The library handles forward propagation, backpropagation through all layer types, gradient accumulation, and SGD parameter updates.</p>
+
+<h2>Key Features</h2>
+<ul>
+  <li><strong>NCHW tensor layout</strong> — channels-first for optimal convolution performance</li>
+  <li><strong>Padding strategies</strong> — VALID (no padding), SAME (preserve spatial size), FULL</li>
+  <li><strong>Configurable strides</strong> — independent Y and X strides for convolution and pooling</li>
+  <li><strong>He initialisation</strong> — proper weight initialisation for ReLU networks</li>
+  <li><strong>Multi-GPU training</strong> — gradient merging + parameter averaging across GPUs</li>
+  <li><strong>Factory pattern</strong> — transparent CPU/GPU backend selection</li>
+  <li><strong>JSON serialisation</strong> — save and load complete models including parameters</li>
+</ul>
+
+<h2>Documentation</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1.5rem 0">
+  <a href="quickstart.html" class="card" style="text-decoration:none">
+    <h3>🚀 Quick Start &amp; Build</h3>
+    <p>Prerequisites, building from source, CMake integration</p>
+  </a>
+  <a href="examples.html" class="card" style="text-decoration:none">
+    <h3>💻 Code Examples</h3>
+    <p>Creating a CNN, training, prediction, GPU usage</p>
+  </a>
+  <a href="api.html" class="card" style="text-decoration:none">
+    <h3>📚 API Reference</h3>
+    <p>Complete class and type documentation</p>
+  </a>
+  <a href="architecture.html" class="card" style="text-decoration:none">
+    <h3>🏗️ Architecture</h3>
+    <p>Class hierarchy, design patterns, data flow</p>
+  </a>
+  <a href="layers.html" class="card" style="text-decoration:none">
+    <h3>🧱 Layer Documentation</h3>
+    <p>Detailed Conv2D, ReLU, Pool, Flatten documentation</p>
+  </a>
+  <a href="math.html" class="card" style="text-decoration:none">
+    <h3>📐 Mathematical Foundations</h3>
+    <p>Convolution, backpropagation, gradient derivations</p>
+  </a>
+  <a href="gpu.html" class="card" style="text-decoration:none">
+    <h3>🎮 GPU Implementation</h3>
+    <p>OpenCL kernels, buffer layout, multi-GPU coordination</p>
+  </a>
+</div>
+
+<h2>Dependencies</h2>
+<table>
+  <tr><th>Dependency</th><th>Purpose</th><th>Included</th></tr>
+  <tr><td><a href="../../ANN/html/index.html">ANN</a></td><td>Dense layer implementation</td><td>Git submodule</td></tr>
+  <tr><td><a href="https://github.com/naschpitz/openCLWrapper">OpenCLWrapper</a></td><td>OpenCL abstraction</td><td>Git submodule (via ANN)</td></tr>
+  <tr><td>Qt 5/6 Core + Concurrent</td><td>Threading &amp; utilities</td><td>System</td></tr>
+  <tr><td><a href="https://github.com/nlohmann/json">nlohmann/json</a></td><td>JSON serialisation</td><td>Header-only</td></tr>
+</table>
+
+</main>
+</div>
+<footer class="site-footer">CNN Library Documentation</footer>
+</body></html>
+

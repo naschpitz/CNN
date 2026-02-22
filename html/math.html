@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Mathematical Foundations — CNN Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['\\[','\\]']]}};</script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+</head>
+<body>
+<header class="site-header">
+  <button class="hamburger" aria-label="Menu">☰</button>
+  <h1>CNN</h1><span class="subtitle">Convolutional Neural Network Library</span>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav>
+  <div class="section-title">Getting Started</div>
+  <a href="index.html">Home</a>
+  <a href="quickstart.html">Quick Start &amp; Build</a>
+  <a href="examples.html">Code Examples</a>
+  <div class="section-title">Reference</div>
+  <a href="api.html">API Reference</a>
+  <a href="architecture.html">Architecture</a>
+  <div class="section-title">Deep Dive</div>
+  <a href="layers.html">Layer Documentation</a>
+  <a href="math.html" class="active">Mathematical Foundations</a>
+  <a href="gpu.html">GPU Implementation</a>
+</nav></aside>
+<main class="main">
+
+<h1>Mathematical Foundations</h1>
+<p>This page connects every mathematical formula to the exact C++ function that implements it. Understanding these derivations is essential for anyone extending or debugging the library.</p>
+
+<div class="toc">
+  <h4>Table of Contents</h4>
+  <ol>
+    <li><a href="#conv2d">2D Convolution</a></li>
+    <li><a href="#padding-stride">Padding &amp; Stride</a></li>
+    <li><a href="#conv-backprop">Backpropagation through Conv2D</a></li>
+    <li><a href="#pooling-backprop">Pooling Backpropagation</a></li>
+    <li><a href="#relu-backprop">ReLU Backpropagation</a></li>
+    <li><a href="#he-init">He Initialization</a></li>
+    <li><a href="#sgd">SGD Update Rule</a></li>
+    <li><a href="#gradient-flow">End-to-End Gradient Flow</a></li>
+  </ol>
+</div>
+
+<h2 id="conv2d">2D Convolution</h2>
+<p>The 2D convolution operation is the fundamental building block of CNNs. Given an input tensor and a set of learnable filters, convolution produces an output by sliding each filter across the input and computing element-wise products.</p>
+
+<h3>Mathematical Definition</h3>
+<div class="math-block">
+\[
+\text{output}[f, o_h, o_w] = \text{bias}[f] + \sum_{c=0}^{C-1} \sum_{k_h=0}^{K_H-1} \sum_{k_w=0}^{K_W-1} \text{input}[c, o_h \cdot s_y + k_h - p_y, o_w \cdot s_x + k_w - p_x] \cdot \text{filter}[f, c, k_h, k_w]
+\]
+</div>
+
+<h3>Index Notation</h3>
+<ul>
+  <li><strong>f</strong> — Filter index (0 to F-1), determines the output channel</li>
+  <li><strong>c</strong> — Input channel index (0 to C-1)</li>
+  <li><strong>o_h, o_w</strong> — Output spatial position (height, width)</li>
+  <li><strong>k_h, k_w</strong> — Filter kernel position (height, width)</li>
+  <li><strong>s_y, s_x</strong> — Stride in vertical and horizontal directions</li>
+  <li><strong>p_y, p_x</strong> — Padding applied to input (height, width)</li>
+  <li><strong>K_H, K_W</strong> — Filter kernel dimensions</li>
+  <li><strong>C</strong> — Number of input channels</li>
+  <li><strong>F</strong> — Number of filters (output channels)</li>
+</ul>
+
+<div class="info-box">
+The input is padded with zeros before convolution. The term <code>o_h · s_y + k_h - p_y</code> computes the actual input index by accounting for stride, kernel position, and padding offset.
+</div>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>Conv2D&lt;T&gt;::predict(input, config, params)</code> in <code>CNN_Conv2D.cpp</code> implements the full 6-nested-loop convolution.
+On GPU: the <code>conv2d_forward</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code> parallelises over output elements (one work-item per <em>(f, o_h, o_w)</em>).
+</div>
+
+<h2 id="padding-stride">Padding &amp; Stride</h2>
+<p>Padding and stride control the spatial dimensions of the output. The output size formula is:</p>
+
+<div class="math-block">
+\[
+O_H = \left\lfloor \frac{H + 2P_Y - K_H}{S_Y} \right\rfloor + 1
+\]
+</div>
+
+<p>Similarly for width: \(O_W = \left\lfloor \frac{W + 2P_X - K_W}{S_X} \right\rfloor + 1\)</p>
+
+<h3>Padding Modes</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Mode</th>
+      <th>Padding Value</th>
+      <th>Formula</th>
+      <th>Effect</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>VALID</strong></td>
+      <td>P = 0</td>
+      <td>\(O_H = \lfloor \frac{H - K_H}{S_Y} \rfloor + 1\)</td>
+      <td>Output shrinks; no padding</td>
+    </tr>
+    <tr>
+      <td><strong>SAME</strong></td>
+      <td>P = ⌊K/2⌋</td>
+      <td>\(O_H = \lceil \frac{H}{S_Y} \rceil\)</td>
+      <td>Preserves spatial dims when stride=1</td>
+    </tr>
+    <tr>
+      <td><strong>FULL</strong></td>
+      <td>P = K - 1</td>
+      <td>\(O_H = H + K_H - 1\)</td>
+      <td>Output expands; maximum padding</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="tip-box">
+When using SAME padding with stride=1, the output spatial dimensions exactly match the input dimensions. This is useful for building deep networks without spatial collapse.
+</div>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>SlidingStrategy::computePadding(kernelSize, strategy)</code> in <code>CNN_SlidingStrategy.hpp</code> returns 0 (VALID), ⌊K/2⌋ (SAME), or K−1 (FULL). The output dimensions are computed inside <code>Conv2D&lt;T&gt;::predict()</code> using the formula above.
+</div>
+
+<h2 id="conv-backprop">Backpropagation through Conv2D</h2>
+<p>During backpropagation, gradients flow backward through the convolution layer. Given the upstream gradient \(\frac{\partial L}{\partial O[f,o_h,o_w]}\), we compute gradients with respect to filters, biases, and inputs.</p>
+
+<h3>Filter Gradient</h3>
+<div class="math-block">
+\[
+\frac{\partial L}{\partial W[f,c,k_h,k_w]} = \sum_{o_h} \sum_{o_w} \frac{\partial L}{\partial O[f,o_h,o_w]} \cdot X[c, o_h \cdot s_y + k_h - p_y, o_w \cdot s_x + k_w - p_x]
+\]
+</div>
+<p>This accumulates the product of the upstream gradient and the corresponding input patch for each output position.</p>
+
+<div class="tip-box">
+<strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> in <code>CNN_Conv2D.cpp</code> — the line <code>dFilters[filterIdx] += dOutVal * input.at(c, ih, iw)</code>.
+On GPU: <code>conv2d_backward_filters</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code> (one work-item per filter weight element).
+</div>
+
+<h3>Bias Gradient</h3>
+<div class="math-block">
+\[
+\frac{\partial L}{\partial b[f]} = \sum_{o_h} \sum_{o_w} \frac{\partial L}{\partial O[f,o_h,o_w]}
+\]
+</div>
+<p>The bias gradient is simply the sum of all upstream gradients for that filter across all spatial positions.</p>
+
+<div class="tip-box">
+<strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> — the line <code>dBiases[f] += dOutVal</code>.
+On GPU: <code>conv2d_backward_biases</code> kernel (one work-item per filter).
+</div>
+
+<h3>Input Gradient</h3>
+<div class="math-block">
+\[
+\frac{\partial L}{\partial X[c,i_h,i_w]} = \sum_f \sum_{k_h} \sum_{k_w} \frac{\partial L}{\partial O[f,o_h,o_w]} \cdot W[f,c,k_h,k_w]
+\]
+</div>
+<p>where \(o_h = \frac{i_h + p_y - k_h}{s_y}\) (only when evenly divisible). The input gradient is computed by accumulating contributions from all filters and kernel positions that touch each input element.</p>
+
+<div class="tip-box">
+<strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> — the line <code>dInput.at(c, ih, iw) += dOutVal * params.filterAt(f, c, kh, kw)</code>.
+On GPU: <code>conv2d_backward_input</code> kernel (one work-item per input element, reverses the forward mapping).
+</div>
+
+<div class="info-box">
+The input gradient is essential when stacking multiple convolutional layers, since it propagates the error signal to previous layers. In <code>CoreCPU&lt;T&gt;::backwardCNN()</code>, this gradient is passed as <code>dCurrent</code> to the next layer in reverse order.
+</div>
+
+<h2 id="pooling-backprop">Pooling Backpropagation</h2>
+<p>Pooling layers reduce spatial dimensions by aggregating values. During backpropagation, gradients must be routed back to the input elements that contributed to the pooling operation.</p>
+
+<h3>Max Pooling</h3>
+<p>In max pooling, only the maximum value in each pool window contributes to the output. During backpropagation, the gradient flows entirely to the position of the maximum value:</p>
+
+<div class="math-block">
+\[
+\frac{\partial L}{\partial X[c,i_h,i_w]} = \begin{cases} \frac{\partial L}{\partial O[c,o_h,o_w]} & \text{if } (i_h, i_w) = \text{argmax} \\ 0 & \text{otherwise} \end{cases}
+\]
+</div>
+
+<h3>Average Pooling</h3>
+<p>In average pooling, the output is the mean of all values in the pool window. The gradient is distributed equally among all input elements:</p>
+
+<div class="math-block">
+\[
+\frac{\partial L}{\partial X[c,i_h,i_w]} = \frac{1}{P_H \cdot P_W} \cdot \frac{\partial L}{\partial O[c,o_h,o_w]}
+\]
+</div>
+
+<p>where \(P_H\) and \(P_W\) are the pool window dimensions.</p>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>Pool&lt;T&gt;::predict(input, config, maxIndices)</code> in <code>CNN_Pool.cpp</code> implements both modes. For max pooling, it stores the flat index of each maximum in <code>maxIndices</code>. <code>Pool&lt;T&gt;::backpropagate()</code> routes the gradient to <code>dInput.data[maxIdx]</code> (max) or distributes <code>dOutVal / count</code> evenly (avg).
+On GPU: <code>maxpool_forward</code> records indices, <code>maxpool_backward</code> routes gradients (both in <code>opencl/CNN_Kernels.cpp.cl</code>).
+</div>
+
+<div class="info-box">
+Max pooling is more commonly used in practice because it preserves sharp features and provides implicit regularization. Average pooling is sometimes used in the final layers for global feature aggregation.
+</div>
+
+<h2 id="relu-backprop">ReLU Backpropagation</h2>
+<p>The Rectified Linear Unit (ReLU) activation function is defined as \(y = \max(0, x)\). During backpropagation, the gradient is zero for negative inputs and passes through unchanged for positive inputs:</p>
+
+<div class="math-block">
+\[
+\frac{\partial L}{\partial X_i} = \begin{cases} \frac{\partial L}{\partial Y_i} & \text{if } X_i > 0 \\ 0 & \text{otherwise} \end{cases}
+\]
+</div>
+
+<p>This can be written compactly as: \(\frac{\partial L}{\partial X_i} = \mathbb{1}_{X_i > 0} \cdot \frac{\partial L}{\partial Y_i}\), where \(\mathbb{1}\) is the indicator function.</p>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>ReLU&lt;T&gt;::predict(input)</code> and <code>ReLU&lt;T&gt;::backpropagate(dOut, input)</code> in <code>CNN_ReLU.cpp</code>. The backward pass uses the original input to determine where the gradient passes through (<code>input.data[i] &gt; 0</code>).
+On GPU: <code>relu_forward</code> and <code>relu_backward</code> kernels in <code>opencl/CNN_Kernels.cpp.cl</code>.
+</div>
+
+<div class="info-box">
+ReLU is computationally efficient and helps mitigate the vanishing gradient problem compared to sigmoid or tanh activations. The gradient is either 0 or 1, making backpropagation straightforward.
+</div>
+
+<h2 id="he-init">He Initialization</h2>
+<p>Proper weight initialization is crucial for training deep networks. He initialization is specifically designed for networks using ReLU activations:</p>
+
+<div class="math-block">
+\[
+W \sim \mathcal{N}\left(0, \sqrt{\frac{2}{\text{fan\_in}}}\right)
+\]
+</div>
+
+<p>where \(\text{fan\_in} = \text{inputChannels} \times \text{filterH} \times \text{filterW}\).</p>
+
+<h3>Why He Initialization Works with ReLU</h3>
+<ul>
+  <li><strong>Variance preservation:</strong> He initialization ensures that the variance of activations remains roughly constant across layers during forward propagation.</li>
+  <li><strong>Gradient flow:</strong> By maintaining consistent activation variance, gradients flow more effectively during backpropagation, avoiding vanishing or exploding gradients.</li>
+  <li><strong>ReLU-specific:</strong> The factor of 2 accounts for the fact that ReLU zeros out approximately half of the activations (on average), which would otherwise reduce variance.</li>
+</ul>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>CoreCPU&lt;T&gt;::initializeConvParams()</code> in <code>CNN_CoreCPU.cpp</code> computes <code>stddev = sqrt(2.0 / fanIn)</code> where <code>fanIn = inputC × filterH × filterW</code>, then samples from <code>std::normal_distribution</code>. Biases are initialised to <strong>zero</strong>.
+</div>
+
+<div class="info-box">
+For layers without ReLU (e.g., output layers with softmax), use Xavier/Glorot initialization instead: \(W \sim \mathcal{N}(0, \sqrt{\frac{1}{\text{fan\_in}}})\).
+</div>
+
+<h2 id="sgd">SGD Update Rule</h2>
+<p>Stochastic Gradient Descent (SGD) is the fundamental optimization algorithm for training neural networks. The weight update rule is:</p>
+
+<div class="math-block">
+\[
+W^{(t+1)} = W^{(t)} - \eta \cdot \frac{1}{N} \sum_{n=1}^{N} \nabla_W L_n
+\]
+</div>
+
+<p>where:</p>
+<ul>
+  <li>\(W^{(t)}\) — Weights at iteration t</li>
+  <li>\(\eta\) — Learning rate (step size)</li>
+  <li>\(N\) — Batch size (number of samples)</li>
+  <li>\(\nabla_W L_n\) — Gradient of loss for sample n with respect to weights</li>
+</ul>
+
+<h3>Averaging Over Samples</h3>
+<p>The gradient is averaged over the batch rather than summed. This provides several benefits:</p>
+<ul>
+  <li><strong>Learning rate independence:</strong> The effective step size is independent of batch size.</li>
+  <li><strong>Stability:</strong> Averaging reduces noise from individual samples, leading to more stable training.</li>
+  <li><strong>Generalization:</strong> Smaller effective steps per sample often lead to better generalization.</li>
+</ul>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>CoreCPU&lt;T&gt;::accumulateCNNGradients(dConvFilters, dConvBiases)</code> sums per-sample gradients into epoch accumulators. <code>CoreCPU&lt;T&gt;::updateCNNParameters(numSamples)</code> divides by the sample count and applies the learning rate: <code>params -= lr * (accum / N)</code>.
+On GPU: <code>cnn_accumulate</code> and <code>cnn_update</code> kernels in <code>opencl/CNN_Kernels.cpp.cl</code>.
+</div>
+
+<div class="info-box">
+Modern variants like Adam and RMSprop build on SGD by adaptively scaling the learning rate per parameter, but the core principle of averaging gradients over batches remains.
+</div>
+
+<h2 id="gradient-flow">End-to-End Gradient Flow</h2>
+<p>In a complete CNN pipeline, gradients flow backward through multiple layers. Understanding this flow is essential for debugging training issues.</p>
+
+<h3>Typical Architecture</h3>
+<p>A standard CNN followed by an ANN classifier has this structure:</p>
+<ol>
+  <li><strong>Input:</strong> Raw image tensor \(X \in \mathbb{R}^{B \times C \times H \times W}\)</li>
+  <li><strong>Conv2D layers:</strong> Extract spatial features</li>
+  <li><strong>ReLU activations:</strong> Introduce non-linearity</li>
+  <li><strong>Pooling layers:</strong> Reduce spatial dimensions</li>
+  <li><strong>Flatten:</strong> Convert 4D tensor to 2D matrix</li>
+  <li><strong>ANN layers:</strong> Dense layers for classification</li>
+  <li><strong>Output:</strong> Logits or probabilities</li>
+</ol>
+
+<h3>Backward Pass</h3>
+<p>Gradients flow backward in reverse order:</p>
+<div class="math-block">
+\[
+\text{Loss} \to \text{ANN output} \to \text{ANN hidden} \to \text{ANN input} \to \text{Unflatten} \to \text{Pool} \to \text{ReLU} \to \text{Conv2D} \to \text{Input}
+\]
+</div>
+
+<h3>Key Considerations</h3>
+<ul>
+  <li><strong>Gradient magnitude:</strong> Each layer's backward pass can amplify or attenuate gradients. Deep networks are prone to vanishing gradients (exponentially small) or exploding gradients (exponentially large).</li>
+  <li><strong>Batch normalization:</strong> Often inserted between Conv2D and ReLU to stabilize gradient flow and allow higher learning rates.</li>
+  <li><strong>Skip connections:</strong> Residual networks use skip connections to provide direct gradient paths, mitigating vanishing gradients in very deep networks.</li>
+  <li><strong>Gradient clipping:</strong> Useful for preventing exploding gradients, especially in recurrent architectures.</li>
+</ul>
+
+<div class="info-box">
+The input gradient from the first Conv2D layer is typically discarded since there are no learnable parameters in the input. However, it can be useful for visualizing which input regions are most important for the network's predictions.
+</div>
+
+<h3>Practical Example: 3-Layer CNN</h3>
+<p>Consider a simple architecture: Conv2D → ReLU → MaxPool → Conv2D → ReLU → MaxPool → Flatten → Dense → Softmax.</p>
+<p>During backpropagation:</p>
+<ol>
+  <li>Softmax backward computes gradient w.r.t. Dense input</li>
+  <li>Dense backward computes gradient w.r.t. flattened features and updates Dense weights</li>
+  <li>Unflatten reshapes gradient back to 4D</li>
+  <li>MaxPool backward routes gradients to max positions</li>
+  <li>ReLU backward zeros out gradients for negative activations</li>
+  <li>Conv2D backward computes filter gradients and input gradients</li>
+  <li>Filter gradients are accumulated and used to update Conv2D weights</li>
+  <li>Input gradients are discarded (no parameters to update)</li>
+</ol>
+
+<div class="tip-box">
+<strong>Code:</strong> <strong>Forward:</strong> <code>CoreCPU&lt;T&gt;::forwardCNN(input)</code> iterates Conv2D/ReLU/Pool layers, then <code>Flatten&lt;T&gt;::predict()</code> converts the 3D tensor to a 1D vector, and the ANN's <code>annCore-&gt;predict()</code> runs the dense layers.
+<strong>Backward:</strong> ANN's <code>annCore-&gt;backpropagate()</code> returns the input gradient, <code>Flatten&lt;T&gt;::backpropagate()</code> reshapes it back to 3D, then <code>CoreCPU&lt;T&gt;::backwardCNN()</code> iterates CNN layers in reverse, dispatching to <code>Conv2D::backpropagate()</code>, <code>ReLU::backpropagate()</code>, and <code>Pool::backpropagate()</code>.
+</div>
+
+</main>
+</div>
+<footer class="site-footer">CNN Library Documentation</footer>
+</body>
+</html>

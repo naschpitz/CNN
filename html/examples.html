@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Code Examples — CNN Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+</head>
+<body>
+<header class="site-header">
+  <button class="hamburger" aria-label="Menu">☰</button>
+  <h1>CNN</h1><span class="subtitle">Convolutional Neural Network Library</span>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav>
+  <div class="section-title">Getting Started</div>
+  <a href="index.html">Home</a>
+  <a href="quickstart.html">Quick Start &amp; Build</a>
+  <a href="examples.html" class="active">Code Examples</a>
+  <div class="section-title">Reference</div>
+  <a href="api.html">API Reference</a>
+  <a href="architecture.html">Architecture</a>
+  <div class="section-title">Deep Dive</div>
+  <a href="layers.html">Layer Documentation</a>
+  <a href="math.html">Mathematical Foundations</a>
+  <a href="gpu.html">GPU Implementation</a>
+</nav></aside>
+<main class="main">
+
+<h1>Code Examples</h1>
+
+<p>This page provides practical examples for using the CNN library. Each example demonstrates a key feature with complete, runnable code.</p>
+
+<h2>1. Creating a CNN</h2>
+
+<p>Configure a convolutional neural network with CNN layers followed by dense layers:</p>
+
+<pre><code><span class="keyword">#include</span> <span class="string">"CNN_Core.hpp"</span>
+
+<span class="type">int</span> <span class="func">main</span>() {
+    <span class="comment">// Configure CNN layers</span>
+    CNN::LayersConfig layers;
+    
+    <span class="comment">// Conv(8 filters, 3×3, stride 1, VALID) → ReLU → MaxPool(2×2, stride 2)</span>
+    layers.cnnLayers = {
+        {CNN::LayerType::CONV, CNN::ConvLayerConfig{
+            <span class="number">8</span>,                                    <span class="comment">// numFilters</span>
+            <span class="number">3</span>, <span class="number">3</span>,                              <span class="comment">// filterH, filterW</span>
+            <span class="number">1</span>, <span class="number">1</span>,                              <span class="comment">// strideY, strideX</span>
+            CNN::SlidingStrategyType::VALID
+        }},
+        {CNN::LayerType::RELU, CNN::ReLULayerConfig{}},
+        {CNN::LayerType::POOL, CNN::PoolLayerConfig{
+            CNN::PoolTypeEnum::MAX, <span class="number">2</span>, <span class="number">2</span>, <span class="number">2</span>, <span class="number">2</span>
+        }},
+        {CNN::LayerType::FLATTEN, CNN::FlattenLayerConfig{}}
+    };
+    
+    <span class="comment">// Configure dense layers: 64 RELU → 10 SIGMOID</span>
+    layers.denseLayers = {
+        {<span class="number">64</span>, ANN::ActvFuncType::RELU},
+        {<span class="number">10</span>, ANN::ActvFuncType::SIGMOID}
+    };
+    
+    <span class="comment">// Create core config</span>
+    CNN::CoreConfig&lt;<span class="type">float</span>&gt; config;
+    config.deviceType = CNN::DeviceType::CPU;
+    config.modeType = CNN::ModeType::TRAIN;
+    config.inputShape = {<span class="number">1</span>, <span class="number">28</span>, <span class="number">28</span>};  <span class="comment">// 1-channel 28×28 image</span>
+    config.layersConfig = layers;
+    config.trainingConfig.numEpochs = <span class="number">10</span>;
+    config.trainingConfig.learningRate = <span class="number">0.01f</span>;
+    
+    <span class="comment">// Create the core</span>
+    <span class="keyword">auto</span> core = CNN::Core&lt;<span class="type">float</span>&gt;::makeCore(config);
+    
+    <span class="keyword">return</span> <span class="number">0</span>;
+}
+</code></pre>
+
+<div class="tip-box">
+  The <code>inputShape</code> is specified as {channels, height, width}. For MNIST-like datasets, use {1, 28, 28}. For RGB images, use {3, height, width}.
+</div>
+
+<h2>2. Training with Samples</h2>
+
+<p>Create training samples and train the network:</p>
+
+<pre><code><span class="comment">// Create sample data</span>
+CNN::Samples&lt;<span class="type">float</span>&gt; samples;
+
+<span class="comment">// Build a few sample entries</span>
+<span class="keyword">for</span> (<span class="type">int</span> i = <span class="number">0</span>; i &lt; <span class="number">100</span>; ++i) {
+    CNN::Sample&lt;<span class="type">float</span>&gt; sample;
+    
+    <span class="comment">// Create input: 1×28×28 tensor</span>
+    sample.input = CNN::Input&lt;<span class="type">float</span>&gt;({<span class="number">1</span>, <span class="number">28</span>, <span class="number">28</span>});
+    <span class="comment">// Fill with random data (or load from file)</span>
+    <span class="keyword">for</span> (<span class="type">auto</span>&amp; val : sample.input.data) {
+        val = <span class="keyword">static_cast</span>&lt;<span class="type">float</span>&gt;(<span class="func">rand</span>()) / RAND_MAX;
+    }
+    
+    <span class="comment">// Create output: 10-element vector (one-hot encoded)</span>
+    sample.output = CNN::Output&lt;<span class="type">float</span>&gt;(<span class="number">10</span>, <span class="number">0.0f</span>);
+    sample.output[i % <span class="number">10</span>] = <span class="number">1.0f</span>;  <span class="comment">// Set correct class</span>
+    
+    samples.push_back(sample);
+}
+
+<span class="comment">// Configure training</span>
+config.trainingConfig.numEpochs = <span class="number">10</span>;
+config.trainingConfig.learningRate = <span class="number">0.01f</span>;
+config.trainingConfig.progressReports = <span class="number">1000</span>;
+
+<span class="comment">// Train the network</span>
+core-&gt;<span class="func">train</span>(samples);
+
+<span class="comment">// Access training metadata</span>
+<span class="keyword">auto</span> metadata = core-&gt;trainingMetadata;
+std::cout &lt;&lt; <span class="string">"Training duration: "</span> &lt;&lt; metadata.durationFormatted &lt;&lt; std::endl;
+std::cout &lt;&lt; <span class="string">"Final loss: "</span> &lt;&lt; metadata.finalLoss &lt;&lt; std::endl;
+</code></pre>
+
+<h2>3. Prediction</h2>
+
+<p>Perform inference on a single input:</p>
+
+<pre><code><span class="comment">// Create input tensor with proper shape</span>
+CNN::Input&lt;<span class="type">float</span>&gt; input({<span class="number">1</span>, <span class="number">28</span>, <span class="number">28</span>});
+<span class="comment">// Fill with data...</span>
+<span class="keyword">for</span> (<span class="type">auto</span>&amp; val : input.data) {
+    val = <span class="keyword">static_cast</span>&lt;<span class="type">float</span>&gt;(<span class="func">rand</span>()) / RAND_MAX;
+}
+
+<span class="comment">// Get prediction</span>
+CNN::Output&lt;<span class="type">float</span>&gt; output = core-&gt;<span class="func">predict</span>(input);
+
+<span class="comment">// Print results (10 output neurons)</span>
+<span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; output.size(); ++i) {
+    std::cout &lt;&lt; <span class="string">"Class "</span> &lt;&lt; i &lt;&lt; <span class="string">": "</span> &lt;&lt; output[i] &lt;&lt; std::endl;
+}
+</code></pre>
+
+<h2>4. Testing</h2>
+
+<p>Evaluate the network on a test set:</p>
+
+<pre><code><span class="comment">// Create test samples (same format as training)</span>
+CNN::Samples&lt;<span class="type">float</span>&gt; testSamples;
+<span class="comment">// ... populate testSamples ...</span>
+
+<span class="comment">// Run test</span>
+CNN::TestResult&lt;<span class="type">float</span>&gt; result = core-&gt;<span class="func">test</span>(testSamples);
+
+<span class="comment">// Print results</span>
+std::cout &lt;&lt; <span class="string">"Test samples: "</span> &lt;&lt; result.numSamples &lt;&lt; std::endl;
+std::cout &lt;&lt; <span class="string">"Total loss: "</span> &lt;&lt; result.totalLoss &lt;&lt; std::endl;
+std::cout &lt;&lt; <span class="string">"Average loss: "</span> &lt;&lt; result.averageLoss &lt;&lt; std::endl;
+</code></pre>
+
+<h2>5. Save &amp; Load</h2>
+
+<p>Persist and restore trained models:</p>
+
+<pre><code><span class="comment">// Save model to JSON file</span>
+CNN::Utils&lt;<span class="type">float</span>&gt;::<span class="func">save</span>(*core, <span class="string">"model.json"</span>);
+
+<span class="comment">// Load model from file</span>
+<span class="keyword">auto</span> loadedCore = CNN::Utils&lt;<span class="type">float</span>&gt;::<span class="func">load</span>(<span class="string">"model.json"</span>);
+
+<span class="comment">// Use loaded model for prediction</span>
+CNN::Output&lt;<span class="type">float</span>&gt; output = loadedCore-&gt;<span class="func">predict</span>(input);
+</code></pre>
+
+<div class="info-box">
+  The saved JSON file includes all layer parameters, configuration, and training metadata. This allows you to resume training or deploy the model in production.
+</div>
+
+<h2>6. GPU Training</h2>
+
+<p>Switch to GPU acceleration with minimal code changes:</p>
+
+<pre><code><span class="comment">// Same configuration as CPU, but with GPU device type</span>
+CNN::CoreConfig&lt;<span class="type">float</span>&gt; config;
+config.deviceType = CNN::DeviceType::GPU;  <span class="comment">// Switch to GPU</span>
+config.modeType = CNN::ModeType::TRAIN;
+config.inputShape = {<span class="number">1</span>, <span class="number">28</span>, <span class="number">28</span>};
+config.layersConfig = layers;
+
+<span class="comment">// Configure GPU training</span>
+config.trainingConfig.numEpochs = <span class="number">10</span>;
+config.trainingConfig.learningRate = <span class="number">0.01f</span>;
+config.trainingConfig.numGPUs = <span class="number">0</span>;  <span class="comment">// 0 = use all available GPUs</span>
+
+<span class="comment">// Create and train (everything else is identical)</span>
+<span class="keyword">auto</span> core = CNN::Core&lt;<span class="type">float</span>&gt;::makeCore(config);
+core-&gt;<span class="func">train</span>(samples);
+</code></pre>
+
+<div class="tip-box">
+  Set <code>numGPUs = 0</code> to automatically use all available GPUs, or specify a number to use that many GPUs. GPU training requires OpenCL 1.2 or later.
+</div>
+
+<h2>7. Step-by-Step Training</h2>
+
+<p>Manual epoch loop with custom callbacks:</p>
+
+<pre><code><span class="comment">// Configure for manual control</span>
+config.trainingConfig.numEpochs = <span class="number">1</span>;  <span class="comment">// Train one epoch at a time</span>
+
+<span class="keyword">for</span> (<span class="type">int</span> epoch = <span class="number">0</span>; epoch &lt; <span class="number">10</span>; ++epoch) {
+    <span class="comment">// Train one epoch</span>
+    core-&gt;<span class="func">train</span>(samples);
+    
+    <span class="comment">// Access training metadata after each epoch</span>
+    <span class="keyword">auto</span> metadata = core-&gt;trainingMetadata;
+    std::cout &lt;&lt; <span class="string">"Epoch "</span> &lt;&lt; epoch &lt;&lt; <span class="string">": loss = "</span> 
+              &lt;&lt; metadata.finalLoss &lt;&lt; std::endl;
+    
+    <span class="comment">// Optionally test on validation set</span>
+    <span class="keyword">auto</span> testResult = core-&gt;<span class="func">test</span>(valSamples);
+    std::cout &lt;&lt; <span class="string">"  Val loss: "</span> &lt;&lt; testResult.averageLoss &lt;&lt; std::endl;
+}
+</code></pre>
+
+</main>
+</div>
+<footer class="site-footer">CNN Library Documentation</footer>
+</body></html>

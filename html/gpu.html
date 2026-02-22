@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>GPU Implementation — CNN Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['\\[','\\]']]}};</script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+</head>
+<body>
+<header class="site-header">
+  <button class="hamburger" aria-label="Menu">☰</button>
+  <h1>CNN</h1><span class="subtitle">Convolutional Neural Network Library</span>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav>
+  <div class="section-title">Getting Started</div>
+  <a href="index.html">Home</a>
+  <a href="quickstart.html">Quick Start &amp; Build</a>
+  <a href="examples.html">Code Examples</a>
+  <div class="section-title">Reference</div>
+  <a href="api.html">API Reference</a>
+  <a href="architecture.html">Architecture</a>
+  <div class="section-title">Deep Dive</div>
+  <a href="layers.html">Layer Documentation</a>
+  <a href="math.html">Mathematical Foundations</a>
+  <a href="gpu.html" class="active">GPU Implementation</a>
+</nav></aside>
+<main class="main">
+
+<h1>GPU Implementation Deep Dive</h1>
+<p>This page explores the architecture, memory layout, and kernel implementations that power CNN's GPU acceleration via OpenCL.</p>
+
+<div class="toc">
+  <h4>Contents</h4>
+  <ol>
+    <li><a href="#architecture">GPU Architecture Overview</a></li>
+    <li><a href="#kernel-files">Kernel Files</a></li>
+    <li><a href="#buffer-layout">GPU Buffer Layout</a></li>
+    <li><a href="#forward-kernels">Forward Pass Kernels</a></li>
+    <li><a href="#backward-kernels">Backward Pass Kernels</a></li>
+    <li><a href="#utility-kernels">Utility Kernels</a></li>
+    <li><a href="#multi-gpu">Multi-GPU Training</a></li>
+    <li><a href="#lazy-compilation">Lazy Kernel Compilation</a></li>
+  </ol>
+</div>
+
+<h2 id="architecture">GPU Architecture Overview</h2>
+
+<p>The CNN library uses a hierarchical architecture to manage GPU computation:</p>
+
+<div class="diagram">
+  <svg viewBox="0 0 900 500" xmlns="http://www.w3.org/2000/svg">
+    <!-- CoreGPU box -->
+    <rect x="250" y="20" width="400" height="80" fill="#1a73e8" stroke="#1557b0" stroke-width="2" rx="8"/>
+    <text x="450" y="55" text-anchor="middle" fill="white" font-size="16" font-weight="bold">CoreGPU&lt;T&gt;</text>
+    <text x="450" y="75" text-anchor="middle" fill="white" font-size="12">Multi-GPU Orchestrator</text>
+
+    <!-- Arrow down -->
+    <line x1="450" y1="100" x2="450" y2="130" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+    <!-- CoreGPUWorker boxes -->
+    <g id="worker1">
+      <rect x="50" y="130" width="280" height="320" fill="#34a853" stroke="#137333" stroke-width="2" rx="8"/>
+      <text x="190" y="160" text-anchor="middle" fill="white" font-size="14" font-weight="bold">CoreGPUWorker&lt;T&gt; #0</text>
+      
+      <!-- OpenCLWrapper -->
+      <rect x="70" y="180" width="240" height="60" fill="#4285f4" stroke="#1a73e8" stroke-width="1" rx="4"/>
+      <text x="190" y="210" text-anchor="middle" fill="white" font-size="12" font-weight="bold">OpenCLWrapper::Core</text>
+      
+      <!-- GPU Buffers -->
+      <rect x="70" y="260" width="240" height="80" fill="#fbbc04" stroke="#f9ab00" stroke-width="1" rx="4"/>
+      <text x="190" y="280" text-anchor="middle" fill="#333" font-size="11" font-weight="bold">GPU Buffers</text>
+      <text x="190" y="298" text-anchor="middle" fill="#333" font-size="10">cnn_actvs, cnn_grads</text>
+      <text x="190" y="313" text-anchor="middle" fill="#333" font-size="10">cnn_filters, cnn_biases</text>
+      <text x="190" y="328" text-anchor="middle" fill="#333" font-size="10">cnn_pool_indices, ...</text>
+      
+      <!-- ANN Core -->
+      <rect x="70" y="360" width="240" height="60" fill="#ea4335" stroke="#c5221f" stroke-width="1" rx="4"/>
+      <text x="190" y="390" text-anchor="middle" fill="white" font-size="12" font-weight="bold">ANN::Core&lt;T&gt; (CPU)</text>
+    </g>
+
+    <g id="worker2">
+      <rect x="570" y="130" width="280" height="320" fill="#34a853" stroke="#137333" stroke-width="2" rx="8"/>
+      <text x="710" y="160" text-anchor="middle" fill="white" font-size="14" font-weight="bold">CoreGPUWorker&lt;T&gt; #1</text>
+      
+      <!-- OpenCLWrapper -->
+      <rect x="590" y="180" width="240" height="60" fill="#4285f4" stroke="#1a73e8" stroke-width="1" rx="4"/>
+      <text x="710" y="210" text-anchor="middle" fill="white" font-size="12" font-weight="bold">OpenCLWrapper::Core</text>
+      
+      <!-- GPU Buffers -->
+      <rect x="590" y="260" width="240" height="80" fill="#fbbc04" stroke="#f9ab00" stroke-width="1" rx="4"/>
+      <text x="710" y="280" text-anchor="middle" fill="#333" font-size="11" font-weight="bold">GPU Buffers</text>
+      <text x="710" y="298" text-anchor="middle" fill="#333" font-size="10">cnn_actvs, cnn_grads</text>
+      <text x="710" y="313" text-anchor="middle" fill="#333" font-size="10">cnn_filters, cnn_biases</text>
+      <text x="710" y="328" text-anchor="middle" fill="#333" font-size="10">cnn_pool_indices, ...</text>
+      
+      <!-- ANN Core -->
+      <rect x="590" y="360" width="240" height="60" fill="#ea4335" stroke="#c5221f" stroke-width="1" rx="4"/>
+      <text x="710" y="390" text-anchor="middle" fill="white" font-size="12" font-weight="bold">ANN::Core&lt;T&gt; (CPU)</text>
+    </g>
+
+    <!-- Data flow labels -->
+    <text x="280" y="250" font-size="11" fill="#333">GPU: Conv, ReLU, Pool</text>
+    <text x="280" y="265" font-size="11" fill="#333">CPU: Dense layers</text>
+    <text x="800" y="250" font-size="11" fill="#333">GPU: Conv, ReLU, Pool</text>
+    <text x="800" y="265" font-size="11" fill="#333">CPU: Dense layers</text>
+
+    <!-- Arrow marker definition -->
+    <defs>
+      <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+        <polygon points="0 0, 10 5, 0 10" fill="#333"/>
+      </marker>
+    </defs>
+  </svg>
+  <figcaption>Multi-GPU architecture: CoreGPU coordinates multiple workers, each managing one GPU and its associated CPU ANN core.</figcaption>
+</div>
+
+<div class="info-box">
+  <strong>Key Design:</strong> CNN layers (Conv2D, ReLU, MaxPool) run on GPU via OpenCL kernels. Dense layers are delegated to the ANN library running on CPU. This hybrid approach leverages GPU strength for spatial operations while keeping dense layer computation on CPU.
+</div>
+
+<h2 id="kernel-files">Kernel Files</h2>
+
+<p>OpenCL kernels are stored in two files, loaded by <code>CoreGPUWorker::allocateBuffers()</code>:</p>
+
+<table>
+  <thead>
+    <tr><th>File</th><th>Contents</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>opencl/CNN_Defines.hpp.cl</code></td>
+      <td>Type definition: <code>#define TYPE float</code> (configurable for double, int, etc.)</td>
+    </tr>
+    <tr>
+      <td><code>opencl/CNN_Kernels.cpp.cl</code></td>
+      <td>All forward, backward, and utility kernels (conv2d, relu, maxpool, accumulate, update, etc.)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Kernels are compiled lazily: only when first needed (predict vs. train modes compile different kernel sets).</p>
+
+<h2 id="buffer-layout">GPU Buffer Layout</h2>
+
+<p>All GPU buffers are flattened 1D arrays for efficiency. Indices are computed dynamically on the GPU.</p>
+
+<div class="card">
+  <h3>Activation &amp; Gradient Buffers</h3>
+  <p><strong>cnn_actvs</strong> and <strong>cnn_grads</strong> store activation values and gradients for all CNN layers, concatenated sequentially.</p>
+  <div class="math-block">
+    \[\text{offset}_{\text{layer}} = \sum_{i=0}^{\text{layer}-1} \text{size}_i\]
+  </div>
+  <p><strong>Index formula:</strong> For layer \(l\) with output shape \((C, H, W)\):</p>
+  <div class="math-block">
+    \[\text{actvs}[\text{offset}_l + c \cdot H \cdot W + h \cdot W + w]\]
+  </div>
+  <p>Example: If input is 3×32×32 (size 3072), and first conv outputs 16×30×30 (size 14400), then:</p>
+  <ul>
+    <li>Input activations: offset 0, size 3072</li>
+    <li>Conv output activations: offset 3072, size 14400</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>Filter &amp; Bias Buffers</h3>
+  <p><strong>cnn_filters</strong> stores all convolutional layer filters concatenated. For each conv layer with \(F\) filters, \(C_{\text{in}}\) input channels, and kernel size \(K_h \times K_w\):</p>
+  <div class="math-block">
+    \[\text{filterSize} = F \cdot C_{\text{in}} \cdot K_h \cdot K_w\]
+  </div>
+  <p><strong>Index formula:</strong></p>
+  <div class="math-block">
+    \[\text{filters}[\text{offset}_{\text{conv}} + f \cdot C_{\text{in}} \cdot K_h \cdot K_w + c \cdot K_h \cdot K_w + k_h \cdot K_w + k_w]\]
+  </div>
+  <p><strong>cnn_biases</strong> stores all biases concatenated (one per filter):</p>
+  <div class="math-block">
+    \[\text{biases}[\text{offset}_{\text{conv}} + f]\]
+  </div>
+</div>
+
+<div class="card">
+  <h3>Gradient Accumulation Buffers</h3>
+  <p><strong>cnn_dFilters</strong> and <strong>cnn_dBiases</strong> store per-sample gradients. <strong>cnn_accum_dFilters</strong> and <strong>cnn_accum_dBiases</strong> accumulate gradients across samples for parameter updates.</p>
+  <p>Layout matches filters/biases buffers exactly.</p>
+</div>
+
+<div class="card">
+  <h3>Pool Indices Buffer</h3>
+  <p><strong>cnn_pool_indices</strong> stores absolute indices (into actvs buffer) of max values for each max-pool output element. Used during backprop to route gradients to correct input positions.</p>
+  <p>Size: sum of all max-pool output sizes.</p>
+</div>
+
+<h2 id="forward-kernels">Forward Pass Kernels</h2>
+
+<h3>conv2d_forward</h3>
+<p><strong>Work distribution:</strong> One work-item per output element. Total work-items = \(\text{numFilters} \times \text{outH} \times \text{outW}\).</p>
+<p><strong>Pseudocode:</strong></p>
+<pre><code>kernel void conv2d_forward(...) {
+  gid = get_global_id(0)
+  
+  // Decompose gid into (f, oh, ow)
+  f  = gid / (outH * outW)
+  oh = (gid % (outH * outW)) / outW
+  ow = gid % outW
+  
+  sum = biases[bias_offset + f]
+  
+  for c in 0..inputC:
+    for kh in 0..filterH:
+      for kw in 0..filterW:
+        ih = oh * strideY + kh - padY
+        iw = ow * strideX + kw - padX
+        
+        if ih, iw in bounds:
+          input_idx = actv_in_offset + c*inputH*inputW + ih*inputW + iw
+          filter_idx = filter_offset + f*inputC*filterH*filterW + c*filterH*filterW + kh*filterW + kw
+          sum += actvs[input_idx] * filters[filter_idx]
+  
+  actvs[actv_out_offset + f*outH*outW + oh*outW + ow] = sum
+}</code></pre>
+
+<h3>relu_forward</h3>
+<p><strong>Work distribution:</strong> One work-item per element. Total work-items = layer tensor size.</p>
+<pre><code>kernel void relu_forward(...) {
+  gid = get_global_id(0)
+  val = actvs[in_offset + gid]
+  actvs[out_offset + gid] = (val > 0) ? val : 0
+}</code></pre>
+
+<h3>maxpool_forward</h3>
+<p><strong>Work distribution:</strong> One work-item per output element. Total work-items = \(\text{channels} \times \text{outH} \times \text{outW}\).</p>
+<pre><code>kernel void maxpool_forward(...) {
+  gid = get_global_id(0)
+  
+  // Decompose gid into (c, oh, ow)
+  c  = gid / (outH * outW)
+  oh = (gid % (outH * outW)) / outW
+  ow = gid % outW
+  
+  maxVal = -infinity
+  maxIdx = 0
+  
+  for ph in 0..poolH:
+    for pw in 0..poolW:
+      ih = oh * strideY + ph
+      iw = ow * strideX + pw
+      idx = actv_in_offset + c*inputH*inputW + ih*inputW + iw
+      
+      if actvs[idx] > maxVal:
+        maxVal = actvs[idx]
+        maxIdx = idx
+  
+  actvs[actv_out_offset + gid] = maxVal
+  pool_indices[pool_idx_offset + gid] = maxIdx  // Store absolute index
+}</code></pre>
+
+<h2 id="backward-kernels">Backward Pass Kernels</h2>
+
+<h3>conv2d_backward_filters</h3>
+<p><strong>Work distribution:</strong> One work-item per filter weight element. Total work-items = \(\text{numFilters} \times \text{inputC} \times \text{filterH} \times \text{filterW}\).</p>
+<pre><code>kernel void conv2d_backward_filters(...) {
+  gid = get_global_id(0)
+  
+  // Decompose gid into (f, c, kh, kw)
+  f  = gid / (inputC * filterH * filterW)
+  c  = (gid % (inputC * filterH * filterW)) / (filterH * filterW)
+  kh = ((gid % (inputC * filterH * filterW)) % (filterH * filterW)) / filterW
+  kw = gid % filterW
+  
+  sum = 0
+  
+  for oh in 0..outH:
+    for ow in 0..outW:
+      ih = oh * strideY + kh - padY
+      iw = ow * strideX + kw - padX
+      
+      if ih, iw in bounds:
+        dOut = grads[grad_out_offset + f*outH*outW + oh*outW + ow]
+        inp = actvs[actv_in_offset + c*inputH*inputW + ih*inputW + iw]
+        sum += dOut * inp
+  
+  dFilters[dfilter_offset + gid] = sum
+}</code></pre>
+
+<h3>conv2d_backward_biases</h3>
+<p><strong>Work distribution:</strong> One work-item per filter. Total work-items = numFilters.</p>
+<pre><code>kernel void conv2d_backward_biases(...) {
+  gid = get_global_id(0)  // gid = f
+  
+  sum = 0
+  for oh in 0..outH:
+    for ow in 0..outW:
+      sum += grads[grad_out_offset + f*outH*outW + oh*outW + ow]
+  
+  dBiases[dbias_offset + f] = sum
+}</code></pre>
+
+<h3>conv2d_backward_input</h3>
+<p><strong>Work distribution:</strong> One work-item per input element. Total work-items = \(\text{inputC} \times \text{inputH} \times \text{inputW}\).</p>
+<p>Uses reverse mapping: for each input position, find which output positions it contributed to.</p>
+<pre><code>kernel void conv2d_backward_input(...) {
+  gid = get_global_id(0)
+  
+  // Decompose gid into (c, ih, iw)
+  c  = gid / (inputH * inputW)
+  ih = (gid % (inputH * inputW)) / inputW
+  iw = gid % inputW
+  
+  sum = 0
+  
+  for f in 0..numFilters:
+    for kh in 0..filterH:
+      for kw in 0..filterW:
+        // Reverse: oh * strideY + kh - padY = ih
+        // So oh = (ih + padY - kh) / strideY
+        numerator_h = ih + padY - kh
+        numerator_w = iw + padX - kw
+        
+        if numerator_h >= 0 and numerator_w >= 0 and
+           numerator_h % strideY == 0 and numerator_w % strideX == 0:
+          oh = numerator_h / strideY
+          ow = numerator_w / strideX
+          
+          if oh < outH and ow < outW:
+            dOut = grads[grad_out_offset + f*outH*outW + oh*outW + ow]
+            filt = filters[filter_offset + f*inputC*filterH*filterW + c*filterH*filterW + kh*filterW + kw]
+            sum += dOut * filt
+  
+  grads[grad_in_offset + gid] = sum
+}</code></pre>
+
+<h3>relu_backward</h3>
+<p><strong>Work distribution:</strong> One work-item per element.</p>
+<pre><code>kernel void relu_backward(...) {
+  gid = get_global_id(0)
+  
+  actv = actvs[actv_in_offset + gid]
+  dOut = grads[grad_out_offset + gid]
+  
+  grads[grad_in_offset + gid] = (actv > 0) ? dOut : 0
+}</code></pre>
+
+<h3>maxpool_backward</h3>
+<p><strong>Work distribution:</strong> One work-item per pool output element.</p>
+<pre><code>kernel void maxpool_backward(...) {
+  gid = get_global_id(0)
+  
+  dOutVal = grads[grad_out_offset + gid]
+  maxIdx = pool_indices[pool_idx_offset + gid]  // Absolute index
+  
+  // Route gradient to the max position
+  grads[maxIdx] += dOutVal
+}</code></pre>
+
+<h2 id="utility-kernels">Utility Kernels</h2>
+
+<h3>zero_buffer</h3>
+<p>Zeros a range of a buffer. Used to clear gradient buffers before backprop.</p>
+<pre><code>kernel void zero_buffer(global TYPE* buf, ulong offset, ulong size) {
+  gid = get_global_id(0)
+  if (gid < size):
+    buf[offset + gid] = 0
+}</code></pre>
+
+<h3>cnn_accumulate</h3>
+<p>Accumulates per-sample gradients into the accumulator buffer.</p>
+<pre><code>kernel void cnn_accumulate(global TYPE* accum, global TYPE* grad, ulong offset, ulong size) {
+  gid = get_global_id(0)
+  if (gid < size):
+    accum[offset + gid] += grad[offset + gid]
+}</code></pre>
+
+<h3>cnn_update</h3>
+<p>Updates parameters using accumulated gradients and learning rate.</p>
+<pre><code>kernel void cnn_update(global TYPE* params, global TYPE* accum, 
+                       ulong offset, ulong size, ulong numSamples, float lr) {
+  gid = get_global_id(0)
+  if (gid < size):
+    params[offset + gid] -= lr * (accum[offset + gid] / numSamples)
+}</code></pre>
+
+<h2 id="multi-gpu">Multi-GPU Training</h2>
+
+<p>When multiple GPUs are available, <code>CoreGPU&lt;T&gt;</code> distributes training across workers using <code>QtConcurrent::blockingMap</code>.</p>
+
+<div class="card">
+  <h3>Sample Partitioning</h3>
+  <p>Training samples are divided among GPUs. Each worker trains its subset independently, computing local gradients.</p>
+</div>
+
+<div class="card">
+  <h3>CNN Gradient Merging</h3>
+  <p>After each epoch, accumulated filter and bias gradients from all GPUs are merged:</p>
+  <pre><code>// Pseudocode from CoreGPU::mergeCNNGradients()
+totalAccumFilters = zeros(totalFilterSize)
+totalAccumBiases = zeros(totalBiasSize)
+
+for each GPU worker:
+  workerFilters, workerBiases = worker.readAccumulatedGradients()
+  totalAccumFilters += workerFilters
+  totalAccumBiases += workerBiases
+
+// Broadcast merged gradients back to all workers
+for each GPU worker:
+  worker.setAccumulators(totalAccumFilters, totalAccumBiases)</code></pre>
+  <p>This ensures all GPUs use the same merged gradients for parameter updates.</p>
+</div>
+
+<div class="card">
+  <h3>ANN Parameter Averaging</h3>
+  <p>Dense layer parameters are averaged across all GPUs:</p>
+  <pre><code>// Pseudocode from CoreGPU::mergeANNParameters()
+avgParams = worker[0].getANNParameters()
+
+for i in 1..numGPUs:
+  params_i = worker[i].getANNParameters()
+  avgParams += params_i
+
+avgParams /= numGPUs
+
+// Broadcast averaged parameters back to all workers
+for each GPU worker:
+  worker.setANNParameters(avgParams)</code></pre>
+</div>
+
+<h2 id="lazy-compilation">Lazy Kernel Compilation</h2>
+
+<p>Kernels are compiled only when first needed, not at initialization. This reduces startup time and memory usage.</p>
+
+<div class="info-box">
+  <strong>Predict mode:</strong> Compiles only forward kernels (conv2d_forward, relu_forward, maxpool_forward).
+</div>
+
+<div class="info-box">
+  <strong>Training mode:</strong> Compiles forward, backward, accumulate, and update kernels.
+</div>
+
+<p>Flags in <code>CoreGPUWorker</code> track which kernel sets have been compiled:</p>
+<ul>
+  <li><code>predictKernelsSetup</code></li>
+  <li><code>backpropagateKernelsSetup</code></li>
+  <li><code>accumulateKernelsSetup</code></li>
+  <li><code>updateKernelsSetup</code></li>
+</ul>
+
+<div class="tip-box">
+  <strong>Performance tip:</strong> Lazy compilation means the first predict/train call is slower (includes compilation). Subsequent calls reuse compiled kernels.
+</div>
+
+</main>
+</div>
+<footer class="site-footer">CNN Library Documentation</footer>
+</body></html>
