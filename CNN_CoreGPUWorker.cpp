@@ -10,6 +10,7 @@
 
 #include <QDebug>
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <random>
@@ -852,15 +853,23 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, ulong startIdx, ulong
 //===================================================================================================================//
 
 template <typename T>
-T CoreGPUWorker<T>::testSubset(const Samples<T>& samples, ulong startIdx, ulong endIdx) {
+std::pair<T, ulong> CoreGPUWorker<T>::testSubset(const Samples<T>& samples, ulong startIdx, ulong endIdx) {
   T subsetLoss = static_cast<T>(0);
+  ulong subsetCorrect = 0;
 
   for (ulong s = startIdx; s < endIdx; s++) {
     Output<T> predicted = this->predict(samples[s].input);
     subsetLoss += this->calculateLoss(predicted, samples[s].output);
+
+    // Accuracy: compare argmax of predicted vs expected
+    auto predIdx = std::distance(predicted.begin(), std::max_element(predicted.begin(), predicted.end()));
+    auto expIdx = std::distance(samples[s].output.begin(), std::max_element(samples[s].output.begin(), samples[s].output.end()));
+
+    if (predIdx == expIdx)
+      subsetCorrect++;
   }
 
-  return subsetLoss;
+  return {subsetLoss, subsetCorrect};
 }
 
 

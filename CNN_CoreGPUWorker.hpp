@@ -7,6 +7,7 @@
 #include <OCLW_Core.hpp>
 
 #include <memory>
+#include <utility>
 
 //===================================================================================================================//
 
@@ -30,7 +31,7 @@ namespace CNN {
                     ulong epoch, ulong totalEpochs, const TrainingCallback<T>& callback);
 
       //-- Testing --//
-      T testSubset(const Samples<T>& samples, ulong startIdx, ulong endIdx);
+      std::pair<T, ulong> testSubset(const Samples<T>& samples, ulong startIdx, ulong endIdx);
 
       //-- Step-by-step training methods (for external orchestration) --//
       void backpropagateSample(const Input<T>& input, const Output<T>& expected);

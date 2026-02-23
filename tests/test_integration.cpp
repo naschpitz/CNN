@@ -71,7 +71,9 @@ static void testEndToEnd() {
   CNN::TestResult<double> result = core->test(samples);
   CHECK(result.numSamples == 2, "test numSamples");
   CHECK(result.averageLoss >= 0.0, "test avgLoss non-negative");
-  std::cout << "  test avgLoss=" << result.averageLoss << std::endl;
+  CHECK(result.numCorrect <= result.numSamples, "numCorrect <= numSamples");
+  CHECK(result.accuracy >= 0.0 && result.accuracy <= 100.0, "accuracy in [0, 100]");
+  std::cout << "  test avgLoss=" << result.averageLoss << " accuracy=" << result.accuracy << "%" << std::endl;
 }
 
 //===================================================================================================================//
@@ -591,6 +593,7 @@ static void testWeightedLossTraining() {
   CHECK(result.numSamples == 2, "weighted CNN: tested 2 samples");
   CHECK(result.averageLoss >= 0.0, "weighted CNN: loss non-negative");
   CHECK(std::isfinite(result.averageLoss), "weighted CNN: loss is finite");
+  CHECK(result.numCorrect <= 2, "weighted CNN: numCorrect <= 2");
 
   // Verify getter returns correct config after training
   const auto& cfc = core->getCostFunctionConfig();
