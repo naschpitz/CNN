@@ -34,6 +34,7 @@ namespace CNN {
       const PredictMetadata<T>& getPredictMetadata() const { return predictMetadata; }
       const TrainingMetadata<T>& getTrainingMetadata() const { return trainingMetadata; }
       const Parameters<T>& getParameters() const { return parameters; }
+      const LossFunctionConfig<T>& getLossFunctionConfig() const { return coreConfig.lossFunctionConfig; }
 
       void setTrainingCallback(TrainingCallback<T> callback) { trainingCallback = callback; }
 
