@@ -13,46 +13,41 @@ namespace CNN {
   template <typename T>
   class CoreCPU : public Core<T> {
     public:
+      //-- Constructor --//
       CoreCPU(const CoreConfig<T>& config);
 
+      //-- Core interface --//
       Output<T> predict(const Input<T>& input) override;
       void train(const Samples<T>& samples) override;
       TestResult<T> test(const Samples<T>& samples) override;
 
     private:
+      //-- ANN sub-core --//
       std::unique_ptr<ANN::Core<T>> annCore;
 
-      // Shape of the CNN output (before flatten)
+      //-- CNN output shape --//
       Shape3D cnnOutputShape;
       ulong flattenSize;
 
-      // Forward pass through CNN layers only (no flatten/dense)
-      // intermediates: stores input to each layer (for backprop)
-      // poolMaxIndices: stores max indices for each pool layer
+      //-- Forward / Backward pass --//
       Tensor3D<T> forwardCNN(const Input<T>& input,
                              std::vector<Tensor3D<T>>& intermediates,
                              std::vector<std::vector<ulong>>& poolMaxIndices);
-
-      // Simplified forward (no intermediates stored - for predict-only)
       Tensor3D<T> forwardCNN(const Input<T>& input);
-
-      // Backward pass through CNN layers
       void backwardCNN(const Tensor3D<T>& dCNNOut,
                        const std::vector<Tensor3D<T>>& intermediates,
                        const std::vector<std::vector<ulong>>& poolMaxIndices,
                        std::vector<std::vector<T>>& dConvFilters,
                        std::vector<std::vector<T>>& dConvBiases);
 
-      // Build ANN core config from CNN config
+      //-- Initialization --//
       ANN::CoreConfig<T> buildANNConfig(const CoreConfig<T>& cnnConfig);
-
-      // Initialize conv parameters with He initialization
       void initializeConvParams();
 
-      // Calculate MSE loss
+      //-- Loss calculation --//
       T calculateLoss(const Output<T>& predicted, const Output<T>& expected);
 
-      // Accumulated CNN gradients
+      //-- CNN gradient accumulation --//
       std::vector<std::vector<T>> accumDConvFilters;
       std::vector<std::vector<T>> accumDConvBiases;
 

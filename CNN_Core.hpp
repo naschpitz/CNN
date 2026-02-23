@@ -18,14 +18,18 @@ namespace CNN {
   template <typename T>
   class Core {
     public:
+      //-- Factory --//
       static std::unique_ptr<Core<T>> makeCore(const CoreConfig<T>& config);
 
+      //-- Core interface --//
       virtual Output<T> predict(const Input<T>& input) = 0;
       virtual void train(const Samples<T>& samples) = 0;
       virtual TestResult<T> test(const Samples<T>& samples) = 0;
 
+      //-- Destructor --//
       virtual ~Core() = default;
 
+      //-- Getters --//
       ModeType getModeType() const { return modeType; }
       DeviceType getDeviceType() const { return deviceType; }
       const Shape3D& getInputShape() const { return inputShape; }
@@ -36,23 +40,27 @@ namespace CNN {
       const Parameters<T>& getParameters() const { return parameters; }
       const LossFunctionConfig<T>& getLossFunctionConfig() const { return coreConfig.lossFunctionConfig; }
 
+      //-- Setters --//
       void setTrainingCallback(TrainingCallback<T> callback) { trainingCallback = callback; }
 
+      //-- Log level --//
       void setLogLevel(LogLevel level) { logLevel = level; }
       LogLevel getLogLevel() const { return logLevel; }
 
     protected:
+      //-- Constructor / Validation --//
       explicit Core(const CoreConfig<T>& coreConfig);
       void sanityCheck(const CoreConfig<T>& coreConfig);
 
-      // Training timing helpers
+      //-- Training timing --//
       void trainingStart(ulong numSamples);
       TrainingMetadata<T> trainingEnd();
 
-      // Predict timing helpers
+      //-- Predict timing --//
       void predictStart();
       PredictMetadata<T> predictEnd();
 
+      //-- Configuration members --//
       CoreConfig<T> coreConfig;
       DeviceType deviceType;
       ModeType modeType;
@@ -65,9 +73,11 @@ namespace CNN {
       ulong progressReports = 1000;
       LogLevel logLevel = LogLevel::ERROR;
 
+      //-- Internal state --//
       TrainingCallback<T> trainingCallback;
 
     private:
+      //-- Timing state --//
       std::chrono::time_point<std::chrono::system_clock> trainingStartTime;
       std::chrono::time_point<std::chrono::system_clock> predictStartTime;
   };
