@@ -16,7 +16,7 @@ CoreGPU<T>::CoreGPU(const CoreConfig<T>& coreConfig)
     : Core<T>(coreConfig) {
 
   // Initialize OpenCL before querying device information
-  OpenCLWrapper::Core::initialize(this->verbose);
+  OpenCLWrapper::Core::initialize(this->logLevel >= CNN::LogLevel::DEBUG);
 
   // Determine number of GPUs to use
   int requestedGPUs = coreConfig.trainingConfig.numGPUs;
@@ -57,7 +57,7 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
   ulong numSamples = samples.size();
   ulong numEpochs = this->trainingConfig.numEpochs;
 
-  if (this->verbose) {
+  if (this->logLevel >= CNN::LogLevel::INFO) {
     std::cout << "Starting GPU training: " << numSamples << " samples, "
               << numEpochs << " epochs, " << this->numGPUs << " GPU"
               << (this->numGPUs > 1 ? "s" : "") << "\n";

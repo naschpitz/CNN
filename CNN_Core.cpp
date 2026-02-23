@@ -36,7 +36,7 @@ Core<T>::Core(const CoreConfig<T>& coreConfig)
   this->trainingConfig = coreConfig.trainingConfig;
   this->parameters = coreConfig.parameters;
   this->progressReports = coreConfig.progressReports;
-  this->verbose = coreConfig.verbose;
+  this->logLevel = coreConfig.logLevel;
 }
 
 //===================================================================================================================//

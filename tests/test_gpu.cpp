@@ -11,7 +11,7 @@ static void testGPUEndToEnd() {
   config.modeType = CNN::ModeType::TRAIN;
   config.deviceType = CNN::DeviceType::GPU;
   config.inputShape = {1, 5, 5};
-  config.verbose = false;
+  config.logLevel = CNN::LogLevel::ERROR;
 
   CNN::CNNLayerConfig convLayer;
   convLayer.type = CNN::LayerType::CONV;
@@ -87,7 +87,7 @@ static void testGPUPredictOnly() {
   cpuConfig.modeType = CNN::ModeType::TRAIN;
   cpuConfig.deviceType = CNN::DeviceType::CPU;
   cpuConfig.inputShape = {1, 5, 5};
-  cpuConfig.verbose = false;
+  cpuConfig.logLevel = CNN::LogLevel::ERROR;
 
   CNN::CNNLayerConfig convLayer;
   convLayer.type = CNN::LayerType::CONV;
@@ -135,7 +135,7 @@ static void testGPUPredictOnly() {
   gpuConfig.modeType = CNN::ModeType::PREDICT;
   gpuConfig.deviceType = CNN::DeviceType::GPU;
   gpuConfig.inputShape = {1, 5, 5};
-  gpuConfig.verbose = false;
+  gpuConfig.logLevel = CNN::LogLevel::ERROR;
   gpuConfig.layersConfig = cpuConfig.layersConfig;
   gpuConfig.parameters = trainedParams;
 
@@ -165,7 +165,7 @@ static void testGPUWithPoolLayer() {
   config.modeType = CNN::ModeType::TRAIN;
   config.deviceType = CNN::DeviceType::GPU;
   config.inputShape = {1, 10, 10};
-  config.verbose = false;
+  config.logLevel = CNN::LogLevel::ERROR;
 
   CNN::CNNLayerConfig conv1;
   conv1.type = CNN::LayerType::CONV;
@@ -241,7 +241,7 @@ static void testGPUMultiConvStack() {
   config.modeType = CNN::ModeType::TRAIN;
   config.deviceType = CNN::DeviceType::GPU;
   config.inputShape = {1, 8, 8};
-  config.verbose = false;
+  config.logLevel = CNN::LogLevel::ERROR;
 
   CNN::CNNLayerConfig conv1;
   conv1.type = CNN::LayerType::CONV;

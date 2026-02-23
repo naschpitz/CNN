@@ -24,11 +24,11 @@ template <typename T>
 CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
     : coreConfig(config),
       parameters(config.parameters),
-      verbose(config.verbose) {
+      logLevel(config.logLevel) {
 
   this->ownedCore = std::make_unique<OpenCLWrapper::Core>(false);
   this->core = this->ownedCore.get();
-  this->core->setVerbose(this->verbose);
+  this->core->setVerbose(this->logLevel >= CNN::LogLevel::DEBUG);
 
   // Compute CNN output shape
   this->cnnOutputShape = config.layersConfig.validateShapes(config.inputShape);
@@ -56,7 +56,7 @@ template <typename T>
 CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config, OpenCLWrapper::Core& sharedCore)
     : coreConfig(config),
       parameters(config.parameters),
-      verbose(config.verbose),
+      logLevel(config.logLevel),
       core(&sharedCore) {
 
   // Compute CNN output shape
@@ -226,7 +226,7 @@ void CoreGPUWorker<T>::initializeConvParams() {
 
 template <typename T>
 void CoreGPUWorker<T>::loadSources(bool skipDefines) {
-  if (this->verbose) std::cout << "Loading CNN OpenCL kernels...\n";
+  if (this->logLevel >= CNN::LogLevel::INFO) std::cout << "Loading CNN OpenCL kernels...\n";
 
   // Resolve .cl file paths relative to the source file's directory (via __FILE__),
   // so the kernels are found regardless of the current working directory.
@@ -239,7 +239,7 @@ void CoreGPUWorker<T>::loadSources(bool skipDefines) {
 
   this->core->addSourceFile(srcDir + "opencl/CNN_Kernels.cpp.cl");
 
-  if (this->verbose) std::cout << "CNN OpenCL kernels loaded.\n";
+  if (this->logLevel >= CNN::LogLevel::INFO) std::cout << "CNN OpenCL kernels loaded.\n";
 }
 
 //===================================================================================================================//
@@ -248,7 +248,7 @@ void CoreGPUWorker<T>::loadSources(bool skipDefines) {
 
 template <typename T>
 void CoreGPUWorker<T>::allocateBuffers() {
-  if (this->verbose) std::cout << "Allocating CNN GPU buffers...\n";
+  if (this->logLevel >= CNN::LogLevel::INFO) std::cout << "Allocating CNN GPU buffers...\n";
 
   // Activation and gradient buffers (same layout)
   this->core->template allocateBuffer<T>("cnn_actvs", this->totalActvSize);
@@ -303,7 +303,7 @@ void CoreGPUWorker<T>::allocateBuffers() {
     this->core->template writeBuffer<T>("cnn_biases", flatBiases, 0);
   }
 
-  if (this->verbose) std::cout << "CNN GPU buffers allocated.\n";
+  if (this->logLevel >= CNN::LogLevel::INFO) std::cout << "CNN GPU buffers allocated.\n";
 }
 
 //===================================================================================================================//
@@ -336,7 +336,7 @@ void CoreGPUWorker<T>::buildANNWorker() {
   // Create ANN GPU worker on the shared core
   this->annGPUWorker = std::make_unique<ANN::CoreGPUWorker<T>>(
       annLayers, annTrainingConfig, this->coreConfig.parameters.denseParams,
-      *this->core, this->verbose);
+      *this->core, this->coreConfig.progressReports, static_cast<ANN::LogLevel>(this->coreConfig.logLevel));
 
   // Load ANN sources (skip defines — CNN_Defines.hpp.cl already defined TYPE, ActvFuncType, Layer)
   this->annGPUWorker->loadSources(true);

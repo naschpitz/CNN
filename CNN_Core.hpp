@@ -37,8 +37,8 @@ namespace CNN {
 
       void setTrainingCallback(TrainingCallback<T> callback) { trainingCallback = callback; }
 
-      void setVerbose(bool v) { verbose = v; }
-      bool isVerbose() const { return verbose; }
+      void setLogLevel(LogLevel level) { logLevel = level; }
+      LogLevel getLogLevel() const { return logLevel; }
 
     protected:
       explicit Core(const CoreConfig<T>& coreConfig);
@@ -62,7 +62,7 @@ namespace CNN {
       PredictMetadata<T> predictMetadata;
       Parameters<T> parameters;
       ulong progressReports = 1000;
-      bool verbose = false;
+      LogLevel logLevel = LogLevel::ERROR;
 
       TrainingCallback<T> trainingCallback;
 

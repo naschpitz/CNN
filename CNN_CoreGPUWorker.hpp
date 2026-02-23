@@ -69,7 +69,7 @@ namespace CNN {
       //-- Configuration --//
       CoreConfig<T> coreConfig;
       Parameters<T> parameters;
-      bool verbose = false;
+      LogLevel logLevel = LogLevel::ERROR;
 
       //-- CNN shape info --//
       Shape3D cnnOutputShape;

@@ -3,6 +3,7 @@
 
 #include "CNN_Mode.hpp"
 #include "CNN_Device.hpp"
+#include "CNN_LogLevel.hpp"
 #include "CNN_LayersConfig.hpp"
 #include "CNN_TrainingConfig.hpp"
 #include "CNN_Parameters.hpp"
@@ -20,7 +21,7 @@ namespace CNN {
     TrainingConfig<T> trainingConfig;
     Parameters<T> parameters;
     ulong progressReports = 1000;  // Number of progress reports (0 = no reports, default = 1000)
-    bool verbose = false;
+    LogLevel logLevel = LogLevel::ERROR;
   };
 }
 

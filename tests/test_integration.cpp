@@ -10,7 +10,7 @@ static void testEndToEnd() {
   config.modeType = CNN::ModeType::TRAIN;
   config.deviceType = CNN::DeviceType::CPU;
   config.inputShape = {1, 5, 5};
-  config.verbose = false;
+  config.logLevel = CNN::LogLevel::ERROR;
 
   CNN::CNNLayerConfig convLayer;
   convLayer.type = CNN::LayerType::CONV;
@@ -84,7 +84,7 @@ static void testMultiConvStack() {
   config.modeType = CNN::ModeType::TRAIN;
   config.deviceType = CNN::DeviceType::CPU;
   config.inputShape = {1, 8, 8};
-  config.verbose = false;
+  config.logLevel = CNN::LogLevel::ERROR;
 
   CNN::CNNLayerConfig conv1;
   conv1.type = CNN::LayerType::CONV;
@@ -156,7 +156,7 @@ static void testConvPoolConv() {
   config.modeType = CNN::ModeType::TRAIN;
   config.deviceType = CNN::DeviceType::CPU;
   config.inputShape = {1, 10, 10};
-  config.verbose = false;
+  config.logLevel = CNN::LogLevel::ERROR;
 
   CNN::CNNLayerConfig conv1;
   conv1.type = CNN::LayerType::CONV;
@@ -232,7 +232,7 @@ static void testMultiChannelInput() {
   config.modeType = CNN::ModeType::TRAIN;
   config.deviceType = CNN::DeviceType::CPU;
   config.inputShape = {3, 6, 6};
-  config.verbose = false;
+  config.logLevel = CNN::LogLevel::ERROR;
 
   CNN::CNNLayerConfig conv1;
   conv1.type = CNN::LayerType::CONV;
@@ -290,7 +290,7 @@ static void testParameterRoundTrip() {
   config.modeType = CNN::ModeType::TRAIN;
   config.deviceType = CNN::DeviceType::CPU;
   config.inputShape = {1, 5, 5};
-  config.verbose = false;
+  config.logLevel = CNN::LogLevel::ERROR;
 
   CNN::CNNLayerConfig convLayer;
   convLayer.type = CNN::LayerType::CONV;
@@ -348,7 +348,7 @@ static void testParameterRoundTrip() {
   predictConfig.modeType = CNN::ModeType::PREDICT;
   predictConfig.deviceType = CNN::DeviceType::CPU;
   predictConfig.inputShape = {1, 5, 5};
-  predictConfig.verbose = false;
+  predictConfig.logLevel = CNN::LogLevel::ERROR;
   predictConfig.layersConfig = config.layersConfig;
   predictConfig.parameters = params;
 
@@ -372,7 +372,7 @@ static void testMultipleOutputNeurons() {
   config.modeType = CNN::ModeType::TRAIN;
   config.deviceType = CNN::DeviceType::CPU;
   config.inputShape = {1, 8, 8};
-  config.verbose = false;
+  config.logLevel = CNN::LogLevel::ERROR;
 
   CNN::CNNLayerConfig convLayer;
   convLayer.type = CNN::LayerType::CONV;

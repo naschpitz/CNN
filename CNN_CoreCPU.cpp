@@ -90,7 +90,7 @@ ANN::CoreConfig<T> CoreCPU<T>::buildANNConfig(const CoreConfig<T>& cnnConfig) {
   // Dense parameters (if loaded from file)
   annConfig.parameters = cnnConfig.parameters.denseParams;
 
-  annConfig.verbose = cnnConfig.verbose;
+  annConfig.logLevel = static_cast<ANN::LogLevel>(cnnConfig.logLevel);
 
   return annConfig;
 }
@@ -389,7 +389,7 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
 
   this->trainingStart(numSamples);
 
-  if (this->verbose) {
+  if (this->logLevel >= CNN::LogLevel::INFO) {
     qDebug() << "CNN Training: " << numEpochs << " epochs, " << numSamples << " samples";
   }
 
@@ -458,7 +458,7 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
     T avgLoss = epochLoss / static_cast<T>(numSamples);
     this->trainingMetadata.finalLoss = avgLoss;
 
-    if (this->verbose) {
+    if (this->logLevel >= CNN::LogLevel::INFO) {
       qDebug() << "Epoch " << (e + 1) << "/" << numEpochs << " - Loss: " << avgLoss;
     }
   }
