@@ -113,6 +113,10 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
       this->gpuWorkers[gpuIdx]->update(numSamples);
     }
 
+    // Sync parameters from GPU so getParameters() returns current values (e.g., for checkpoint saves)
+    this->gpuWorkers[0]->syncParametersFromGPU();
+    this->parameters = this->gpuWorkers[0]->getParameters();
+
     T avgEpochLoss = totalLoss / static_cast<T>(numSamples);
     this->trainingMetadata.finalLoss = avgEpochLoss;
 
@@ -131,9 +135,6 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
   }
 
   this->trainingEnd();
-
-  this->gpuWorkers[0]->syncParametersFromGPU();
-  this->parameters = this->gpuWorkers[0]->getParameters();
 }
 
 

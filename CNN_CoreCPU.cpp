@@ -460,6 +460,9 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
     this->annCore->update(numSamples);
     this->updateCNNParameters(numSamples);
 
+    // Sync ANN parameters so getParameters() returns current dense params (e.g., for checkpoint saves)
+    this->parameters.denseParams = this->annCore->getParameters();
+
     T avgLoss = epochLoss / static_cast<T>(numSamples);
     this->trainingMetadata.finalLoss = avgLoss;
 
@@ -469,9 +472,6 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
   }
 
   this->trainingEnd();
-
-  // Sync ANN parameters back to CNN's parameters struct
-  this->parameters.denseParams = this->annCore->getParameters();
 }
 
 //===================================================================================================================//
