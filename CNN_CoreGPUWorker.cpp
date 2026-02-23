@@ -82,17 +82,17 @@ void CoreGPUWorker<T>::computeLayerOffsets() {
   Shape3D currentShape = this->coreConfig.inputShape;
 
   // First entry: input tensor
-  layerInfos.clear();
-  layerInfos.push_back({0, currentShape.size()});
+  this->layerInfos.clear();
+  this->layerInfos.push_back({0, currentShape.size()});
   ulong offset = currentShape.size();
 
   ulong convIdx = 0;
   ulong poolIdx = 0;
-  totalFilterSize = 0;
-  totalBiasSize = 0;
-  totalPoolIndexSize = 0;
-  convInfos.clear();
-  poolInfos.clear();
+  this->totalFilterSize = 0;
+  this->totalBiasSize = 0;
+  this->totalPoolIndexSize = 0;
+  this->convInfos.clear();
+  this->poolInfos.clear();
 
   for (const auto& layerConfig : cnnLayers) {
     Shape3D outShape = currentShape;
@@ -107,14 +107,14 @@ void CoreGPUWorker<T>::computeLayerOffsets() {
         outShape = {conv.numFilters, outH, outW};
 
         ConvInfo ci;
-        ci.filterOffset = totalFilterSize;
-        ci.biasOffset = totalBiasSize;
+        ci.filterOffset = this->totalFilterSize;
+        ci.biasOffset = this->totalBiasSize;
         ci.numFilterElems = conv.numFilters * currentShape.c * conv.filterH * conv.filterW;
         ci.numBiases = conv.numFilters;
-        convInfos.push_back(ci);
+        this->convInfos.push_back(ci);
 
-        totalFilterSize += ci.numFilterElems;
-        totalBiasSize += ci.numBiases;
+        this->totalFilterSize += ci.numFilterElems;
+        this->totalBiasSize += ci.numBiases;
         convIdx++;
         break;
       }
@@ -129,29 +129,29 @@ void CoreGPUWorker<T>::computeLayerOffsets() {
         outShape = {currentShape.c, outH, outW};
 
         PoolInfo pi;
-        pi.indexOffset = totalPoolIndexSize;
+        pi.indexOffset = this->totalPoolIndexSize;
         pi.indexSize = outShape.size();
-        poolInfos.push_back(pi);
+        this->poolInfos.push_back(pi);
 
-        totalPoolIndexSize += pi.indexSize;
+        this->totalPoolIndexSize += pi.indexSize;
         poolIdx++;
         break;
       }
       case LayerType::FLATTEN: {
         // Flatten shares the same buffer as its input — no GPU kernel copies data,
         // so we point to the same offset as the previous layer's output.
-        layerInfos.push_back({layerInfos.back().actvOffset, outShape.size()});
+        this->layerInfos.push_back({this->layerInfos.back().actvOffset, outShape.size()});
         currentShape = outShape;
         continue;  // Skip the normal push_back and offset advancement below
       }
     }
 
-    layerInfos.push_back({offset, outShape.size()});
+    this->layerInfos.push_back({offset, outShape.size()});
     offset += outShape.size();
     currentShape = outShape;
   }
 
-  totalActvSize = offset;
+  this->totalActvSize = offset;
 }
 
 //===================================================================================================================//

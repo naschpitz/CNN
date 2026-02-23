@@ -20,23 +20,23 @@ using namespace CNN;
 template <typename T>
 CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config) {
   // Compute CNN output shape (before flatten)
-  cnnOutputShape = this->layersConfig.validateShapes(this->inputShape);
-  flattenSize = cnnOutputShape.size();
+  this->cnnOutputShape = this->layersConfig.validateShapes(this->inputShape);
+  this->flattenSize = this->cnnOutputShape.size();
 
   // Initialize conv parameters if not loaded
-  initializeConvParams();
+  this->initializeConvParams();
 
   // Build and create ANN core for dense layers
-  ANN::CoreConfig<T> annConfig = buildANNConfig(config);
-  annCore = ANN::Core<T>::makeCore(annConfig);
+  ANN::CoreConfig<T> annConfig = this->buildANNConfig(config);
+  this->annCore = ANN::Core<T>::makeCore(annConfig);
 
   // Initialize CNN gradient accumulators
-  accumDConvFilters.resize(this->parameters.convParams.size());
-  accumDConvBiases.resize(this->parameters.convParams.size());
+  this->accumDConvFilters.resize(this->parameters.convParams.size());
+  this->accumDConvBiases.resize(this->parameters.convParams.size());
 
   for (ulong i = 0; i < this->parameters.convParams.size(); i++) {
-    accumDConvFilters[i].resize(this->parameters.convParams[i].filters.size(), static_cast<T>(0));
-    accumDConvBiases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
+    this->accumDConvFilters[i].resize(this->parameters.convParams[i].filters.size(), static_cast<T>(0));
+    this->accumDConvBiases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
   }
 }
 
@@ -66,7 +66,7 @@ ANN::CoreConfig<T> CoreCPU<T>::buildANNConfig(const CoreConfig<T>& cnnConfig) {
 
   // Input layer (flatten output size) - use identity activation (not used in forward pass per ANN convention)
   ANN::Layer inputLayer;
-  inputLayer.numNeurons = flattenSize;
+  inputLayer.numNeurons = this->flattenSize;
   // ANN's first layer is input-only: its activation is never used in propagate().
   // Use RELU as a harmless placeholder (ANN has no IDENTITY type).
   inputLayer.actvFuncType = ANN::ActvFuncType::RELU;
@@ -253,14 +253,14 @@ Tensor3D<T> CoreCPU<T>::forwardCNN(const Input<T>& input,
 template <typename T>
 Output<T> CoreCPU<T>::predict(const Input<T>& input) {
   // Forward through CNN layers
-  Tensor3D<T> cnnOut = forwardCNN(input);
+  Tensor3D<T> cnnOut = this->forwardCNN(input);
 
   // Flatten
   Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
 
   // Forward through ANN dense layers
   ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-  ANN::Output<T> annOutput = annCore->predict(annInput);
+  ANN::Output<T> annOutput = this->annCore->predict(annInput);
 
   return Output<T>(annOutput.begin(), annOutput.end());
 }
@@ -336,9 +336,9 @@ T CoreCPU<T>::calculateLoss(const Output<T>& predicted, const Output<T>& expecte
 
 template <typename T>
 void CoreCPU<T>::resetCNNAccumulators() {
-  for (ulong i = 0; i < accumDConvFilters.size(); i++) {
-    std::fill(accumDConvFilters[i].begin(), accumDConvFilters[i].end(), static_cast<T>(0));
-    std::fill(accumDConvBiases[i].begin(), accumDConvBiases[i].end(), static_cast<T>(0));
+  for (ulong i = 0; i < this->accumDConvFilters.size(); i++) {
+    std::fill(this->accumDConvFilters[i].begin(), this->accumDConvFilters[i].end(), static_cast<T>(0));
+    std::fill(this->accumDConvBiases[i].begin(), this->accumDConvBiases[i].end(), static_cast<T>(0));
   }
 }
 
@@ -349,11 +349,11 @@ void CoreCPU<T>::accumulateCNNGradients(const std::vector<std::vector<T>>& dConv
                                         const std::vector<std::vector<T>>& dConvBiases) {
   for (ulong i = 0; i < dConvFilters.size(); i++) {
     for (ulong j = 0; j < dConvFilters[i].size(); j++) {
-      accumDConvFilters[i][j] += dConvFilters[i][j];
+      this->accumDConvFilters[i][j] += dConvFilters[i][j];
     }
 
     for (ulong j = 0; j < dConvBiases[i].size(); j++) {
-      accumDConvBiases[i][j] += dConvBiases[i][j];
+      this->accumDConvBiases[i][j] += dConvBiases[i][j];
     }
   }
 }
@@ -367,11 +367,11 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples) {
 
   for (ulong i = 0; i < this->parameters.convParams.size(); i++) {
     for (ulong j = 0; j < this->parameters.convParams[i].filters.size(); j++) {
-      this->parameters.convParams[i].filters[j] -= lr * (accumDConvFilters[i][j] / n);
+      this->parameters.convParams[i].filters[j] -= lr * (this->accumDConvFilters[i][j] / n);
     }
 
     for (ulong j = 0; j < this->parameters.convParams[i].biases.size(); j++) {
-      this->parameters.convParams[i].biases[j] -= lr * (accumDConvBiases[i][j] / n);
+      this->parameters.convParams[i].biases[j] -= lr * (this->accumDConvBiases[i][j] / n);
     }
   }
 }
@@ -395,8 +395,8 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
 
   for (ulong e = 0; e < numEpochs; e++) {
     // Reset accumulators for this epoch
-    resetCNNAccumulators();
-    annCore->resetAccumulators();
+    this->resetCNNAccumulators();
+    this->annCore->resetAccumulators();
 
     T epochLoss = static_cast<T>(0);
 
@@ -406,37 +406,37 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
       // 1. Forward through CNN layers (with intermediates for backprop)
       std::vector<Tensor3D<T>> intermediates;
       std::vector<std::vector<ulong>> poolMaxIndices;
-      Tensor3D<T> cnnOut = forwardCNN(sample.input, intermediates, poolMaxIndices);
+      Tensor3D<T> cnnOut = this->forwardCNN(sample.input, intermediates, poolMaxIndices);
 
       // 2. Flatten CNN output
       Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
 
       // 3. Forward through ANN
       ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-      ANN::Output<T> annOutput = annCore->predict(annInput);
+      ANN::Output<T> annOutput = this->annCore->predict(annInput);
 
       // 4. Calculate loss
       Output<T> predicted(annOutput.begin(), annOutput.end());
-      T sampleLoss = calculateLoss(predicted, sample.output);
+      T sampleLoss = this->calculateLoss(predicted, sample.output);
       epochLoss += sampleLoss;
 
       // 5. ANN backpropagation - returns dCost/dInput (gradient w.r.t. flatten output)
       ANN::Output<T> annExpected(sample.output.begin(), sample.output.end());
-      ANN::Tensor1D<T> dFlatInput = annCore->backpropagate(annExpected);
+      ANN::Tensor1D<T> dFlatInput = this->annCore->backpropagate(annExpected);
 
       // 6. ANN accumulate gradients
-      annCore->accumulate();
+      this->annCore->accumulate();
 
       // 7. Unflatten gradient back to 3D
       Tensor1D<T> dFlat(dFlatInput.begin(), dFlatInput.end());
-      Tensor3D<T> dCNNOut = Flatten<T>::backpropagate(dFlat, cnnOutputShape);
+      Tensor3D<T> dCNNOut = Flatten<T>::backpropagate(dFlat, this->cnnOutputShape);
 
       // 8. Backward through CNN layers
       std::vector<std::vector<T>> dConvFilters, dConvBiases;
-      backwardCNN(dCNNOut, intermediates, poolMaxIndices, dConvFilters, dConvBiases);
+      this->backwardCNN(dCNNOut, intermediates, poolMaxIndices, dConvFilters, dConvBiases);
 
       // 9. Accumulate CNN gradients
-      accumulateCNNGradients(dConvFilters, dConvBiases);
+      this->accumulateCNNGradients(dConvFilters, dConvBiases);
 
       // Report progress
       if (this->trainingCallback) {
@@ -452,8 +452,8 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
     }
 
     // Update weights for this epoch
-    annCore->update(numSamples);
-    updateCNNParameters(numSamples);
+    this->annCore->update(numSamples);
+    this->updateCNNParameters(numSamples);
 
     T avgLoss = epochLoss / static_cast<T>(numSamples);
     this->trainingMetadata.finalLoss = avgLoss;
@@ -466,7 +466,7 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
   this->trainingEnd();
 
   // Sync ANN parameters back to CNN's parameters struct
-  this->parameters.denseParams = annCore->getParameters();
+  this->parameters.denseParams = this->annCore->getParameters();
 }
 
 //===================================================================================================================//
@@ -478,8 +478,8 @@ TestResult<T> CoreCPU<T>::test(const Samples<T>& samples) {
   result.totalLoss = static_cast<T>(0);
 
   for (ulong i = 0; i < samples.size(); i++) {
-    Output<T> predicted = predict(samples[i].input);
-    result.totalLoss += calculateLoss(predicted, samples[i].output);
+    Output<T> predicted = this->predict(samples[i].input);
+    result.totalLoss += this->calculateLoss(predicted, samples[i].output);
   }
 
   result.averageLoss = (result.numSamples > 0)

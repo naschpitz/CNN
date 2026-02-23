@@ -72,9 +72,9 @@ void Core<T>::sanityCheck(const CoreConfig<T>& coreConfig) {
 
 template <typename T>
 void Core<T>::trainingStart(ulong numSamples) {
-  trainingStartTime = std::chrono::system_clock::now();
-  trainingMetadata.startTime = ANN::Utils<T>::formatISO8601();
-  trainingMetadata.numSamples = numSamples;
+  this->trainingStartTime = std::chrono::system_clock::now();
+  this->trainingMetadata.startTime = ANN::Utils<T>::formatISO8601();
+  this->trainingMetadata.numSamples = numSamples;
 }
 
 //===================================================================================================================//
@@ -82,20 +82,20 @@ void Core<T>::trainingStart(ulong numSamples) {
 template <typename T>
 TrainingMetadata<T> Core<T>::trainingEnd() {
   auto endTime = std::chrono::system_clock::now();
-  std::chrono::duration<double> elapsed = endTime - trainingStartTime;
+  std::chrono::duration<double> elapsed = endTime - this->trainingStartTime;
 
-  trainingMetadata.endTime = ANN::Utils<T>::formatISO8601();
-  trainingMetadata.durationSeconds = elapsed.count();
-  trainingMetadata.durationFormatted = ANN::Utils<T>::formatDuration(elapsed.count());
+  this->trainingMetadata.endTime = ANN::Utils<T>::formatISO8601();
+  this->trainingMetadata.durationSeconds = elapsed.count();
+  this->trainingMetadata.durationFormatted = ANN::Utils<T>::formatDuration(elapsed.count());
 
-  return trainingMetadata;
+  return this->trainingMetadata;
 }
 
 //===================================================================================================================//
 
 template <typename T>
 void Core<T>::predictStart() {
-  predictStartTime = std::chrono::system_clock::now();
+  this->predictStartTime = std::chrono::system_clock::now();
 }
 
 //===================================================================================================================//
@@ -103,14 +103,14 @@ void Core<T>::predictStart() {
 template <typename T>
 PredictMetadata<T> Core<T>::predictEnd() {
   auto endTime = std::chrono::system_clock::now();
-  std::chrono::duration<double> elapsed = endTime - predictStartTime;
+  std::chrono::duration<double> elapsed = endTime - this->predictStartTime;
 
-  predictMetadata.startTime = ANN::Utils<T>::formatISO8601();
-  predictMetadata.endTime = ANN::Utils<T>::formatISO8601();
-  predictMetadata.durationSeconds = elapsed.count();
-  predictMetadata.durationFormatted = ANN::Utils<T>::formatDuration(elapsed.count());
+  this->predictMetadata.startTime = ANN::Utils<T>::formatISO8601();
+  this->predictMetadata.endTime = ANN::Utils<T>::formatISO8601();
+  this->predictMetadata.durationSeconds = elapsed.count();
+  this->predictMetadata.durationFormatted = ANN::Utils<T>::formatDuration(elapsed.count());
 
-  return predictMetadata;
+  return this->predictMetadata;
 }
 
 //===================================================================================================================//
