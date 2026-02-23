@@ -424,8 +424,8 @@ static void testMultipleOutputNeurons() {
 
 //===================================================================================================================//
 
-static void testLossFunctionConfigGetter() {
-  std::cout << "--- testLossFunctionConfigGetter ---" << std::endl;
+static void testCostFunctionConfigGetter() {
+  std::cout << "--- testCostFunctionConfigGetter ---" << std::endl;
 
   // Default config
   CNN::CoreConfig<double> configDefault;
@@ -448,21 +448,21 @@ static void testLossFunctionConfigGetter() {
   configDefault.layersConfig.denseLayers = {{2, ANN::ActvFuncType::SIGMOID}};
 
   auto coreDefault = CNN::Core<double>::makeCore(configDefault);
-  const auto& lfcDefault = coreDefault->getLossFunctionConfig();
-  CHECK(lfcDefault.type == CNN::LossFunctionType::SQUARED_DIFFERENCE, "CNN default type is squaredDifference");
-  CHECK(lfcDefault.weights.empty(), "CNN default weights is empty");
+  const auto& cfcDefault = coreDefault->getCostFunctionConfig();
+  CHECK(cfcDefault.type == CNN::CostFunctionType::SQUARED_DIFFERENCE, "CNN default type is squaredDifference");
+  CHECK(cfcDefault.weights.empty(), "CNN default weights is empty");
 
   // Weighted config
   CNN::CoreConfig<double> configWeighted = configDefault;
-  configWeighted.lossFunctionConfig.type = CNN::LossFunctionType::WEIGHTED_SQUARED_DIFFERENCE;
-  configWeighted.lossFunctionConfig.weights = {5.0, 0.2};
+  configWeighted.costFunctionConfig.type = CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE;
+  configWeighted.costFunctionConfig.weights = {5.0, 0.2};
 
   auto coreWeighted = CNN::Core<double>::makeCore(configWeighted);
-  const auto& lfcWeighted = coreWeighted->getLossFunctionConfig();
-  CHECK(lfcWeighted.type == CNN::LossFunctionType::WEIGHTED_SQUARED_DIFFERENCE, "CNN weighted type");
-  CHECK(lfcWeighted.weights.size() == 2, "CNN weighted weights size = 2");
-  CHECK_NEAR(lfcWeighted.weights[0], 5.0, 1e-10, "CNN weight[0] = 5.0");
-  CHECK_NEAR(lfcWeighted.weights[1], 0.2, 1e-10, "CNN weight[1] = 0.2");
+  const auto& cfcWeighted = coreWeighted->getCostFunctionConfig();
+  CHECK(cfcWeighted.type == CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE, "CNN weighted type");
+  CHECK(cfcWeighted.weights.size() == 2, "CNN weighted weights size = 2");
+  CHECK_NEAR(cfcWeighted.weights[0], 5.0, 1e-10, "CNN weight[0] = 5.0");
+  CHECK_NEAR(cfcWeighted.weights[1], 0.2, 1e-10, "CNN weight[1] = 0.2");
 }
 
 //===================================================================================================================//
@@ -501,8 +501,8 @@ static void testWeightedLossTraining() {
   config.progressReports = 0;
 
   // Apply weighted loss
-  config.lossFunctionConfig.type = CNN::LossFunctionType::WEIGHTED_SQUARED_DIFFERENCE;
-  config.lossFunctionConfig.weights = {5.0, 1.0};
+  config.costFunctionConfig.type = CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE;
+  config.costFunctionConfig.weights = {5.0, 1.0};
 
   CNN::Samples<double> samples(2);
   samples[0].input = makeGradientInput<double>({1, 5, 5});
@@ -520,9 +520,9 @@ static void testWeightedLossTraining() {
   CHECK(std::isfinite(result.averageLoss), "weighted CNN: loss is finite");
 
   // Verify getter returns correct config after training
-  const auto& lfc = core->getLossFunctionConfig();
-  CHECK(lfc.type == CNN::LossFunctionType::WEIGHTED_SQUARED_DIFFERENCE, "weighted CNN: type preserved");
-  CHECK(lfc.weights.size() == 2, "weighted CNN: weights preserved");
+  const auto& cfc = core->getCostFunctionConfig();
+  CHECK(cfc.type == CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE, "weighted CNN: type preserved");
+  CHECK(cfc.weights.size() == 2, "weighted CNN: weights preserved");
 
   std::cout << "  weighted avgLoss=" << result.averageLoss << std::endl;
 }
@@ -536,6 +536,6 @@ void runIntegrationTests() {
   testMultiChannelInput();
   testParameterRoundTrip();
   testMultipleOutputNeurons();
-  testLossFunctionConfigGetter();
+  testCostFunctionConfigGetter();
   testWeightedLossTraining();
 }

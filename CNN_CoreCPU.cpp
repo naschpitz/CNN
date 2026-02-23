@@ -87,9 +87,9 @@ ANN::CoreConfig<T> CoreCPU<T>::buildANNConfig(const CoreConfig<T>& cnnConfig) {
   annConfig.trainingConfig.learningRate = cnnConfig.trainingConfig.learningRate;
   annConfig.trainingConfig.numThreads = 1; // CNN manages its own threading
 
-  // Loss function config
-  annConfig.lossFunctionConfig.type = static_cast<ANN::LossFunctionType>(cnnConfig.lossFunctionConfig.type);
-  annConfig.lossFunctionConfig.weights = cnnConfig.lossFunctionConfig.weights;
+  // Cost function config
+  annConfig.costFunctionConfig.type = static_cast<ANN::CostFunctionType>(cnnConfig.costFunctionConfig.type);
+  annConfig.costFunctionConfig.weights = cnnConfig.costFunctionConfig.weights;
 
   // Dense parameters (if loaded from file)
   annConfig.parameters = cnnConfig.parameters.denseParams;
@@ -330,7 +330,7 @@ T CoreCPU<T>::calculateLoss(const Output<T>& predicted, const Output<T>& expecte
 
   for (ulong i = 0; i < expected.size(); i++) {
     T diff = predicted[i] - expected[i];
-    T weight = (!this->coreConfig.lossFunctionConfig.weights.empty()) ? this->coreConfig.lossFunctionConfig.weights[i] : static_cast<T>(1);
+    T weight = (!this->coreConfig.costFunctionConfig.weights.empty()) ? this->coreConfig.costFunctionConfig.weights[i] : static_cast<T>(1);
     loss += weight * diff * diff;
   }
 

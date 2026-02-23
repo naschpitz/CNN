@@ -333,14 +333,14 @@ void CoreGPUWorker<T>::buildANNWorker() {
   annTrainingConfig.learningRate = this->coreConfig.trainingConfig.learningRate;
   annTrainingConfig.numThreads = 1;
 
-  // Loss function config
-  ANN::LossFunctionConfig<T> annLossFunctionConfig;
-  annLossFunctionConfig.type = static_cast<ANN::LossFunctionType>(this->coreConfig.lossFunctionConfig.type);
-  annLossFunctionConfig.weights = this->coreConfig.lossFunctionConfig.weights;
+  // Cost function config
+  ANN::CostFunctionConfig<T> annCostFunctionConfig;
+  annCostFunctionConfig.type = static_cast<ANN::CostFunctionType>(this->coreConfig.costFunctionConfig.type);
+  annCostFunctionConfig.weights = this->coreConfig.costFunctionConfig.weights;
 
   // Create ANN GPU worker on the shared core
   this->annGPUWorker = std::make_unique<ANN::CoreGPUWorker<T>>(
-      annLayers, annTrainingConfig, this->coreConfig.parameters.denseParams, annLossFunctionConfig,
+      annLayers, annTrainingConfig, this->coreConfig.parameters.denseParams, annCostFunctionConfig,
       *this->core, this->coreConfig.progressReports, static_cast<ANN::LogLevel>(this->coreConfig.logLevel));
 
   // Load ANN sources (skip defines — CNN_Defines.hpp.cl already defined TYPE, ActvFuncType, Layer)
@@ -1024,7 +1024,7 @@ T CoreGPUWorker<T>::calculateLoss(const Output<T>& predicted, const Output<T>& e
 
   for (ulong i = 0; i < expected.size(); i++) {
     T diff = predicted[i] - expected[i];
-    T weight = (!this->coreConfig.lossFunctionConfig.weights.empty()) ? this->coreConfig.lossFunctionConfig.weights[i] : static_cast<T>(1);
+    T weight = (!this->coreConfig.costFunctionConfig.weights.empty()) ? this->coreConfig.costFunctionConfig.weights[i] : static_cast<T>(1);
     loss += weight * diff * diff;
   }
 

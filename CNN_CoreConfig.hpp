@@ -5,7 +5,7 @@
 #include "CNN_Device.hpp"
 #include "CNN_LogLevel.hpp"
 #include "CNN_LayersConfig.hpp"
-#include "CNN_LossFunctionConfig.hpp"
+#include "CNN_CostFunctionConfig.hpp"
 #include "CNN_TrainingConfig.hpp"
 #include "CNN_Parameters.hpp"
 #include "CNN_Types.hpp"
@@ -19,7 +19,7 @@ namespace CNN {
     DeviceType deviceType;
     Shape3D inputShape;            // Input tensor shape (C, H, W)
     LayersConfig layersConfig;
-    LossFunctionConfig<T> lossFunctionConfig;
+    CostFunctionConfig<T> costFunctionConfig;
     TrainingConfig<T> trainingConfig;
     Parameters<T> parameters;
     ulong progressReports = 1000;  // Number of progress reports (0 = no reports, default = 1000)
