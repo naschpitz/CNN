@@ -73,32 +73,13 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
     ulong endIdx;
   };
 
-  // Track cumulative per-GPU sample counts across batches for accurate progress reporting.
-  // trainSubset reports currentSample as the global sample index (s+1), which must be
-  // converted to a per-GPU cumulative count so the progress bar can correctly compute
-  // per-GPU percentage as currentSample / (totalSamples / totalGPUs).
+  // Per-GPU cumulative sample counters for progress tracking across mini-batches
   std::vector<ulong> gpuCumulativeSamples(this->numGPUs, 0);
-
-  // Create per-GPU wrapper callbacks that inject GPU index and cumulative progress
-  auto createGpuCallback = [this, &gpuCumulativeSamples](size_t gpuIdx, ulong batchStartForGPU) -> TrainingCallback<T> {
-    if (!this->trainingCallback) return nullptr;
-
-    ulong offset = gpuCumulativeSamples[gpuIdx];
-
-    return [this, gpuIdx, offset, batchStartForGPU](const TrainingProgress<T>& progress) {
-      TrainingProgress<T> gpuProgress = progress;
-      gpuProgress.gpuIndex = static_cast<int>(gpuIdx);
-      gpuProgress.totalGPUs = static_cast<int>(this->numGPUs);
-      // Convert global sample index to cumulative per-GPU count
-      gpuProgress.currentSample = offset + (progress.currentSample - batchStartForGPU);
-      this->trainingCallback(gpuProgress);
-    };
-  };
 
   for (ulong e = 0; e < numEpochs; e++) {
     T epochLoss = 0;
 
-    // Reset cumulative per-GPU sample counts at the start of each epoch
+    // Reset cumulative counters at the start of each epoch
     std::fill(gpuCumulativeSamples.begin(), gpuCumulativeSamples.end(), 0);
 
     // Process samples in mini-batches
@@ -121,12 +102,27 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
       std::vector<T> gpuLosses(this->numGPUs, 0);
 
       QtConcurrent::blockingMap(workItems,
-          [this, &samples, &gpuLosses, e, numEpochs, &createGpuCallback](const GPUWorkItem& item) {
+          [this, &samples, &gpuLosses, e, numEpochs, numSamples, &gpuCumulativeSamples](const GPUWorkItem& item) {
+        // Create per-batch callback that translates global sample indices to cumulative per-GPU counts
+        TrainingCallback<T> callback;
+        if (this->trainingCallback) {
+          ulong offset = gpuCumulativeSamples[item.gpuIdx];
+          ulong batchStartIdx = item.startIdx;
+          size_t gpuIdx = item.gpuIdx;
+          callback = [this, offset, batchStartIdx, gpuIdx, numSamples](const TrainingProgress<T>& progress) {
+            TrainingProgress<T> gpuProgress = progress;
+            gpuProgress.currentSample = offset + (progress.currentSample - batchStartIdx);
+            gpuProgress.totalSamples = numSamples;
+            gpuProgress.gpuIndex = static_cast<int>(gpuIdx);
+            gpuProgress.totalGPUs = static_cast<int>(this->numGPUs);
+            this->trainingCallback(gpuProgress);
+          };
+        }
         gpuLosses[item.gpuIdx] = this->gpuWorkers[item.gpuIdx]->trainSubset(
-            samples, item.startIdx, item.endIdx, e + 1, numEpochs, createGpuCallback(item.gpuIdx, item.startIdx));
+            samples, item.startIdx, item.endIdx, e + 1, numEpochs, callback);
       });
 
-      // Update cumulative per-GPU sample counts after this batch
+      // Update cumulative counters after batch completes
       for (const auto& item : workItems) {
         gpuCumulativeSamples[item.gpuIdx] += (item.endIdx - item.startIdx);
       }

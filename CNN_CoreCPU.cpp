@@ -8,8 +8,12 @@
 #include <ANN_ActvFunc.hpp>
 
 #include <QDebug>
+#include <QMutex>
+#include <QThreadPool>
+#include <QtConcurrent>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <random>
 #include <stdexcept>
@@ -388,97 +392,195 @@ template <typename T>
 void CoreCPU<T>::train(const Samples<T>& samples) {
   ulong numEpochs = this->trainingConfig.numEpochs;
   ulong numSamples = samples.size();
-  ulong batchSize = this->trainingConfig.batchSize;
 
-  if (numSamples == 0) {
+  if (numSamples == 0)
     throw std::runtime_error("No training samples provided");
-  }
 
+  int numThreads = this->trainingConfig.numThreads;
+  if (numThreads <= 0)
+    numThreads = QThreadPool::globalInstance()->maxThreadCount();
+
+  ulong batchSize = this->trainingConfig.batchSize;
   this->trainingStart(numSamples);
 
-  if (this->logLevel >= CNN::LogLevel::INFO) {
-    qDebug() << "CNN Training: " << numEpochs << " epochs, " << numSamples << " samples";
+  if (this->logLevel >= CNN::LogLevel::INFO)
+    qDebug() << "CNN Training:" << numEpochs << "epochs," << numSamples << "samples,"
+             << numThreads << "threads, batch size" << batchSize;
+
+  // Create per-worker ANN cores for fully parallel ANN operations (no mutex needed)
+  ANN::CoreConfig<T> workerANNConfig = this->buildANNConfig(this->coreConfig);
+  workerANNConfig.progressReports = 0;
+  std::vector<std::unique_ptr<ANN::Core<T>>> workerANNCores(numThreads);
+  for (int i = 0; i < numThreads; i++)
+    workerANNCores[i] = ANN::Core<T>::makeCore(workerANNConfig);
+
+  // Per-worker CNN gradient accumulators
+  struct CNNWorker {
+    std::vector<std::vector<T>> accumDConvFilters, accumDConvBiases;
+    T accum_loss = static_cast<T>(0);
+  };
+
+  std::vector<CNNWorker> workers(numThreads);
+  for (int i = 0; i < numThreads; i++) {
+    workers[i].accumDConvFilters.resize(this->accumDConvFilters.size());
+    workers[i].accumDConvBiases.resize(this->accumDConvBiases.size());
+    for (ulong j = 0; j < this->accumDConvFilters.size(); j++) {
+      workers[i].accumDConvFilters[j].resize(this->accumDConvFilters[j].size(), static_cast<T>(0));
+      workers[i].accumDConvBiases[j].resize(this->accumDConvBiases[j].size(), static_cast<T>(0));
+    }
   }
+
+  QMutex callbackMutex;
 
   for (ulong e = 0; e < numEpochs; e++) {
     T epochLoss = static_cast<T>(0);
-    ulong completedSamples = 0;
+    std::atomic<ulong> completedSamples{0};
 
-    // Process samples in mini-batches
     for (ulong batchStart = 0; batchStart < numSamples; batchStart += batchSize) {
       ulong batchEnd = std::min(batchStart + batchSize, numSamples);
       ulong currentBatchSize = batchEnd - batchStart;
 
-      // Reset accumulators for this batch
-      this->resetCNNAccumulators();
-      this->annCore->resetAccumulators();
+      // Per-worker sample counts (extras distributed to first workers)
+      std::vector<ulong> workerSampleCounts(numThreads);
+      for (int i = 0; i < numThreads; i++)
+        workerSampleCounts[i] = currentBatchSize / static_cast<ulong>(numThreads)
+                              + (static_cast<ulong>(i) < currentBatchSize % static_cast<ulong>(numThreads) ? 1 : 0);
 
-      for (ulong s = batchStart; s < batchEnd; s++) {
-        const Sample<T>& sample = samples[s];
-
-        // 1. Forward through CNN layers (with intermediates for backprop)
-        std::vector<Tensor3D<T>> intermediates;
-        std::vector<std::vector<ulong>> poolMaxIndices;
-        Tensor3D<T> cnnOut = this->forwardCNN(sample.input, intermediates, poolMaxIndices);
-
-        // 2. Flatten CNN output
-        Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
-
-        // 3. Forward through ANN
-        ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-        ANN::Output<T> annOutput = this->annCore->predict(annInput);
-
-        // 4. Calculate loss
-        Output<T> predicted(annOutput.begin(), annOutput.end());
-        T sampleLoss = this->calculateLoss(predicted, sample.output);
-        epochLoss += sampleLoss;
-
-        // 5. ANN backpropagation - returns dCost/dInput (gradient w.r.t. flatten output)
-        ANN::Output<T> annExpected(sample.output.begin(), sample.output.end());
-        ANN::Tensor1D<T> dFlatInput = this->annCore->backpropagate(annExpected);
-
-        // 6. ANN accumulate gradients
-        this->annCore->accumulate();
-
-        // 7. Unflatten gradient back to 3D
-        Tensor1D<T> dFlat(dFlatInput.begin(), dFlatInput.end());
-        Tensor3D<T> dCNNOut = Flatten<T>::backpropagate(dFlat, this->cnnOutputShape);
-
-        // 8. Backward through CNN layers
-        std::vector<std::vector<T>> dConvFilters, dConvBiases;
-        this->backwardCNN(dCNNOut, intermediates, poolMaxIndices, dConvFilters, dConvBiases);
-
-        // 9. Accumulate CNN gradients
-        this->accumulateCNNGradients(dConvFilters, dConvBiases);
-
-        completedSamples++;
-
-        // Report progress
-        if (this->trainingCallback) {
-          TrainingProgress<T> progress;
-          progress.currentEpoch = e + 1;
-          progress.totalEpochs = numEpochs;
-          progress.currentSample = completedSamples;
-          progress.totalSamples = numSamples;
-          progress.sampleLoss = sampleLoss;
-          progress.epochLoss = epochLoss / static_cast<T>(completedSamples);
-          this->trainingCallback(progress);
+      // Sync worker ANN cores with main parameters and reset all accumulators
+      ANN::Parameters<T> mainANNParams = this->annCore->getParameters();
+      for (int i = 0; i < numThreads; i++) {
+        workerANNCores[i]->setParameters(mainANNParams);
+        workerANNCores[i]->resetAccumulators();
+        workers[i].accum_loss = static_cast<T>(0);
+        for (ulong j = 0; j < workers[i].accumDConvFilters.size(); j++) {
+          std::fill(workers[i].accumDConvFilters[j].begin(), workers[i].accumDConvFilters[j].end(), static_cast<T>(0));
+          std::fill(workers[i].accumDConvBiases[j].begin(), workers[i].accumDConvBiases[j].end(), static_cast<T>(0));
         }
       }
 
-      // Update weights after each mini-batch
-      this->annCore->update(currentBatchSize);
+      // Each worker processes its chunk of the batch end-to-end (fully parallel)
+      QVector<int> workerIndices(numThreads);
+      for (int i = 0; i < numThreads; i++) workerIndices[i] = i;
+
+      QtConcurrent::blockingMap(workerIndices, [&](int workerIdx) {
+        CNNWorker& worker = workers[workerIdx];
+        ANN::Core<T>* workerANN = workerANNCores[workerIdx].get();
+
+        ulong workerStart = batchStart;
+        for (int i = 0; i < workerIdx; i++) workerStart += workerSampleCounts[i];
+        ulong workerEnd = workerStart + workerSampleCounts[workerIdx];
+
+        for (ulong s = workerStart; s < workerEnd; s++) {
+          const Sample<T>& sample = samples[s];
+
+          // CNN forward (reads shared conv params — thread-safe)
+          std::vector<Tensor3D<T>> intermediates;
+          std::vector<std::vector<ulong>> poolMaxIndices;
+          Tensor3D<T> cnnOut = this->forwardCNN(sample.input, intermediates, poolMaxIndices);
+          Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
+
+          // ANN forward + backward (worker's own core — no contention)
+          ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
+          ANN::Output<T> annOutput = workerANN->predict(annInput);
+          Output<T> predicted(annOutput.begin(), annOutput.end());
+          T sampleLoss = this->calculateLoss(predicted, sample.output);
+
+          ANN::Output<T> annExpected(sample.output.begin(), sample.output.end());
+          ANN::Tensor1D<T> dFlatInput = workerANN->backpropagate(annExpected);
+          workerANN->accumulate();
+
+          // CNN backward (reads shared conv params — thread-safe)
+          Tensor1D<T> dFlat(dFlatInput.begin(), dFlatInput.end());
+          Tensor3D<T> dCNNOut = Flatten<T>::backpropagate(dFlat, this->cnnOutputShape);
+          std::vector<std::vector<T>> dConvFilters, dConvBiases;
+          this->backwardCNN(dCNNOut, intermediates, poolMaxIndices, dConvFilters, dConvBiases);
+
+          // Accumulate CNN gradients to worker's local accumulators
+          for (ulong i = 0; i < dConvFilters.size(); i++) {
+            for (ulong j = 0; j < dConvFilters[i].size(); j++)
+              worker.accumDConvFilters[i][j] += dConvFilters[i][j];
+            for (ulong j = 0; j < dConvBiases[i].size(); j++)
+              worker.accumDConvBiases[i][j] += dConvBiases[i][j];
+          }
+
+          worker.accum_loss += sampleLoss;
+
+          // Progress callback (epochLoss = 0 signals per-sample, not epoch-complete)
+          ulong completed = ++completedSamples;
+          if (this->trainingCallback) {
+            QMutexLocker locker(&callbackMutex);
+            TrainingProgress<T> progress;
+            progress.currentEpoch = e + 1;
+            progress.totalEpochs = numEpochs;
+            progress.currentSample = completed;
+            progress.totalSamples = numSamples;
+            progress.sampleLoss = sampleLoss;
+            progress.epochLoss = 0;
+            this->trainingCallback(progress);
+          }
+        }
+      });
+
+      // Merge: update each worker's ANN, then weighted-average their parameters
+      // w_i = w_old - lr*(accum_i/n_i); weighted avg Σ(w_i*n_i)/B = w_old - lr*Σaccum_i/B ✓
+      for (int i = 0; i < numThreads; i++)
+        if (workerSampleCounts[i] > 0) workerANNCores[i]->update(workerSampleCounts[i]);
+
+      ANN::Parameters<T> mergedParams;
+      const ANN::Parameters<T>& ref = workerANNCores[0]->getParameters();
+      mergedParams.weights.resize(ref.weights.size());
+      for (ulong l = 0; l < ref.weights.size(); l++) {
+        mergedParams.weights[l].resize(ref.weights[l].size());
+        for (ulong j = 0; j < ref.weights[l].size(); j++)
+          mergedParams.weights[l][j].assign(ref.weights[l][j].size(), static_cast<T>(0));
+      }
+      mergedParams.biases.resize(ref.biases.size());
+      for (ulong l = 0; l < ref.biases.size(); l++)
+        mergedParams.biases[l].assign(ref.biases[l].size(), static_cast<T>(0));
+
+      for (int i = 0; i < numThreads; i++) {
+        if (workerSampleCounts[i] == 0) continue;
+        T w = static_cast<T>(workerSampleCounts[i]) / static_cast<T>(currentBatchSize);
+        const ANN::Parameters<T>& wp = workerANNCores[i]->getParameters();
+        for (ulong l = 0; l < wp.weights.size(); l++)
+          for (ulong j = 0; j < wp.weights[l].size(); j++)
+            for (ulong k = 0; k < wp.weights[l][j].size(); k++)
+              mergedParams.weights[l][j][k] += wp.weights[l][j][k] * w;
+        for (ulong l = 0; l < wp.biases.size(); l++)
+          for (ulong j = 0; j < wp.biases[l].size(); j++)
+            mergedParams.biases[l][j] += wp.biases[l][j] * w;
+      }
+
+      this->annCore->setParameters(mergedParams);
+
+      // Merge worker CNN accumulators and update CNN parameters
+      this->resetCNNAccumulators();
+      for (int i = 0; i < numThreads; i++) {
+        this->accumulateCNNGradients(workers[i].accumDConvFilters, workers[i].accumDConvBiases);
+        epochLoss += workers[i].accum_loss;
+      }
       this->updateCNNParameters(currentBatchSize);
     }
 
-    // Sync ANN parameters so getParameters() returns current dense params (e.g., for checkpoint saves)
+    // Sync ANN parameters for checkpoint saves
     this->parameters.denseParams = this->annCore->getParameters();
 
     T avgLoss = epochLoss / static_cast<T>(numSamples);
     this->trainingMetadata.finalLoss = avgLoss;
 
-    if (this->logLevel >= CNN::LogLevel::INFO) {
+    if (this->logLevel >= CNN::LogLevel::INFO)
       qDebug() << "Epoch " << (e + 1) << "/" << numEpochs << " - Loss: " << avgLoss;
+
+    // Report epoch completion with actual epoch loss
+    if (this->trainingCallback) {
+      TrainingProgress<T> progress;
+      progress.currentEpoch = e + 1;
+      progress.totalEpochs = numEpochs;
+      progress.currentSample = numSamples;
+      progress.totalSamples = numSamples;
+      progress.sampleLoss = 0;
+      progress.epochLoss = avgLoss;
+      this->trainingCallback(progress);
     }
   }
 
