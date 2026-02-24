@@ -117,9 +117,66 @@
   <tr><td><code>AVG</code></td><td>Average pooling (distributes gradient evenly)</td></tr>
 </table>
 
+<h3>CostFunctionType <span class="badge badge-blue">CNN_CostFunctionConfig.hpp</span></h3>
+<table>
+  <tr><th>Value</th><th>String</th><th>Description</th></tr>
+  <tr><td><code>SQUARED_DIFFERENCE</code></td><td><code>"squaredDifference"</code></td><td>Standard squared error: Σ(predicted − expected)²</td></tr>
+  <tr><td><code>WEIGHTED_SQUARED_DIFFERENCE</code></td><td><code>"weightedSquaredDifference"</code></td><td>Weighted squared error: Σ wᵢ·(predicted − expected)²</td></tr>
+</table>
+<p>Helpers: <code>CostFunction::nameToType(str)</code>, <code>CostFunction::typeToName(type)</code></p>
+
+<h3>LogLevel <span class="badge badge-blue">CNN_LogLevel.hpp</span></h3>
+<table>
+  <tr><th>Value</th><th>Int</th><th>Description</th></tr>
+  <tr><td><code>QUIET</code></td><td>0</td><td>No output</td></tr>
+  <tr><td><code>ERROR</code></td><td>1</td><td>Errors only (default)</td></tr>
+  <tr><td><code>WARNING</code></td><td>2</td><td>Errors + warnings</td></tr>
+  <tr><td><code>INFO</code></td><td>3</td><td>Errors + warnings + informational messages</td></tr>
+  <tr><td><code>DEBUG</code></td><td>4</td><td>All messages including debug output</td></tr>
+</table>
+
 <h2 id="configs">3. Configuration Structs</h2>
 
-<h3>ConvLayerConfig</h3>
+<h3>CoreConfig&lt;T&gt; <span class="badge badge-blue">CNN_CoreConfig.hpp</span></h3>
+<p>Top-level configuration struct. Contains all settings needed to create and run a CNN.</p>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>modeType</code></td><td><code>ModeType</code></td><td>TRAIN, PREDICT, or TEST</td></tr>
+  <tr><td><code>deviceType</code></td><td><code>DeviceType</code></td><td>CPU or GPU</td></tr>
+  <tr><td><code>numThreads</code></td><td><code>int</code></td><td>CPU threads (0 = all cores)</td></tr>
+  <tr><td><code>numGPUs</code></td><td><code>int</code></td><td>GPUs to use (0 = all available)</td></tr>
+  <tr><td><code>inputShape</code></td><td><code>Shape3D</code></td><td>Input tensor shape (channels, height, width)</td></tr>
+  <tr><td><code>layersConfig</code></td><td><code>LayersConfig</code></td><td>CNN + dense layer architecture</td></tr>
+  <tr><td><code>costFunctionConfig</code></td><td><code>CostFunctionConfig&lt;T&gt;</code></td><td>Cost function type and optional weights</td></tr>
+  <tr><td><code>trainingConfig</code></td><td><code>TrainingConfig&lt;T&gt;</code></td><td>Training hyperparameters (epochs, learning rate, batch size)</td></tr>
+  <tr><td><code>parameters</code></td><td><code>Parameters&lt;T&gt;</code></td><td>Pre-trained parameters (optional)</td></tr>
+  <tr><td><code>progressReports</code></td><td><code>ulong</code></td><td>Progress callback frequency for all modes (default 1000)</td></tr>
+  <tr><td><code>logLevel</code></td><td><code>LogLevel</code></td><td>Log verbosity level (default ERROR)</td></tr>
+</table>
+
+<h3>TrainingConfig&lt;T&gt; <span class="badge badge-blue">CNN_TrainingConfig.hpp</span></h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>numEpochs</code></td><td><code>ulong</code></td><td>Total training epochs (default 0)</td></tr>
+  <tr><td><code>learningRate</code></td><td><code>float</code></td><td>SGD learning rate (default 0.01)</td></tr>
+  <tr><td><code>batchSize</code></td><td><code>ulong</code></td><td>Mini-batch size (default 64)</td></tr>
+</table>
+
+<h3>CostFunctionConfig&lt;T&gt; <span class="badge badge-blue">CNN_CostFunctionConfig.hpp</span></h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>type</code></td><td><code>CostFunctionType</code></td><td>Cost function type (default SQUARED_DIFFERENCE)</td></tr>
+  <tr><td><code>weights</code></td><td><code>std::vector&lt;T&gt;</code></td><td>Per-output-neuron weights (only used for WEIGHTED_SQUARED_DIFFERENCE)</td></tr>
+</table>
+
+<h3>LayersConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>cnnLayers</code></td><td><code>vector&lt;CNNLayerConfig&gt;</code></td><td>Convolutional/pooling/activation layers</td></tr>
+  <tr><td><code>denseLayers</code></td><td><code>vector&lt;DenseLayerConfig&gt;</code></td><td>Fully connected layers (after flatten)</td></tr>
+</table>
+
+<h3>ConvLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
   <tr><td><code>numFilters</code></td><td><code>ulong</code></td><td>Number of output feature maps</td></tr>
@@ -130,7 +187,7 @@
   <tr><td><code>slidingStrategy</code></td><td><code>SlidingStrategyType</code></td><td>Padding strategy (VALID, SAME, FULL)</td></tr>
 </table>
 
-<h3>PoolLayerConfig</h3>
+<h3>PoolLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
   <tr><td><code>poolType</code></td><td><code>PoolTypeEnum</code></td><td>MAX or AVG</td></tr>
@@ -140,59 +197,27 @@
   <tr><td><code>strideX</code></td><td><code>ulong</code></td><td>Horizontal stride</td></tr>
 </table>
 
-<h3>CNNLayerConfig</h3>
+<h3>CNNLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
   <tr><td><code>type</code></td><td><code>LayerType</code></td><td>CONV, RELU, POOL, or FLATTEN</td></tr>
   <tr><td><code>config</code></td><td><code>std::variant&lt;...&gt;</code></td><td>Layer-specific configuration</td></tr>
 </table>
 
-<h3>DenseLayerConfig</h3>
+<h3>DenseLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
   <tr><td><code>numNeurons</code></td><td><code>ulong</code></td><td>Number of neurons</td></tr>
   <tr><td><code>actvFuncType</code></td><td><code>ANN::ActvFuncType</code></td><td>Activation function (RELU, SIGMOID, TANH)</td></tr>
 </table>
 
-<h3>LayersConfig</h3>
-<table>
-  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-  <tr><td><code>cnnLayers</code></td><td><code>vector&lt;CNNLayerConfig&gt;</code></td><td>Convolutional/pooling/activation layers</td></tr>
-  <tr><td><code>denseLayers</code></td><td><code>vector&lt;DenseLayerConfig&gt;</code></td><td>Fully connected layers (after flatten)</td></tr>
-</table>
-
-<h3>ConvParameters&lt;T&gt;</h3>
+<h3>ConvParameters&lt;T&gt; <span class="badge badge-blue">CNN_Parameters.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
   <tr><td><code>filters</code></td><td><code>vector&lt;T&gt;</code></td><td>Flat: numFilters × inputC × filterH × filterW</td></tr>
   <tr><td><code>biases</code></td><td><code>vector&lt;T&gt;</code></td><td>One bias per filter</td></tr>
   <tr><td><code>filterAt(f,c,h,w)</code></td><td><code>T&amp;</code></td><td>Access filter weight at [f][c][h][w]</td></tr>
 </table>
-
-<h3>CoreConfig&lt;T&gt;</h3>
-<table>
-  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-  <tr><td><code>deviceType</code></td><td><code>DeviceType</code></td><td>CPU or GPU</td></tr>
-  <tr><td><code>modeType</code></td><td><code>ModeType</code></td><td>TRAIN, PREDICT, or TEST</td></tr>
-  <tr><td><code>numThreads</code></td><td><code>int</code></td><td>CPU threads (0 = all cores)</td></tr>
-  <tr><td><code>numGPUs</code></td><td><code>int</code></td><td>GPUs to use (0 = all available)</td></tr>
-  <tr><td><code>inputShape</code></td><td><code>Shape3D</code></td><td>Input tensor shape (C, H, W)</td></tr>
-  <tr><td><code>layersConfig</code></td><td><code>LayersConfig</code></td><td>CNN + dense layer configs</td></tr>
-  <tr><td><code>costFunctionConfig</code></td><td><code>CostFunctionConfig&lt;T&gt;</code></td><td>Cost function configuration</td></tr>
-  <tr><td><code>trainingConfig</code></td><td><code>TrainingConfig&lt;T&gt;</code></td><td>Training hyperparameters</td></tr>
-  <tr><td><code>parameters</code></td><td><code>Parameters&lt;T&gt;</code></td><td>Pre-trained parameters (optional)</td></tr>
-  <tr><td><code>progressReports</code></td><td><code>ulong</code></td><td>Progress frequency for all modes (default 1000)</td></tr>
-  <tr><td><code>logLevel</code></td><td><code>LogLevel</code></td><td>Log level (default ERROR)</td></tr>
-</table>
-
-<h3>TrainingConfig&lt;T&gt; <span class="badge badge-blue">CNN_TrainingConfig.hpp</span></h3>
-<pre><code><span class="keyword">template</span> &lt;<span class="keyword">typename</span> <span class="type">T</span>&gt;
-<span class="keyword">struct</span> <span class="type">TrainingConfig</span> {
-    <span class="type">ulong</span> numEpochs      = <span class="number">0</span>;       <span class="comment">// Total training epochs</span>
-    <span class="type">ulong</span> batchSize      = <span class="number">64</span>;      <span class="comment">// Mini-batch size (default 64)</span>
-    <span class="type">float</span> learningRate   = <span class="number">0.01f</span>;  <span class="comment">// SGD learning rate</span>
-};
-</code></pre>
 
 <h2 id="core">4. Core&lt;T&gt; — Abstract Base Class</h2>
 <p>Defined in <code>CNN_Core.hpp</code>. All CNN operations go through this interface.</p>

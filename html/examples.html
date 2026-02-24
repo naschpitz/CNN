@@ -29,9 +29,21 @@
 
 <h1>Code Examples</h1>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#create">Creating a CNN</a></li>
+    <li><a href="#train">Training with Samples</a></li>
+    <li><a href="#predict">Prediction</a></li>
+    <li><a href="#test">Testing</a></li>
+    <li><a href="#gpu">GPU Training</a></li>
+    <li><a href="#step">Step-by-Step Training</a></li>
+  </ol>
+</div>
+
 <p>This page provides practical examples for using the CNN library. Each example demonstrates a key feature with complete, runnable code.</p>
 
-<h2>1. Creating a CNN</h2>
+<h2 id="create">1. Creating a CNN</h2>
 
 <p>Configure a convolutional neural network with CNN layers followed by dense layers:</p>
 
@@ -83,7 +95,7 @@
   The <code>inputShape</code> is specified as {channels, height, width}. For MNIST-like datasets, use {1, 28, 28}. For RGB images, use {3, height, width}.
 </div>
 
-<h2>2. Training with Samples</h2>
+<h2 id="train">2. Training with Samples</h2>
 
 <p>Create training samples and train the network:</p>
 
@@ -123,7 +135,7 @@ std::cout &lt;&lt; <span class="string">"Training duration: "</span> &lt;&lt; me
 std::cout &lt;&lt; <span class="string">"Final loss: "</span> &lt;&lt; metadata.finalLoss &lt;&lt; std::endl;
 </code></pre>
 
-<h2>3. Prediction</h2>
+<h2 id="predict">3. Prediction</h2>
 
 <p>Perform inference on a single input:</p>
 
@@ -143,7 +155,7 @@ CNN::Output&lt;<span class="type">float</span>&gt; output = core-&gt;<span class
 }
 </code></pre>
 
-<h2>4. Testing</h2>
+<h2 id="test">4. Testing</h2>
 
 <p>Evaluate the network on a test set:</p>
 
@@ -160,7 +172,7 @@ std::cout &lt;&lt; <span class="string">"Total loss: "</span> &lt;&lt; result.to
 std::cout &lt;&lt; <span class="string">"Average loss: "</span> &lt;&lt; result.averageLoss &lt;&lt; std::endl;
 </code></pre>
 
-<h2>5. GPU Training</h2>
+<h2 id="gpu">5. GPU Training</h2>
 
 <p>Switch to GPU acceleration with minimal code changes:</p>
 
@@ -185,7 +197,7 @@ core-&gt;<span class="func">train</span>(samples);
   Set <code>numGPUs = 0</code> to automatically use all available GPUs, or specify a number to use that many GPUs. GPU training requires OpenCL 1.2 or later.
 </div>
 
-<h2>6. Step-by-Step Training</h2>
+<h2 id="step">6. Step-by-Step Training</h2>
 
 <p>Manual epoch loop with custom callbacks:</p>
 
