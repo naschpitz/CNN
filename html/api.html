@@ -174,12 +174,15 @@
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
   <tr><td><code>deviceType</code></td><td><code>DeviceType</code></td><td>CPU or GPU</td></tr>
   <tr><td><code>modeType</code></td><td><code>ModeType</code></td><td>TRAIN, PREDICT, or TEST</td></tr>
+  <tr><td><code>numThreads</code></td><td><code>int</code></td><td>CPU threads (0 = all cores)</td></tr>
+  <tr><td><code>numGPUs</code></td><td><code>int</code></td><td>GPUs to use (0 = all available)</td></tr>
   <tr><td><code>inputShape</code></td><td><code>Shape3D</code></td><td>Input tensor shape (C, H, W)</td></tr>
   <tr><td><code>layersConfig</code></td><td><code>LayersConfig</code></td><td>CNN + dense layer configs</td></tr>
+  <tr><td><code>costFunctionConfig</code></td><td><code>CostFunctionConfig&lt;T&gt;</code></td><td>Cost function configuration</td></tr>
   <tr><td><code>trainingConfig</code></td><td><code>TrainingConfig&lt;T&gt;</code></td><td>Training hyperparameters</td></tr>
   <tr><td><code>parameters</code></td><td><code>Parameters&lt;T&gt;</code></td><td>Pre-trained parameters (optional)</td></tr>
   <tr><td><code>progressReports</code></td><td><code>ulong</code></td><td>Progress frequency for all modes (default 1000)</td></tr>
-  <tr><td><code>verbose</code></td><td><code>bool</code></td><td>Verbose logging</td></tr>
+  <tr><td><code>logLevel</code></td><td><code>LogLevel</code></td><td>Log level (default ERROR)</td></tr>
 </table>
 
 <h3>TrainingConfig&lt;T&gt; <span class="badge badge-blue">CNN_TrainingConfig.hpp</span></h3>
@@ -188,7 +191,6 @@
     <span class="type">ulong</span> numEpochs      = <span class="number">0</span>;       <span class="comment">// Total training epochs</span>
     <span class="type">ulong</span> batchSize      = <span class="number">64</span>;      <span class="comment">// Mini-batch size (default 64)</span>
     <span class="type">float</span> learningRate   = <span class="number">0.01f</span>;  <span class="comment">// SGD learning rate</span>
-    <span class="type">int</span>   numGPUs        = <span class="number">0</span>;       <span class="comment">// GPUs to use (0 = all available)</span>
 };
 </code></pre>
 
