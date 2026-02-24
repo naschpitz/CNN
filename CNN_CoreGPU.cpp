@@ -57,6 +57,10 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
   ulong numSamples = samples.size();
   ulong numEpochs = this->trainingConfig.numEpochs;
 
+  // Adjust batch size to be divisible by numGPUs (round down, minimum = numGPUs)
+  ulong batchSize = this->trainingConfig.batchSize;
+  batchSize = std::max(this->numGPUs, (batchSize / this->numGPUs) * this->numGPUs);
+
   if (this->logLevel >= CNN::LogLevel::INFO) {
     std::cout << "Starting GPU training: " << numSamples << " samples, "
               << numEpochs << " epochs, " << this->numGPUs << " GPU"
@@ -74,50 +78,59 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
     };
   };
 
+  struct GPUWorkItem {
+    size_t gpuIdx;
+    ulong startIdx;
+    ulong endIdx;
+  };
+
   for (ulong e = 0; e < numEpochs; e++) {
-    ulong samplesPerGPU = numSamples / this->numGPUs;
-    ulong remainder = numSamples % this->numGPUs;
+    T epochLoss = 0;
 
-    struct GPUWorkItem {
-      size_t gpuIdx;
-      ulong startIdx;
-      ulong endIdx;
-    };
+    // Process samples in mini-batches
+    for (ulong batchStart = 0; batchStart < numSamples; batchStart += batchSize) {
+      ulong batchEnd = std::min(batchStart + batchSize, numSamples);
+      ulong currentBatchSize = batchEnd - batchStart;
 
-    QVector<GPUWorkItem> workItems;
+      // Distribute the batch across GPUs
+      ulong samplesPerGPU = currentBatchSize / this->numGPUs;
+      ulong remainder = currentBatchSize % this->numGPUs;
 
-    for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-      ulong startIdx = gpuIdx * samplesPerGPU + std::min(gpuIdx, remainder);
-      ulong endIdx = startIdx + samplesPerGPU + (gpuIdx < remainder ? 1 : 0);
-      workItems.append({gpuIdx, startIdx, endIdx});
-    }
+      QVector<GPUWorkItem> workItems;
 
-    std::vector<T> gpuLosses(this->numGPUs, 0);
+      for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
+        ulong gpuStart = batchStart + gpuIdx * samplesPerGPU + std::min(gpuIdx, remainder);
+        ulong gpuEnd = gpuStart + samplesPerGPU + (gpuIdx < remainder ? 1 : 0);
+        workItems.append({gpuIdx, gpuStart, gpuEnd});
+      }
 
-    QtConcurrent::blockingMap(workItems,
-        [this, &samples, &gpuLosses, e, numEpochs, &createGpuCallback](const GPUWorkItem& item) {
-      gpuLosses[item.gpuIdx] = this->gpuWorkers[item.gpuIdx]->trainSubset(
-          samples, item.startIdx, item.endIdx, e + 1, numEpochs, createGpuCallback(item.gpuIdx));
-    });
+      std::vector<T> gpuLosses(this->numGPUs, 0);
 
-    T totalLoss = 0;
-    for (size_t i = 0; i < this->numGPUs; i++) {
-      totalLoss += gpuLosses[i];
-    }
+      QtConcurrent::blockingMap(workItems,
+          [this, &samples, &gpuLosses, e, numEpochs, &createGpuCallback](const GPUWorkItem& item) {
+        gpuLosses[item.gpuIdx] = this->gpuWorkers[item.gpuIdx]->trainSubset(
+            samples, item.startIdx, item.endIdx, e + 1, numEpochs, createGpuCallback(item.gpuIdx));
+      });
 
-    // Merge CNN and ANN gradients across workers, then unified update
-    this->mergeCNNGradients();
-    this->mergeANNGradients();
+      for (size_t i = 0; i < this->numGPUs; i++) {
+        epochLoss += gpuLosses[i];
+      }
 
-    for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-      this->gpuWorkers[gpuIdx]->update(numSamples);
+      // Merge CNN and ANN gradients across workers, then unified update
+      this->mergeCNNGradients();
+      this->mergeANNGradients();
+
+      // Update weights after each mini-batch
+      for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
+        this->gpuWorkers[gpuIdx]->update(currentBatchSize);
+      }
     }
 
     // Sync parameters from GPU so getParameters() returns current values (e.g., for checkpoint saves)
     this->gpuWorkers[0]->syncParametersFromGPU();
     this->parameters = this->gpuWorkers[0]->getParameters();
 
-    T avgEpochLoss = totalLoss / static_cast<T>(numSamples);
+    T avgEpochLoss = epochLoss / static_cast<T>(numSamples);
     this->trainingMetadata.finalLoss = avgEpochLoss;
 
     if (this->trainingCallback) {

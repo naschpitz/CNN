@@ -388,6 +388,7 @@ template <typename T>
 void CoreCPU<T>::train(const Samples<T>& samples) {
   ulong numEpochs = this->trainingConfig.numEpochs;
   ulong numSamples = samples.size();
+  ulong batchSize = this->trainingConfig.batchSize;
 
   if (numSamples == 0) {
     throw std::runtime_error("No training samples provided");
@@ -400,66 +401,75 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
   }
 
   for (ulong e = 0; e < numEpochs; e++) {
-    // Reset accumulators for this epoch
-    this->resetCNNAccumulators();
-    this->annCore->resetAccumulators();
-
     T epochLoss = static_cast<T>(0);
+    ulong completedSamples = 0;
 
-    for (ulong s = 0; s < numSamples; s++) {
-      const Sample<T>& sample = samples[s];
+    // Process samples in mini-batches
+    for (ulong batchStart = 0; batchStart < numSamples; batchStart += batchSize) {
+      ulong batchEnd = std::min(batchStart + batchSize, numSamples);
+      ulong currentBatchSize = batchEnd - batchStart;
 
-      // 1. Forward through CNN layers (with intermediates for backprop)
-      std::vector<Tensor3D<T>> intermediates;
-      std::vector<std::vector<ulong>> poolMaxIndices;
-      Tensor3D<T> cnnOut = this->forwardCNN(sample.input, intermediates, poolMaxIndices);
+      // Reset accumulators for this batch
+      this->resetCNNAccumulators();
+      this->annCore->resetAccumulators();
 
-      // 2. Flatten CNN output
-      Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
+      for (ulong s = batchStart; s < batchEnd; s++) {
+        const Sample<T>& sample = samples[s];
 
-      // 3. Forward through ANN
-      ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-      ANN::Output<T> annOutput = this->annCore->predict(annInput);
+        // 1. Forward through CNN layers (with intermediates for backprop)
+        std::vector<Tensor3D<T>> intermediates;
+        std::vector<std::vector<ulong>> poolMaxIndices;
+        Tensor3D<T> cnnOut = this->forwardCNN(sample.input, intermediates, poolMaxIndices);
 
-      // 4. Calculate loss
-      Output<T> predicted(annOutput.begin(), annOutput.end());
-      T sampleLoss = this->calculateLoss(predicted, sample.output);
-      epochLoss += sampleLoss;
+        // 2. Flatten CNN output
+        Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
 
-      // 5. ANN backpropagation - returns dCost/dInput (gradient w.r.t. flatten output)
-      ANN::Output<T> annExpected(sample.output.begin(), sample.output.end());
-      ANN::Tensor1D<T> dFlatInput = this->annCore->backpropagate(annExpected);
+        // 3. Forward through ANN
+        ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
+        ANN::Output<T> annOutput = this->annCore->predict(annInput);
 
-      // 6. ANN accumulate gradients
-      this->annCore->accumulate();
+        // 4. Calculate loss
+        Output<T> predicted(annOutput.begin(), annOutput.end());
+        T sampleLoss = this->calculateLoss(predicted, sample.output);
+        epochLoss += sampleLoss;
 
-      // 7. Unflatten gradient back to 3D
-      Tensor1D<T> dFlat(dFlatInput.begin(), dFlatInput.end());
-      Tensor3D<T> dCNNOut = Flatten<T>::backpropagate(dFlat, this->cnnOutputShape);
+        // 5. ANN backpropagation - returns dCost/dInput (gradient w.r.t. flatten output)
+        ANN::Output<T> annExpected(sample.output.begin(), sample.output.end());
+        ANN::Tensor1D<T> dFlatInput = this->annCore->backpropagate(annExpected);
 
-      // 8. Backward through CNN layers
-      std::vector<std::vector<T>> dConvFilters, dConvBiases;
-      this->backwardCNN(dCNNOut, intermediates, poolMaxIndices, dConvFilters, dConvBiases);
+        // 6. ANN accumulate gradients
+        this->annCore->accumulate();
 
-      // 9. Accumulate CNN gradients
-      this->accumulateCNNGradients(dConvFilters, dConvBiases);
+        // 7. Unflatten gradient back to 3D
+        Tensor1D<T> dFlat(dFlatInput.begin(), dFlatInput.end());
+        Tensor3D<T> dCNNOut = Flatten<T>::backpropagate(dFlat, this->cnnOutputShape);
 
-      // Report progress
-      if (this->trainingCallback) {
-        TrainingProgress<T> progress;
-        progress.currentEpoch = e + 1;
-        progress.totalEpochs = numEpochs;
-        progress.currentSample = s + 1;
-        progress.totalSamples = numSamples;
-        progress.sampleLoss = sampleLoss;
-        progress.epochLoss = epochLoss / static_cast<T>(s + 1);
-        this->trainingCallback(progress);
+        // 8. Backward through CNN layers
+        std::vector<std::vector<T>> dConvFilters, dConvBiases;
+        this->backwardCNN(dCNNOut, intermediates, poolMaxIndices, dConvFilters, dConvBiases);
+
+        // 9. Accumulate CNN gradients
+        this->accumulateCNNGradients(dConvFilters, dConvBiases);
+
+        completedSamples++;
+
+        // Report progress
+        if (this->trainingCallback) {
+          TrainingProgress<T> progress;
+          progress.currentEpoch = e + 1;
+          progress.totalEpochs = numEpochs;
+          progress.currentSample = completedSamples;
+          progress.totalSamples = numSamples;
+          progress.sampleLoss = sampleLoss;
+          progress.epochLoss = epochLoss / static_cast<T>(completedSamples);
+          this->trainingCallback(progress);
+        }
       }
-    }
 
-    // Update weights for this epoch
-    this->annCore->update(numSamples);
-    this->updateCNNParameters(numSamples);
+      // Update weights after each mini-batch
+      this->annCore->update(currentBatchSize);
+      this->updateCNNParameters(currentBatchSize);
+    }
 
     // Sync ANN parameters so getParameters() returns current dense params (e.g., for checkpoint saves)
     this->parameters.denseParams = this->annCore->getParameters();
