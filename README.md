@@ -97,7 +97,7 @@ const auto& meta   = core->getTrainingMetadata();
 
 ## Documentation
 
-Comprehensive HTML documentation is available in the [`html/`](html/) directory. Open `html/index.html` in a browser to browse the API reference, architecture overview, layer documentation, mathematical foundations, and GPU implementation details.
+Comprehensive HTML documentation is available in the [`docs/`](docs/) directory. Open `docs/index.html` in a browser to browse the API reference, architecture overview, layer documentation, mathematical foundations, and GPU implementation details.
 
 ## License
 
