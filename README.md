@@ -56,6 +56,7 @@ config.layersConfig.denseLayers = {
   { 10, ANN::ActvFuncType::SIGMOID}
 };
 config.trainingConfig.numEpochs    = 10;
+config.trainingConfig.batchSize    = 64;
 config.trainingConfig.learningRate = 0.01f;
 
 // Create, train, and query

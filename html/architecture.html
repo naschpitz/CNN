@@ -290,31 +290,34 @@ Conv2D&lt;<span class="type">double</span>&gt;::predict(...);</code></pre>
 
 <h3>Training Loop Overview</h3>
 <pre><code><span class="keyword">for</span> epoch <span class="keyword">in</span> [0, numEpochs):
-  resetCNNAccumulators()
-  <span class="keyword">for</span> sample <span class="keyword">in</span> samples:
-    <span class="comment">// 1. Forward pass through CNN (store intermediates)</span>
-    cnnOut = forwardCNN(sample.input, intermediates, poolMaxIndices)
+  shuffle(samples)
+
+  <span class="keyword">for</span> batch <span class="keyword">of</span> batchSize samples:
+    resetCNNAccumulators()
+    <span class="keyword">for</span> sample <span class="keyword">in</span> batch:
+      <span class="comment">// 1. Forward pass through CNN (store intermediates)</span>
+      cnnOut = forwardCNN(sample.input, intermediates, poolMaxIndices)
+      
+      <span class="comment">// 2. Flatten and forward through ANN</span>
+      flatInput = Flatten::predict(cnnOut)
+      annOutput = annCore-&gt;predict(flatInput)
+      
+      <span class="comment">// 3. Compute loss (MSE)</span>
+      loss = MSE(annOutput, sample.output)
+      
+      <span class="comment">// 4. Backprop through ANN</span>
+      dANNInput = annCore-&gt;backpropagate(dLoss)
+      
+      <span class="comment">// 5. Unflatten and backprop through CNN</span>
+      dCNNOut = Flatten::backpropagate(dANNInput)
+      backwardCNN(dCNNOut, intermediates, poolMaxIndices, dFilters, dBiases)
+      
+      <span class="comment">// 6. Accumulate gradients</span>
+      accumulateCNNGradients(dFilters, dBiases)
     
-    <span class="comment">// 2. Flatten and forward through ANN</span>
-    flatInput = Flatten::predict(cnnOut)
-    annOutput = annCore-&gt;predict(flatInput)
-    
-    <span class="comment">// 3. Compute loss (MSE)</span>
-    loss = MSE(annOutput, sample.output)
-    
-    <span class="comment">// 4. Backprop through ANN</span>
-    dANNInput = annCore-&gt;backpropagate(dLoss)
-    
-    <span class="comment">// 5. Unflatten and backprop through CNN</span>
-    dCNNOut = Flatten::backpropagate(dANNInput)
-    backwardCNN(dCNNOut, intermediates, poolMaxIndices, dFilters, dBiases)
-    
-    <span class="comment">// 6. Accumulate gradients</span>
-    accumulateCNNGradients(dFilters, dBiases)
-  
-  <span class="comment">// 7. Update parameters (SGD)</span>
-  updateCNNParameters(numSamples)
-  annCore-&gt;updateParameters(numSamples)</code></pre>
+    <span class="comment">// 7. Update parameters (SGD, per batch)</span>
+    updateCNNParameters(batchSize)
+    annCore-&gt;updateParameters(batchSize)</code></pre>
 
 <h3>Detailed Steps</h3>
 
@@ -401,7 +404,7 @@ Tensor3D&lt;<span class="type">T</span>&gt; dCurrent = dCNNOut;
 
 <div class="card">
   <h4>7. Parameter Update (SGD)</h4>
-  <p>After processing all samples in an epoch, accumulated gradients are used to update parameters via Stochastic Gradient Descent.</p>
+  <p>After processing all samples in a mini-batch, accumulated gradients are used to update parameters via Stochastic Gradient Descent.</p>
   <pre><code><span class="keyword">void</span> updateCNNParameters(<span class="type">ulong</span> numSamples) {
   <span class="type">T</span> learningRate = trainingConfig.learningRate;
   <span class="keyword">for</span> (<span class="type">ulong</span> i = 0; i &lt; parameters.convParams.size(); i++) {
