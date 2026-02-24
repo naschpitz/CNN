@@ -32,6 +32,8 @@ namespace CNN {
       //-- Getters --//
       ModeType getModeType() const { return modeType; }
       DeviceType getDeviceType() const { return deviceType; }
+      int getNumThreads() const { return numThreads; }
+      int getNumGPUs() const { return numGPUs; }
       const Shape3D& getInputShape() const { return inputShape; }
       const LayersConfig& getLayersConfig() const { return layersConfig; }
       const TrainingConfig<T>& getTrainingConfig() const { return trainingConfig; }
@@ -64,6 +66,8 @@ namespace CNN {
       CoreConfig<T> coreConfig;
       DeviceType deviceType;
       ModeType modeType;
+      int numThreads = 0;
+      int numGPUs = 0;
       Shape3D inputShape;
       LayersConfig layersConfig;
       TrainingConfig<T> trainingConfig;

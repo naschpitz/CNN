@@ -31,6 +31,8 @@ Core<T>::Core(const CoreConfig<T>& coreConfig)
 
   this->deviceType = coreConfig.deviceType;
   this->modeType = coreConfig.modeType;
+  this->numThreads = coreConfig.numThreads;
+  this->numGPUs = coreConfig.numGPUs;
   this->inputShape = coreConfig.inputShape;
   this->layersConfig = coreConfig.layersConfig;
   this->trainingConfig = coreConfig.trainingConfig;

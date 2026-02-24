@@ -90,7 +90,7 @@ ANN::CoreConfig<T> CoreCPU<T>::buildANNConfig(const CoreConfig<T>& cnnConfig) {
   // Training config
   annConfig.trainingConfig.numEpochs = cnnConfig.trainingConfig.numEpochs;
   annConfig.trainingConfig.learningRate = cnnConfig.trainingConfig.learningRate;
-  annConfig.trainingConfig.numThreads = 1; // CNN manages its own threading
+  annConfig.numThreads = 1; // CNN manages its own threading
 
   // Cost function config
   annConfig.costFunctionConfig.type = static_cast<ANN::CostFunctionType>(cnnConfig.costFunctionConfig.type);
@@ -396,7 +396,7 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
   if (numSamples == 0)
     throw std::runtime_error("No training samples provided");
 
-  int numThreads = this->trainingConfig.numThreads;
+  int numThreads = this->numThreads;
   if (numThreads <= 0)
     numThreads = QThreadPool::globalInstance()->maxThreadCount();
 

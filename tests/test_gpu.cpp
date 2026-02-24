@@ -41,7 +41,7 @@ static void testGPUEndToEnd() {
   config.trainingConfig.numEpochs = 100;
   config.trainingConfig.learningRate = 0.5f;
   config.progressReports = 0;
-  config.trainingConfig.numGPUs = 1;
+  config.numGPUs = 1;
 
   // "bright" (gradient-fill) → 1, "dark" (all 0s) → 0
   CNN::Samples<float> samples(2);
@@ -208,7 +208,7 @@ static void testGPUWithPoolLayer() {
   config.trainingConfig.numEpochs = 500;
   config.trainingConfig.learningRate = 0.5f;
   config.progressReports = 0;
-  config.trainingConfig.numGPUs = 1;
+  config.numGPUs = 1;
 
   CNN::Samples<float> samples(2);
   samples[0].input = makeGradientInput<float>({1, 10, 10});
@@ -280,7 +280,7 @@ static void testGPUMultiConvStack() {
   config.trainingConfig.numEpochs = 200;
   config.trainingConfig.learningRate = 0.1f;
   config.progressReports = 0;
-  config.trainingConfig.numGPUs = 1;
+  config.numGPUs = 1;
 
   CNN::Samples<float> samples(2);
   samples[0].input = makeGradientInput<float>({1, 8, 8});

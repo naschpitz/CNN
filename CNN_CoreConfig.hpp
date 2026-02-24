@@ -17,6 +17,8 @@ namespace CNN {
   struct CoreConfig {
     ModeType modeType;
     DeviceType deviceType;
+    int numThreads = 0;            // 0 = use all available cores (for CPU mode)
+    int numGPUs = 0;               // 0 = use all available GPUs (for GPU mode)
     Shape3D inputShape;            // Input tensor shape (C, H, W)
     LayersConfig layersConfig;
     CostFunctionConfig<T> costFunctionConfig;

@@ -332,7 +332,6 @@ void CoreGPUWorker<T>::buildANNWorker() {
   ANN::TrainingConfig<T> annTrainingConfig;
   annTrainingConfig.numEpochs = this->coreConfig.trainingConfig.numEpochs;
   annTrainingConfig.learningRate = this->coreConfig.trainingConfig.learningRate;
-  annTrainingConfig.numThreads = 1;
 
   // Cost function config
   ANN::CostFunctionConfig<T> annCostFunctionConfig;
