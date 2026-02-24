@@ -43,6 +43,8 @@ the calling application (e.g. [NN-CLI](https://github.com/naschpitz/NN-CLI)) han
 CNN::CoreConfig<float> config;
 config.modeType   = CNN::ModeType::TRAIN;
 config.deviceType = CNN::DeviceType::CPU;
+config.numThreads = 0;             // 0 = use all available CPU cores
+config.numGPUs    = 0;             // 0 = use all available GPUs (GPU mode)
 config.inputShape = {1, 28, 28};   // C, H, W
 
 config.layersConfig.cnnLayers = {
