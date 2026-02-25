@@ -306,9 +306,87 @@ static void testGPUMultiConvStack() {
 
 //===================================================================================================================//
 
+static void testGPUShuffleSamples() {
+  std::cout << "--- testGPUShuffleSamples ---" << std::endl;
+
+  // Verify GPU training works with both shuffle=true and shuffle=false
+  auto makeConfig = [](bool shuffle) {
+    CNN::CoreConfig<float> config;
+    config.modeType = CNN::ModeType::TRAIN;
+    config.deviceType = CNN::DeviceType::GPU;
+    config.inputShape = {1, 5, 5};
+    config.logLevel = CNN::LogLevel::ERROR;
+    config.numGPUs = 1;
+
+    CNN::CNNLayerConfig convLayer;
+    convLayer.type = CNN::LayerType::CONV;
+    convLayer.config = CNN::ConvLayerConfig{1, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+    CNN::CNNLayerConfig reluLayer;
+    reluLayer.type = CNN::LayerType::RELU;
+    reluLayer.config = CNN::ReLULayerConfig{};
+
+    CNN::CNNLayerConfig flattenLayer;
+    flattenLayer.type = CNN::LayerType::FLATTEN;
+    flattenLayer.config = CNN::FlattenLayerConfig{};
+
+    config.layersConfig.cnnLayers = {convLayer, reluLayer, flattenLayer};
+    config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
+
+    CNN::ConvParameters<float> initConv;
+    initConv.numFilters = 1;
+    initConv.inputC = 1;
+    initConv.filterH = 3;
+    initConv.filterW = 3;
+    initConv.filters.assign(9, 0.1f);
+    initConv.biases.assign(1, 0.0f);
+    config.parameters.convParams = {initConv};
+
+    config.trainingConfig.numEpochs = 100;
+    config.trainingConfig.learningRate = 0.5f;
+    config.trainingConfig.shuffleSamples = shuffle;
+    config.progressReports = 0;
+    return config;
+  };
+
+  CNN::Samples<float> samples(2);
+  samples[0].input = makeGradientInput<float>({1, 5, 5});
+  samples[0].output = {1.0f};
+  samples[1].input = CNN::Tensor3D<float>({1, 5, 5}, 0.0f);
+  samples[1].output = {0.0f};
+
+  bool shuffleConverged = false;
+  for (int attempt = 0; attempt < 5 && !shuffleConverged; ++attempt) {
+    if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
+    auto core = CNN::Core<float>::makeCore(makeConfig(true));
+    core->train(samples);
+    auto p0 = core->predict(samples[0].input);
+    auto p1 = core->predict(samples[1].input);
+    if (p0[0] > p1[0]) shuffleConverged = true;
+  }
+  CHECK(shuffleConverged, "GPU CNN shuffle=true converged (5 attempts)");
+
+  bool noShuffleConverged = false;
+  for (int attempt = 0; attempt < 5 && !noShuffleConverged; ++attempt) {
+    if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
+    auto core = CNN::Core<float>::makeCore(makeConfig(false));
+    core->train(samples);
+    auto p0 = core->predict(samples[0].input);
+    auto p1 = core->predict(samples[1].input);
+    if (p0[0] > p1[0]) noShuffleConverged = true;
+  }
+  CHECK(noShuffleConverged, "GPU CNN shuffle=false converged (5 attempts)");
+
+  std::cout << "  shuffle=true: " << shuffleConverged
+            << "  shuffle=false: " << noShuffleConverged << std::endl;
+}
+
+//===================================================================================================================//
+
 void runGPUTests() {
   testGPUEndToEnd();
   testGPUPredictOnly();
   testGPUWithPoolLayer();
   testGPUMultiConvStack();
+  testGPUShuffleSamples();
 }

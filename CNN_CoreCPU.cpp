@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <numeric>
 #include <random>
 #include <stdexcept>
 
@@ -432,9 +433,19 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
 
   QMutex callbackMutex;
 
+  // Sample index indirection for shuffling
+  std::vector<ulong> sampleIndices(numSamples);
+  std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
+  std::mt19937 rng(std::random_device{}());
+
   for (ulong e = 0; e < numEpochs; e++) {
     T epochLoss = static_cast<T>(0);
     std::atomic<ulong> completedSamples{0};
+
+    // Shuffle sample order for this epoch
+    if (this->trainingConfig.shuffleSamples) {
+      std::shuffle(sampleIndices.begin(), sampleIndices.end(), rng);
+    }
 
     for (ulong batchStart = 0; batchStart < numSamples; batchStart += batchSize) {
       ulong batchEnd = std::min(batchStart + batchSize, numSamples);
@@ -471,7 +482,7 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
         ulong workerEnd = workerStart + workerSampleCounts[workerIdx];
 
         for (ulong s = workerStart; s < workerEnd; s++) {
-          const Sample<T>& sample = samples[s];
+          const Sample<T>& sample = samples[sampleIndices[s]];
 
           // CNN forward (reads shared conv params — thread-safe)
           std::vector<Tensor3D<T>> intermediates;

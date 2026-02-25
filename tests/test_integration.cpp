@@ -605,6 +605,91 @@ static void testWeightedLossTraining() {
 
 //===================================================================================================================//
 
+static void testShuffleSamplesDefault() {
+  std::cout << "--- testShuffleSamplesDefault ---" << std::endl;
+
+  CNN::TrainingConfig<double> tc;
+  CHECK(tc.shuffleSamples == true, "CNN shuffleSamples default is true");
+}
+
+//===================================================================================================================//
+
+static void testShuffleSamplesTraining() {
+  std::cout << "--- testShuffleSamplesTraining ---" << std::endl;
+
+  // Train with shuffle=true and shuffle=false, both should converge
+  auto makeConfig = [](bool shuffle) {
+    CNN::CoreConfig<double> config;
+    config.modeType = CNN::ModeType::TRAIN;
+    config.deviceType = CNN::DeviceType::CPU;
+    config.inputShape = {1, 5, 5};
+    config.logLevel = CNN::LogLevel::ERROR;
+
+    CNN::CNNLayerConfig convLayer;
+    convLayer.type = CNN::LayerType::CONV;
+    convLayer.config = CNN::ConvLayerConfig{1, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+    CNN::CNNLayerConfig reluLayer;
+    reluLayer.type = CNN::LayerType::RELU;
+    reluLayer.config = CNN::ReLULayerConfig{};
+
+    CNN::CNNLayerConfig flattenLayer;
+    flattenLayer.type = CNN::LayerType::FLATTEN;
+    flattenLayer.config = CNN::FlattenLayerConfig{};
+
+    config.layersConfig.cnnLayers = {convLayer, reluLayer, flattenLayer};
+    config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
+
+    CNN::ConvParameters<double> initConv;
+    initConv.numFilters = 1;
+    initConv.inputC = 1;
+    initConv.filterH = 3;
+    initConv.filterW = 3;
+    initConv.filters.assign(9, 0.1);
+    initConv.biases.assign(1, 0.0);
+    config.parameters.convParams = {initConv};
+
+    config.trainingConfig.numEpochs = 100;
+    config.trainingConfig.learningRate = 0.5f;
+    config.trainingConfig.shuffleSamples = shuffle;
+    config.progressReports = 0;
+    return config;
+  };
+
+  CNN::Samples<double> samples(2);
+  samples[0].input = makeGradientInput<double>({1, 5, 5});
+  samples[0].output = {1.0};
+  samples[1].input = CNN::Tensor3D<double>({1, 5, 5}, 0.0);
+  samples[1].output = {0.0};
+
+  // Shuffle enabled
+  bool shuffleConverged = false;
+  for (int attempt = 0; attempt < 5 && !shuffleConverged; ++attempt) {
+    auto core = CNN::Core<double>::makeCore(makeConfig(true));
+    core->train(samples);
+    auto p0 = core->predict(samples[0].input);
+    auto p1 = core->predict(samples[1].input);
+    if (p0[0] > p1[0]) shuffleConverged = true;
+  }
+  CHECK(shuffleConverged, "CNN shuffle=true converged (5 attempts)");
+
+  // Shuffle disabled
+  bool noShuffleConverged = false;
+  for (int attempt = 0; attempt < 5 && !noShuffleConverged; ++attempt) {
+    auto core = CNN::Core<double>::makeCore(makeConfig(false));
+    core->train(samples);
+    auto p0 = core->predict(samples[0].input);
+    auto p1 = core->predict(samples[1].input);
+    if (p0[0] > p1[0]) noShuffleConverged = true;
+  }
+  CHECK(noShuffleConverged, "CNN shuffle=false converged (5 attempts)");
+
+  std::cout << "  shuffle=true: " << shuffleConverged
+            << "  shuffle=false: " << noShuffleConverged << std::endl;
+}
+
+//===================================================================================================================//
+
 void runIntegrationTests() {
   testEndToEnd();
   testMultiConvStack();
@@ -615,4 +700,6 @@ void runIntegrationTests() {
   testMultipleOutputNeurons();
   testCostFunctionConfigGetter();
   testWeightedLossTraining();
+  testShuffleSamplesDefault();
+  testShuffleSamplesTraining();
 }

@@ -3,7 +3,10 @@
 #include <OCLW_Core.hpp>
 #include <QtConcurrent>
 
+#include <algorithm>
 #include <iostream>
+#include <numeric>
+#include <random>
 
 using namespace CNN;
 
@@ -76,8 +79,18 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
   // Per-GPU cumulative sample counters for progress tracking across mini-batches
   std::vector<ulong> gpuCumulativeSamples(this->numGPUs, 0);
 
+  // Sample index indirection for shuffling
+  std::vector<ulong> sampleIndices(numSamples);
+  std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
+  std::mt19937 rng(std::random_device{}());
+
   for (ulong e = 0; e < numEpochs; e++) {
     T epochLoss = 0;
+
+    // Shuffle sample order for this epoch
+    if (this->trainingConfig.shuffleSamples) {
+      std::shuffle(sampleIndices.begin(), sampleIndices.end(), rng);
+    }
 
     // Reset cumulative counters at the start of each epoch
     std::fill(gpuCumulativeSamples.begin(), gpuCumulativeSamples.end(), 0);
@@ -102,7 +115,7 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
       std::vector<T> gpuLosses(this->numGPUs, 0);
 
       QtConcurrent::blockingMap(workItems,
-          [this, &samples, &gpuLosses, e, numEpochs, numSamples, &gpuCumulativeSamples](const GPUWorkItem& item) {
+          [this, &samples, &sampleIndices, &gpuLosses, e, numEpochs, numSamples, &gpuCumulativeSamples](const GPUWorkItem& item) {
         // Create per-batch callback that translates global sample indices to cumulative per-GPU counts
         TrainingCallback<T> callback;
         if (this->trainingCallback) {
@@ -119,7 +132,7 @@ void CoreGPU<T>::train(const Samples<T>& samples) {
           };
         }
         gpuLosses[item.gpuIdx] = this->gpuWorkers[item.gpuIdx]->trainSubset(
-            samples, item.startIdx, item.endIdx, e + 1, numEpochs, callback);
+            samples, sampleIndices, item.startIdx, item.endIdx, e + 1, numEpochs, callback);
       });
 
       // Update cumulative counters after batch completes

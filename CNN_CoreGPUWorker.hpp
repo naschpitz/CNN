@@ -27,7 +27,8 @@ namespace CNN {
       Output<T> predict(const Input<T>& input);
 
       //-- Training (called by CoreGPU orchestrator) --//
-      T trainSubset(const Samples<T>& samples, ulong startIdx, ulong endIdx,
+      T trainSubset(const Samples<T>& samples, const std::vector<ulong>& indices,
+                    ulong startIdx, ulong endIdx,
                     ulong epoch, ulong totalEpochs, const TrainingCallback<T>& callback);
 
       //-- Testing --//
