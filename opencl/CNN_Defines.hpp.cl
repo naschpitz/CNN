@@ -12,7 +12,8 @@ typedef enum {
   ACTV_RELU = 0,
   ACTV_SIGMOID = 1,
   ACTV_TANH = 2,
-  ACTV_UNKNOWN = 3
+  ACTV_SOFTMAX = 3,
+  ACTV_UNKNOWN = 4
 } ActvFuncType;
 
 typedef struct {
