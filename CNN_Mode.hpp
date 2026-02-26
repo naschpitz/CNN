@@ -10,8 +10,7 @@ namespace CNN {
   enum class ModeType {
     TRAIN,
     PREDICT,
-    TEST,
-    UNKNOWN
+    TEST
   };
 
   const std::unordered_map<std::string, ModeType> modeMap = {

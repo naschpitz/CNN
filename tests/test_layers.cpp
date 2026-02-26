@@ -1,4 +1,8 @@
 #include "test_helpers.hpp"
+#include "CNN_Device.hpp"
+#include "CNN_Mode.hpp"
+#include "CNN_PoolType.hpp"
+#include "CNN_CostFunctionConfig.hpp"
 
 //===================================================================================================================//
 
@@ -151,9 +155,70 @@ static void testSlidingStrategy() {
 
   CHECK(CNN::SlidingStrategy::typeToName(CNN::SlidingStrategyType::VALID) == "valid", "typeToName valid");
 
-  bool caught = false;
-  try { CNN::SlidingStrategy::nameToType("bogus"); } catch (const std::runtime_error&) { caught = true; }
-  CHECK(caught, "nameToType unknown throws");
+  CHECK_THROWS(CNN::SlidingStrategy::nameToType("bogus"), "nameToType unknown throws");
+  CHECK_THROWS(CNN::SlidingStrategy::nameToType(""), "nameToType empty throws");
+}
+
+//===================================================================================================================//
+
+static void testDeviceNameToType() {
+  std::cout << "--- testDeviceNameToType ---" << std::endl;
+
+  CHECK(CNN::Device::nameToType("cpu") == CNN::DeviceType::CPU, "cpu → CPU");
+  CHECK(CNN::Device::nameToType("gpu") == CNN::DeviceType::GPU, "gpu → GPU");
+
+  CHECK_THROWS(CNN::Device::nameToType("nonexistent"), "nonexistent throws");
+  CHECK_THROWS(CNN::Device::nameToType(""), "empty throws");
+
+  CHECK(CNN::Device::typeToName(CNN::DeviceType::CPU) == "cpu", "CPU → cpu");
+  CHECK(CNN::Device::typeToName(CNN::DeviceType::GPU) == "gpu", "GPU → gpu");
+}
+
+//===================================================================================================================//
+
+static void testModeNameToType() {
+  std::cout << "--- testModeNameToType ---" << std::endl;
+
+  CHECK(CNN::Mode::nameToType("train") == CNN::ModeType::TRAIN, "train → TRAIN");
+  CHECK(CNN::Mode::nameToType("predict") == CNN::ModeType::PREDICT, "predict → PREDICT");
+  CHECK(CNN::Mode::nameToType("test") == CNN::ModeType::TEST, "test → TEST");
+
+  CHECK_THROWS(CNN::Mode::nameToType("nonexistent"), "nonexistent throws");
+  CHECK_THROWS(CNN::Mode::nameToType(""), "empty throws");
+
+  CHECK(CNN::Mode::typeToName(CNN::ModeType::TRAIN) == "train", "TRAIN → train");
+  CHECK(CNN::Mode::typeToName(CNN::ModeType::PREDICT) == "predict", "PREDICT → predict");
+  CHECK(CNN::Mode::typeToName(CNN::ModeType::TEST) == "test", "TEST → test");
+}
+
+//===================================================================================================================//
+
+static void testPoolTypeNameToType() {
+  std::cout << "--- testPoolTypeNameToType ---" << std::endl;
+
+  CHECK(CNN::PoolType::nameToType("max") == CNN::PoolTypeEnum::MAX, "max → MAX");
+  CHECK(CNN::PoolType::nameToType("avg") == CNN::PoolTypeEnum::AVG, "avg → AVG");
+
+  CHECK_THROWS(CNN::PoolType::nameToType("nonexistent"), "nonexistent throws");
+  CHECK_THROWS(CNN::PoolType::nameToType(""), "empty throws");
+
+  CHECK(CNN::PoolType::typeToName(CNN::PoolTypeEnum::MAX) == "max", "MAX → max");
+  CHECK(CNN::PoolType::typeToName(CNN::PoolTypeEnum::AVG) == "avg", "AVG → avg");
+}
+
+//===================================================================================================================//
+
+static void testCostFunctionNameToType() {
+  std::cout << "--- testCostFunctionNameToType ---" << std::endl;
+
+  CHECK(CNN::CostFunction::nameToType("squaredDifference") == CNN::CostFunctionType::SQUARED_DIFFERENCE, "squaredDifference → SQUARED_DIFFERENCE");
+  CHECK(CNN::CostFunction::nameToType("weightedSquaredDifference") == CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE, "weightedSquaredDifference → WEIGHTED_SQUARED_DIFFERENCE");
+
+  CHECK_THROWS(CNN::CostFunction::nameToType("nonexistent"), "nonexistent throws");
+  CHECK_THROWS(CNN::CostFunction::nameToType(""), "empty throws");
+
+  CHECK(CNN::CostFunction::typeToName(CNN::CostFunctionType::SQUARED_DIFFERENCE) == "squaredDifference", "SQUARED_DIFFERENCE → squaredDifference");
+  CHECK(CNN::CostFunction::typeToName(CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE) == "weightedSquaredDifference", "WEIGHTED_SQUARED_DIFFERENCE → weightedSquaredDifference");
 }
 
 //===================================================================================================================//
@@ -207,5 +272,9 @@ void runLayerTests() {
   testPoolNonSquare();
   testFlatten();
   testSlidingStrategy();
+  testDeviceNameToType();
+  testModeNameToType();
+  testPoolTypeNameToType();
+  testCostFunctionNameToType();
   testValidateShapes();
 }
