@@ -332,6 +332,7 @@ void CoreGPUWorker<T>::buildANNWorker() {
   ANN::TrainingConfig<T> annTrainingConfig;
   annTrainingConfig.numEpochs = this->coreConfig.trainingConfig.numEpochs;
   annTrainingConfig.learningRate = this->coreConfig.trainingConfig.learningRate;
+  annTrainingConfig.dropoutRate = this->coreConfig.trainingConfig.dropoutRate;
 
   // Cost function config
   ANN::CostFunctionConfig<T> annCostFunctionConfig;
@@ -823,6 +824,9 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
     std::vector<T> expectedVec(sample.output.begin(), sample.output.end());
     this->core->template writeBuffer<T>("outputs", expectedVec, 0);
 
+    // Generate and upload dropout mask for ANN dense layers (different mask per sample)
+    if (this->annGPUWorker->hasDropout) this->annGPUWorker->generateAndUploadDropoutMask();
+
     // Single run: CNN forward → bridge → ANN forward → ANN backward → reverse bridge → CNN backward → accumulate
     this->core->run();
 
@@ -891,6 +895,9 @@ void CoreGPUWorker<T>::backpropagateSample(const Input<T>& input, const Output<T
   // Write ANN expected output to GPU
   std::vector<T> expectedVec(expected.begin(), expected.end());
   this->core->template writeBuffer<T>("outputs", expectedVec, 0);
+
+  // Generate and upload dropout mask for ANN dense layers (different mask per sample)
+  if (this->annGPUWorker->hasDropout) this->annGPUWorker->generateAndUploadDropoutMask();
 
   // Single run: full forward + backward + accumulate
   this->core->run();

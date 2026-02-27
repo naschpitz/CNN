@@ -91,6 +91,7 @@ ANN::CoreConfig<T> CoreCPU<T>::buildANNConfig(const CoreConfig<T>& cnnConfig) {
   // Training config
   annConfig.trainingConfig.numEpochs = cnnConfig.trainingConfig.numEpochs;
   annConfig.trainingConfig.learningRate = cnnConfig.trainingConfig.learningRate;
+  annConfig.trainingConfig.dropoutRate = cnnConfig.trainingConfig.dropoutRate;
   annConfig.numThreads = 1; // CNN manages its own threading
 
   // Cost function config
