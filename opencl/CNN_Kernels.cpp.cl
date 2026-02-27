@@ -4,12 +4,13 @@
 // Note: Depends on CNN_Defines.hpp.cl (loaded first by C++ code)
 
 //===================================================================================================================//
-// Forward-pass kernels
+// Convolution kernels
 //===================================================================================================================//
 
-// Conv2D forward: one work-item per output element (f, oh, ow)
+// Computes z = input ⊛ filter + bias (forward pass)
+// One work-item per output element (f, oh, ow)
 // nElements = numFilters * outH * outW
-kernel void conv2d_forward(
+kernel void calculate_conv2d(
     global TYPE* actvs,
     global TYPE* filters,
     global TYPE* biases,
@@ -63,9 +64,9 @@ kernel void conv2d_forward(
 
 //===================================================================================================================//
 
-// ReLU forward: one work-item per element
-// nElements = layer tensor size
-kernel void relu_forward(
+// Computes a = max(0, z) (forward pass)
+// One work-item per element, nElements = layer tensor size
+kernel void calculate_relu(
     global TYPE* actvs,
     ulong in_offset,
     ulong out_offset,
@@ -80,9 +81,10 @@ kernel void relu_forward(
 
 //===================================================================================================================//
 
-// MaxPool forward: one work-item per output element (c, oh, ow)
+// Computes a = max(region) and records max indices (forward pass)
+// One work-item per output element (c, oh, ow)
 // nElements = C * outH * outW
-kernel void maxpool_forward(
+kernel void calculate_maxpool(
     global TYPE* actvs,
     global ulong* pool_indices,
     ulong actv_in_offset,
@@ -147,12 +149,12 @@ kernel void zero_buffer(
 }
 
 //===================================================================================================================//
-// Backward-pass kernels
+// Gradient kernels
 //===================================================================================================================//
 
-// MaxPool backward: routes gradient to max position
+// Computes ∂Cost/∂maxpool_input: routes gradient to max position (backward pass)
 // nElements = C * outH * outW (same as forward output size)
-kernel void maxpool_backward(
+kernel void calculate_dCost_dMaxpool(
     global TYPE* grads,
     global ulong* pool_indices,
     ulong grad_out_offset,     // offset of pool output gradient (source)
@@ -172,9 +174,9 @@ kernel void maxpool_backward(
 
 //===================================================================================================================//
 
-// ReLU backward: one work-item per element
-// grads[in] = (actvs[in] > 0) ? grads[out] : 0
-kernel void relu_backward(
+// Computes ∂Cost/∂z = ∂Cost/∂a · (z > 0) (backward pass)
+// One work-item per element
+kernel void calculate_dCost_dRelu(
     global TYPE* grads,
     global TYPE* actvs,
     ulong grad_in_offset,    // offset to write input gradient
@@ -193,10 +195,10 @@ kernel void relu_backward(
 
 //===================================================================================================================//
 
-// Conv2D backward - filter gradients
+// Computes ∂Cost/∂W for convolution filters (backward pass)
 // One work-item per filter weight element: (f, c, kh, kw)
 // nElements = numFilters * inputC * filterH * filterW
-kernel void conv2d_backward_filters(
+kernel void calculate_dCost_dFilters(
     global TYPE* grads,
     global TYPE* actvs,
     global TYPE* dFilters,
@@ -249,9 +251,9 @@ kernel void conv2d_backward_filters(
 
 //===================================================================================================================//
 
-// Conv2D backward - bias gradients
+// Computes ∂Cost/∂b for convolution biases (backward pass)
 // One work-item per filter: nElements = numFilters
-kernel void conv2d_backward_biases(
+kernel void calculate_dCost_dBiases(
     global TYPE* grads,
     global TYPE* dBiases,
     ulong grad_out_offset,
@@ -277,10 +279,10 @@ kernel void conv2d_backward_biases(
 
 //===================================================================================================================//
 
-// Conv2D backward - input gradients (transposed convolution)
+// Computes ∂Cost/∂input via transposed convolution (backward pass)
 // One work-item per input element: (c, ih, iw)
 // nElements = inputC * inputH * inputW
-kernel void conv2d_backward_input(
+kernel void calculate_dCost_dInput(
     global TYPE* grads,
     global TYPE* filters,
     ulong grad_out_offset,   // offset of conv output gradient
@@ -342,8 +344,8 @@ kernel void conv2d_backward_input(
 // Accumulate and Update kernels
 //===================================================================================================================//
 
-// Accumulate gradients: accum[gid] += grad[gid]
-kernel void cnn_accumulate(
+// Accumulates per-sample gradients: accum[gid] += grad[gid]
+kernel void accumulate_gradients(
     global TYPE* accum,
     global TYPE* grad,
     ulong offset,
@@ -357,8 +359,8 @@ kernel void cnn_accumulate(
 
 //===================================================================================================================//
 
-// Update parameters: params[gid] -= lr * (accum[gid] / numSamples)
-kernel void cnn_update(
+// Updates parameters: params[gid] -= lr · (accum[gid] / numSamples)
+kernel void update_parameters(
     global TYPE* params,
     global TYPE* accum,
     ulong offset,

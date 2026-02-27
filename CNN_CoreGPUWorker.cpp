@@ -379,8 +379,8 @@ void CoreGPUWorker<T>::addForwardKernels() {
         ulong outW = (currentShape.w + 2 * padX - conv.filterW) / conv.strideX + 1;
         ulong nElements = conv.numFilters * outH * outW;
 
-        std::string kernelId = "conv2d_forward_layer" + layerStr;
-        this->core->addKernel(kernelId, "conv2d_forward", nElements, 0);
+        std::string kernelId = "calculate_conv2d_layer" + layerStr;
+        this->core->addKernel(kernelId, "calculate_conv2d", nElements, 0);
         this->core->template addArgument<T>(kernelId, "cnn_actvs");
         this->core->template addArgument<T>(kernelId, "cnn_filters");
         this->core->template addArgument<T>(kernelId, "cnn_biases");
@@ -407,8 +407,8 @@ void CoreGPUWorker<T>::addForwardKernels() {
       }
       case LayerType::RELU: {
         ulong size = currentShape.size();
-        std::string kernelId = "relu_forward_layer" + layerStr;
-        this->core->addKernel(kernelId, "relu_forward", size, 0);
+        std::string kernelId = "calculate_relu_layer" + layerStr;
+        this->core->addKernel(kernelId, "calculate_relu", size, 0);
         this->core->template addArgument<T>(kernelId, "cnn_actvs");
         this->core->template addArgument<ulong>(kernelId, inOffset);
         this->core->template addArgument<ulong>(kernelId, outOffset);
@@ -421,8 +421,8 @@ void CoreGPUWorker<T>::addForwardKernels() {
         ulong outW = (currentShape.w - pool.poolW) / pool.strideX + 1;
         ulong nElements = currentShape.c * outH * outW;
 
-        std::string kernelId = "maxpool_forward_layer" + layerStr;
-        this->core->addKernel(kernelId, "maxpool_forward", nElements, 0);
+        std::string kernelId = "calculate_maxpool_layer" + layerStr;
+        this->core->addKernel(kernelId, "calculate_maxpool", nElements, 0);
         this->core->template addArgument<T>(kernelId, "cnn_actvs");
         this->core->template addArgument<ulong>(kernelId, "cnn_pool_indices");
         this->core->template addArgument<ulong>(kernelId, inOffset);
@@ -517,10 +517,10 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         ulong outH = outShape.h;
         ulong outW = outShape.w;
 
-        // conv2d_backward_filters
+        // calculate_dCost_dFilters
         ulong nFilterElems = this->convInfos[convIdx].numFilterElems;
-        std::string filterId = "conv2d_backward_filters_layer" + layerStr;
-        this->core->addKernel(filterId, "conv2d_backward_filters", nFilterElems, 0);
+        std::string filterId = "calculate_dCost_dFilters_layer" + layerStr;
+        this->core->addKernel(filterId, "calculate_dCost_dFilters", nFilterElems, 0);
         this->core->template addArgument<T>(filterId, "cnn_grads");
         this->core->template addArgument<T>(filterId, "cnn_actvs");
         this->core->template addArgument<T>(filterId, "cnn_dFilters");
@@ -540,9 +540,9 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         this->core->template addArgument<ulong>(filterId, outH);
         this->core->template addArgument<ulong>(filterId, outW);
 
-        // conv2d_backward_biases
-        std::string biasId = "conv2d_backward_biases_layer" + layerStr;
-        this->core->addKernel(biasId, "conv2d_backward_biases", conv.numFilters, 0);
+        // calculate_dCost_dBiases
+        std::string biasId = "calculate_dCost_dBiases_layer" + layerStr;
+        this->core->addKernel(biasId, "calculate_dCost_dBiases", conv.numFilters, 0);
         this->core->template addArgument<T>(biasId, "cnn_grads");
         this->core->template addArgument<T>(biasId, "cnn_dBiases");
         this->core->template addArgument<ulong>(biasId, gradOutOffset);
@@ -551,11 +551,11 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         this->core->template addArgument<ulong>(biasId, outH);
         this->core->template addArgument<ulong>(biasId, outW);
 
-        // conv2d_backward_input (skip if first layer — no one reads the gradient)
+        // calculate_dCost_dInput (skip if first layer — no one reads the gradient)
         if (i > 0) {
           ulong nInputElems = inShape.size();
-          std::string inputId = "conv2d_backward_input_layer" + layerStr;
-          this->core->addKernel(inputId, "conv2d_backward_input", nInputElems, 0);
+          std::string inputId = "calculate_dCost_dInput_layer" + layerStr;
+          this->core->addKernel(inputId, "calculate_dCost_dInput", nInputElems, 0);
           this->core->template addArgument<T>(inputId, "cnn_grads");
           this->core->template addArgument<T>(inputId, "cnn_filters");
           this->core->template addArgument<ulong>(inputId, gradOutOffset);
@@ -578,8 +578,8 @@ void CoreGPUWorker<T>::addBackwardKernels() {
       }
       case LayerType::RELU: {
         ulong size = inShape.size();
-        std::string kernelId = "relu_backward_layer" + layerStr;
-        this->core->addKernel(kernelId, "relu_backward", size, 0);
+        std::string kernelId = "calculate_dCost_dRelu_layer" + layerStr;
+        this->core->addKernel(kernelId, "calculate_dCost_dRelu", size, 0);
         this->core->template addArgument<T>(kernelId, "cnn_grads");
         this->core->template addArgument<T>(kernelId, "cnn_actvs");
         this->core->template addArgument<ulong>(kernelId, gradInOffset);
@@ -599,10 +599,10 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         this->core->template addArgument<ulong>(zeroId, gradInOffset);
         this->core->template addArgument<ulong>(zeroId, inSize);
 
-        // maxpool_backward
+        // calculate_dCost_dMaxpool
         ulong outSize = outShape.size();
-        std::string poolId = "maxpool_backward_layer" + layerStr;
-        this->core->addKernel(poolId, "maxpool_backward", outSize, 0);
+        std::string poolId = "calculate_dCost_dMaxpool_layer" + layerStr;
+        this->core->addKernel(poolId, "calculate_dCost_dMaxpool", outSize, 0);
         this->core->template addArgument<T>(poolId, "cnn_grads");
         this->core->template addArgument<ulong>(poolId, "cnn_pool_indices");
         this->core->template addArgument<ulong>(poolId, gradOutOffset);
@@ -626,19 +626,19 @@ void CoreGPUWorker<T>::addBackwardKernels() {
 template <typename T>
 void CoreGPUWorker<T>::addCNNAccumulateKernels() {
   if (this->totalFilterSize > 0) {
-    this->core->addKernel("cnn_accumulate_filters", "cnn_accumulate", this->totalFilterSize, 0);
-    this->core->template addArgument<T>("cnn_accumulate_filters", "cnn_accum_dFilters");
-    this->core->template addArgument<T>("cnn_accumulate_filters", "cnn_dFilters");
-    this->core->template addArgument<ulong>("cnn_accumulate_filters", static_cast<ulong>(0));
-    this->core->template addArgument<ulong>("cnn_accumulate_filters", this->totalFilterSize);
+    this->core->addKernel("accumulate_gradients_filters", "accumulate_gradients", this->totalFilterSize, 0);
+    this->core->template addArgument<T>("accumulate_gradients_filters", "cnn_accum_dFilters");
+    this->core->template addArgument<T>("accumulate_gradients_filters", "cnn_dFilters");
+    this->core->template addArgument<ulong>("accumulate_gradients_filters", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("accumulate_gradients_filters", this->totalFilterSize);
   }
 
   if (this->totalBiasSize > 0) {
-    this->core->addKernel("cnn_accumulate_biases", "cnn_accumulate", this->totalBiasSize, 0);
-    this->core->template addArgument<T>("cnn_accumulate_biases", "cnn_accum_dBiases");
-    this->core->template addArgument<T>("cnn_accumulate_biases", "cnn_dBiases");
-    this->core->template addArgument<ulong>("cnn_accumulate_biases", static_cast<ulong>(0));
-    this->core->template addArgument<ulong>("cnn_accumulate_biases", this->totalBiasSize);
+    this->core->addKernel("accumulate_gradients_biases", "accumulate_gradients", this->totalBiasSize, 0);
+    this->core->template addArgument<T>("accumulate_gradients_biases", "cnn_accum_dBiases");
+    this->core->template addArgument<T>("accumulate_gradients_biases", "cnn_dBiases");
+    this->core->template addArgument<ulong>("accumulate_gradients_biases", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("accumulate_gradients_biases", this->totalBiasSize);
   }
 }
 
@@ -649,24 +649,24 @@ void CoreGPUWorker<T>::addCNNAccumulateKernels() {
 template <typename T>
 void CoreGPUWorker<T>::addCNNUpdateKernels(ulong numSamples) {
   if (this->totalFilterSize > 0) {
-    this->core->addKernel("cnn_update_filters", "cnn_update", this->totalFilterSize, 0);
-    this->core->template addArgument<T>("cnn_update_filters", "cnn_filters");
-    this->core->template addArgument<T>("cnn_update_filters", "cnn_accum_dFilters");
-    this->core->template addArgument<ulong>("cnn_update_filters", static_cast<ulong>(0));
-    this->core->template addArgument<ulong>("cnn_update_filters", this->totalFilterSize);
-    this->core->template addArgument<ulong>("cnn_update_filters", numSamples);
-    this->core->template addArgument<float>("cnn_update_filters",
+    this->core->addKernel("update_parameters_filters", "update_parameters", this->totalFilterSize, 0);
+    this->core->template addArgument<T>("update_parameters_filters", "cnn_filters");
+    this->core->template addArgument<T>("update_parameters_filters", "cnn_accum_dFilters");
+    this->core->template addArgument<ulong>("update_parameters_filters", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("update_parameters_filters", this->totalFilterSize);
+    this->core->template addArgument<ulong>("update_parameters_filters", numSamples);
+    this->core->template addArgument<float>("update_parameters_filters",
         static_cast<float>(this->coreConfig.trainingConfig.learningRate));
   }
 
   if (this->totalBiasSize > 0) {
-    this->core->addKernel("cnn_update_biases", "cnn_update", this->totalBiasSize, 0);
-    this->core->template addArgument<T>("cnn_update_biases", "cnn_biases");
-    this->core->template addArgument<T>("cnn_update_biases", "cnn_accum_dBiases");
-    this->core->template addArgument<ulong>("cnn_update_biases", static_cast<ulong>(0));
-    this->core->template addArgument<ulong>("cnn_update_biases", this->totalBiasSize);
-    this->core->template addArgument<ulong>("cnn_update_biases", numSamples);
-    this->core->template addArgument<float>("cnn_update_biases",
+    this->core->addKernel("update_parameters_biases", "update_parameters", this->totalBiasSize, 0);
+    this->core->template addArgument<T>("update_parameters_biases", "cnn_biases");
+    this->core->template addArgument<T>("update_parameters_biases", "cnn_accum_dBiases");
+    this->core->template addArgument<ulong>("update_parameters_biases", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("update_parameters_biases", this->totalBiasSize);
+    this->core->template addArgument<ulong>("update_parameters_biases", numSamples);
+    this->core->template addArgument<float>("update_parameters_biases",
         static_cast<float>(this->coreConfig.trainingConfig.learningRate));
   }
 }

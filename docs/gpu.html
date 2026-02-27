@@ -194,10 +194,10 @@
 
 <h2 id="forward-kernels">Forward Pass Kernels</h2>
 
-<h3>conv2d_forward</h3>
+<h3>calculate_conv2d</h3>
 <p><strong>Work distribution:</strong> One work-item per output element. Total work-items = \(\text{numFilters} \times \text{outH} \times \text{outW}\).</p>
 <p><strong>Pseudocode:</strong></p>
-<pre><code>kernel void conv2d_forward(...) {
+<pre><code>kernel void calculate_conv2d(...) {
   gid = get_global_id(0)
   
   // Decompose gid into (f, oh, ow)
@@ -221,17 +221,17 @@
   actvs[actv_out_offset + f*outH*outW + oh*outW + ow] = sum
 }</code></pre>
 
-<h3>relu_forward</h3>
+<h3>calculate_relu</h3>
 <p><strong>Work distribution:</strong> One work-item per element. Total work-items = layer tensor size.</p>
-<pre><code>kernel void relu_forward(...) {
+<pre><code>kernel void calculate_relu(...) {
   gid = get_global_id(0)
   val = actvs[in_offset + gid]
   actvs[out_offset + gid] = (val > 0) ? val : 0
 }</code></pre>
 
-<h3>maxpool_forward</h3>
+<h3>calculate_maxpool</h3>
 <p><strong>Work distribution:</strong> One work-item per output element. Total work-items = \(\text{channels} \times \text{outH} \times \text{outW}\).</p>
-<pre><code>kernel void maxpool_forward(...) {
+<pre><code>kernel void calculate_maxpool(...) {
   gid = get_global_id(0)
   
   // Decompose gid into (c, oh, ow)
@@ -258,9 +258,9 @@
 
 <h2 id="backward-kernels">Backward Pass Kernels</h2>
 
-<h3>conv2d_backward_filters</h3>
+<h3>calculate_dCost_dFilters</h3>
 <p><strong>Work distribution:</strong> One work-item per filter weight element. Total work-items = \(\text{numFilters} \times \text{inputC} \times \text{filterH} \times \text{filterW}\).</p>
-<pre><code>kernel void conv2d_backward_filters(...) {
+<pre><code>kernel void calculate_dCost_dFilters(...) {
   gid = get_global_id(0)
   
   // Decompose gid into (f, c, kh, kw)
@@ -284,9 +284,9 @@
   dFilters[dfilter_offset + gid] = sum
 }</code></pre>
 
-<h3>conv2d_backward_biases</h3>
+<h3>calculate_dCost_dBiases</h3>
 <p><strong>Work distribution:</strong> One work-item per filter. Total work-items = numFilters.</p>
-<pre><code>kernel void conv2d_backward_biases(...) {
+<pre><code>kernel void calculate_dCost_dBiases(...) {
   gid = get_global_id(0)  // gid = f
   
   sum = 0
@@ -297,10 +297,10 @@
   dBiases[dbias_offset + f] = sum
 }</code></pre>
 
-<h3>conv2d_backward_input</h3>
+<h3>calculate_dCost_dInput</h3>
 <p><strong>Work distribution:</strong> One work-item per input element. Total work-items = \(\text{inputC} \times \text{inputH} \times \text{inputW}\).</p>
 <p>Uses reverse mapping: for each input position, find which output positions it contributed to.</p>
-<pre><code>kernel void conv2d_backward_input(...) {
+<pre><code>kernel void calculate_dCost_dInput(...) {
   gid = get_global_id(0)
   
   // Decompose gid into (c, ih, iw)
@@ -331,9 +331,9 @@
   grads[grad_in_offset + gid] = sum
 }</code></pre>
 
-<h3>relu_backward</h3>
+<h3>calculate_dCost_dRelu</h3>
 <p><strong>Work distribution:</strong> One work-item per element.</p>
-<pre><code>kernel void relu_backward(...) {
+<pre><code>kernel void calculate_dCost_dRelu(...) {
   gid = get_global_id(0)
   
   actv = actvs[actv_in_offset + gid]
@@ -342,9 +342,9 @@
   grads[grad_in_offset + gid] = (actv > 0) ? dOut : 0
 }</code></pre>
 
-<h3>maxpool_backward</h3>
+<h3>calculate_dCost_dMaxpool</h3>
 <p><strong>Work distribution:</strong> One work-item per pool output element.</p>
-<pre><code>kernel void maxpool_backward(...) {
+<pre><code>kernel void calculate_dCost_dMaxpool(...) {
   gid = get_global_id(0)
   
   dOutVal = grads[grad_out_offset + gid]
@@ -364,18 +364,18 @@
     buf[offset + gid] = 0
 }</code></pre>
 
-<h3>cnn_accumulate</h3>
+<h3>accumulate_gradients</h3>
 <p>Accumulates per-sample gradients into the accumulator buffer.</p>
-<pre><code>kernel void cnn_accumulate(global TYPE* accum, global TYPE* grad, ulong offset, ulong size) {
+<pre><code>kernel void accumulate_gradients(global TYPE* accum, global TYPE* grad, ulong offset, ulong size) {
   gid = get_global_id(0)
   if (gid < size):
     accum[offset + gid] += grad[offset + gid]
 }</code></pre>
 
-<h3>cnn_update</h3>
+<h3>update_parameters</h3>
 <p>Updates parameters using accumulated gradients and learning rate.</p>
-<pre><code>kernel void cnn_update(global TYPE* params, global TYPE* accum, 
-                       ulong offset, ulong size, ulong numSamples, float lr) {
+<pre><code>kernel void update_parameters(global TYPE* params, global TYPE* accum,
+                              ulong offset, ulong size, ulong numSamples, float lr) {
   gid = get_global_id(0)
   if (gid < size):
     params[offset + gid] -= lr * (accum[offset + gid] / numSamples)
@@ -430,7 +430,7 @@ for each GPU worker:
 <p>Kernels are compiled only when first needed, not at initialization. This reduces startup time and memory usage.</p>
 
 <div class="info-box">
-  <strong>Predict mode:</strong> Compiles only forward kernels (conv2d_forward, relu_forward, maxpool_forward).
+  <strong>Predict mode:</strong> Compiles only forward kernels (calculate_conv2d, calculate_relu, calculate_maxpool).
 </div>
 
 <div class="info-box">

@@ -76,7 +76,7 @@ The input is padded with zeros before convolution. The term <code>o_h · s_y + k
 
 <div class="tip-box">
 <strong>Code:</strong> <code>Conv2D&lt;T&gt;::predict(input, config, params)</code> in <code>CNN_Conv2D.cpp</code> implements the full 6-nested-loop convolution.
-On GPU: the <code>conv2d_forward</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code> parallelises over output elements (one work-item per <em>(f, o_h, o_w)</em>).
+On GPU: the <code>calculate_conv2d</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code> parallelises over output elements (one work-item per <em>(f, o_h, o_w)</em>).
 </div>
 
 <h2 id="padding-stride">Padding &amp; Stride</h2>
@@ -143,7 +143,7 @@ When using SAME padding with stride=1, the output spatial dimensions exactly mat
 
 <div class="tip-box">
 <strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> in <code>CNN_Conv2D.cpp</code> — the line <code>dFilters[filterIdx] += dOutVal * input.at(c, ih, iw)</code>.
-On GPU: <code>conv2d_backward_filters</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code> (one work-item per filter weight element).
+On GPU: <code>calculate_dCost_dFilters</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code> (one work-item per filter weight element).
 </div>
 
 <h3>Bias Gradient</h3>
@@ -156,7 +156,7 @@ On GPU: <code>conv2d_backward_filters</code> kernel in <code>opencl/CNN_Kernels.
 
 <div class="tip-box">
 <strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> — the line <code>dBiases[f] += dOutVal</code>.
-On GPU: <code>conv2d_backward_biases</code> kernel (one work-item per filter).
+On GPU: <code>calculate_dCost_dBiases</code> kernel (one work-item per filter).
 </div>
 
 <h3>Input Gradient</h3>
@@ -169,7 +169,7 @@ On GPU: <code>conv2d_backward_biases</code> kernel (one work-item per filter).
 
 <div class="tip-box">
 <strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> — the line <code>dInput.at(c, ih, iw) += dOutVal * params.filterAt(f, c, kh, kw)</code>.
-On GPU: <code>conv2d_backward_input</code> kernel (one work-item per input element, reverses the forward mapping).
+On GPU: <code>calculate_dCost_dInput</code> kernel (one work-item per input element, reverses the forward mapping).
 </div>
 
 <div class="info-box">
@@ -201,7 +201,7 @@ The input gradient is essential when stacking multiple convolutional layers, sin
 
 <div class="tip-box">
 <strong>Code:</strong> <code>Pool&lt;T&gt;::predict(input, config, maxIndices)</code> in <code>CNN_Pool.cpp</code> implements both modes. For max pooling, it stores the flat index of each maximum in <code>maxIndices</code>. <code>Pool&lt;T&gt;::backpropagate()</code> routes the gradient to <code>dInput.data[maxIdx]</code> (max) or distributes <code>dOutVal / count</code> evenly (avg).
-On GPU: <code>maxpool_forward</code> records indices, <code>maxpool_backward</code> routes gradients (both in <code>opencl/CNN_Kernels.cpp.cl</code>).
+On GPU: <code>calculate_maxpool</code> records indices, <code>calculate_dCost_dMaxpool</code> routes gradients (both in <code>opencl/CNN_Kernels.cpp.cl</code>).
 </div>
 
 <div class="info-box">
@@ -221,7 +221,7 @@ Max pooling is more commonly used in practice because it preserves sharp feature
 
 <div class="tip-box">
 <strong>Code:</strong> <code>ReLU&lt;T&gt;::predict(input)</code> and <code>ReLU&lt;T&gt;::backpropagate(dOut, input)</code> in <code>CNN_ReLU.cpp</code>. The backward pass uses the original input to determine where the gradient passes through (<code>input.data[i] &gt; 0</code>).
-On GPU: <code>relu_forward</code> and <code>relu_backward</code> kernels in <code>opencl/CNN_Kernels.cpp.cl</code>.
+On GPU: <code>calculate_relu</code> and <code>calculate_dCost_dRelu</code> kernels in <code>opencl/CNN_Kernels.cpp.cl</code>.
 </div>
 
 <div class="info-box">
@@ -281,7 +281,7 @@ W^{(t+1)} = W^{(t)} - \eta \cdot \frac{1}{N} \sum_{n=1}^{N} \nabla_W L_n
 
 <div class="tip-box">
 <strong>Code:</strong> <code>CoreCPU&lt;T&gt;::accumulateCNNGradients(dConvFilters, dConvBiases)</code> sums per-sample gradients into epoch accumulators. <code>CoreCPU&lt;T&gt;::updateCNNParameters(numSamples)</code> divides by the sample count and applies the learning rate: <code>params -= lr * (accum / N)</code>.
-On GPU: <code>cnn_accumulate</code> and <code>cnn_update</code> kernels in <code>opencl/CNN_Kernels.cpp.cl</code>.
+On GPU: <code>accumulate_gradients</code> and <code>update_parameters</code> kernels in <code>opencl/CNN_Kernels.cpp.cl</code>.
 </div>
 
 <div class="info-box">
