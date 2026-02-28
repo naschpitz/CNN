@@ -44,17 +44,24 @@ kernel void calculate_conv2d(
 
   TYPE sum = biases[bias_offset + f];
 
-  for (ulong c = 0; c < inputC; c++) {
-    for (ulong kh = 0; kh < filterH; kh++) {
-      for (ulong kw = 0; kw < filterW; kw++) {
-        long ih = (long)(oh * strideY + kh) - (long)padY;
-        long iw = (long)(ow * strideX + kw) - (long)padX;
+  ulong filterFBase = filter_offset + f * inputC * filterH * filterW;
 
-        if (ih >= 0 && ih < (long)inputH && iw >= 0 && iw < (long)inputW) {
-          ulong input_idx = actv_in_offset + c * inputH * inputW + (ulong)ih * inputW + (ulong)iw;
-          ulong filter_idx = filter_offset + f * inputC * filterH * filterW + c * filterH * filterW + kh * filterW + kw;
-          sum += actvs[input_idx] * filters[filter_idx];
-        }
+  for (ulong c = 0; c < inputC; c++) {
+    ulong actvCBase = actv_in_offset + c * inputH * inputW;
+    ulong filterCBase = filterFBase + c * filterH * filterW;
+
+    for (ulong kh = 0; kh < filterH; kh++) {
+      long ih = (long)(oh * strideY + kh) - (long)padY;
+      if (ih < 0 || ih >= (long)inputH) continue;
+
+      ulong actvRowBase = actvCBase + (ulong)ih * inputW;
+      ulong filterRowBase = filterCBase + kh * filterW;
+
+      for (ulong kw = 0; kw < filterW; kw++) {
+        long iw = (long)(ow * strideX + kw) - (long)padX;
+        if (iw < 0 || iw >= (long)inputW) continue;
+
+        sum += actvs[actvRowBase + (ulong)iw] * filters[filterRowBase + kw];
       }
     }
   }
@@ -251,7 +258,7 @@ kernel void calculate_dCost_dFilters(
     long iw = (long)(ow * strideX + kw) - (long)padX;
 
     if (ih >= 0 && ih < (long)inputH && iw >= 0 && iw < (long)inputW) {
-      sum += grads[gradFBase + oh * outW + ow]
+      sum += grads[gradFBase + pos]
            * actvs[actvCBase + (ulong)ih * inputW + (ulong)iw];
     }
   }
@@ -359,7 +366,7 @@ kernel void calculate_dCost_dInput(
   ulong filterCBase = filter_offset + c * filterH * filterW;
 
   if (strideY == 1 && strideX == 1) {
-    // Optimized path for stride=1 (most common case): no modulo needed
+    // Optimized path for stride=1: no modulo needed
     for (ulong f = 0; f < numFilters; f++) {
       ulong gradFBase = grad_out_offset + f * outH * outW;
       ulong filterFBase = filterCBase + f * inputC * filterH * filterW;
@@ -368,12 +375,14 @@ kernel void calculate_dCost_dInput(
         long oh = (long)ih + (long)padY - (long)kh;
         if (oh < 0 || oh >= (long)outH) continue;
 
+        ulong gradRowBase = gradFBase + (ulong)oh * outW;
+        ulong filterRowBase = filterFBase + kh * filterW;
+
         for (ulong kw = 0; kw < filterW; kw++) {
           long ow = (long)iw + (long)padX - (long)kw;
           if (ow < 0 || ow >= (long)outW) continue;
 
-          sum += grads[gradFBase + (ulong)oh * outW + (ulong)ow]
-               * filters[filterFBase + kh * filterW + kw];
+          sum += grads[gradRowBase + (ulong)ow] * filters[filterRowBase + kw];
         }
       }
     }
@@ -389,14 +398,16 @@ kernel void calculate_dCost_dInput(
         ulong oh = (ulong)numerator_h / strideY;
         if (oh >= outH) continue;
 
+        ulong gradRowBase = gradFBase + oh * outW;
+        ulong filterRowBase = filterFBase + kh * filterW;
+
         for (ulong kw = 0; kw < filterW; kw++) {
           long numerator_w = (long)iw + (long)padX - (long)kw;
           if (numerator_w < 0 || numerator_w % (long)strideX != 0) continue;
           ulong ow = (ulong)numerator_w / strideX;
           if (ow >= outW) continue;
 
-          sum += grads[gradFBase + oh * outW + ow]
-               * filters[filterFBase + kh * filterW + kw];
+          sum += grads[gradRowBase + ow] * filters[filterRowBase + kw];
         }
       }
     }
