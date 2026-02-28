@@ -349,6 +349,9 @@ void CoreGPUWorker<T>::buildANNWorker() {
 
   // Allocate ANN GPU buffers
   this->annGPUWorker->allocateBuffers();
+
+  // Buffer for accumulating loss on GPU (avoids per-sample GPU→CPU readback)
+  this->core->template allocateBuffer<T>("accum_loss", 1);
 }
 
 
@@ -740,6 +743,17 @@ void CoreGPUWorker<T>::setupTrainingKernels() {
   this->addCNNAccumulateKernels();
   this->annGPUWorker->addAccumulateKernels();
 
+  // Loss: compute weighted MSE on GPU and accumulate into accum_loss buffer
+  ulong outputActvOffset = this->annGPUWorker->getOutputActvOffset();
+  ulong numOutputNeurons = this->annGPUWorker->getNumOutputNeurons();
+  this->core->addKernel("calculate_sample_loss", "calculate_sample_loss", 1, 0);
+  this->core->template addArgument<T>("calculate_sample_loss", "actvs");
+  this->core->template addArgument<T>("calculate_sample_loss", "outputs");
+  this->core->template addArgument<T>("calculate_sample_loss", "lossWeights");
+  this->core->template addArgument<T>("calculate_sample_loss", "accum_loss");
+  this->core->template addArgument<ulong>("calculate_sample_loss", outputActvOffset);
+  this->core->template addArgument<ulong>("calculate_sample_loss", numOutputNeurons);
+
   this->trainingKernelsSetup = true;
 }
 
@@ -815,7 +829,9 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
     this->setupTrainingKernels();
   }
 
-  ulong lastANNLayerNeurons = this->annGPUWorker->getParameters().biases.back().size();
+  // Zero the GPU loss accumulator once per subset
+  std::vector<T> zero = {static_cast<T>(0)};
+  this->core->template writeBuffer<T>("accum_loss", zero, 0);
 
   for (ulong s = startIdx; s < endIdx; s++) {
     const Sample<T>& sample = samples[indices[s]];
@@ -831,27 +847,26 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
     // Generate and upload dropout mask for ANN dense layers (different mask per sample)
     if (this->annGPUWorker->hasDropout) this->annGPUWorker->generateAndUploadDropoutMask();
 
-    // Single run: CNN forward → bridge → ANN forward → ANN backward → reverse bridge → CNN backward → accumulate
+    // Single run: CNN forward → bridge → ANN forward → ANN backward → reverse bridge → CNN backward → accumulate → loss
     this->core->run();
 
-    // Read ANN output for loss calculation
-    ANN::Output<T> annOutput = this->annGPUWorker->readOutput();
-    Output<T> predicted(annOutput.begin(), annOutput.end());
-    T sampleLoss = this->calculateLoss(predicted, sample.output);
-    subsetLoss += sampleLoss;
-
-    // Report progress
+    // Report progress (no per-sample loss — accumulated on GPU)
     if (callback) {
       TrainingProgress<T> progress;
       progress.currentEpoch = epoch;
       progress.totalEpochs = totalEpochs;
       progress.currentSample = s + 1;
       progress.totalSamples = totalSamples;
-      progress.sampleLoss = sampleLoss;
+      progress.sampleLoss = static_cast<T>(0);
       progress.epochLoss = static_cast<T>(0);
       callback(progress);
     }
   }
+
+  // Read accumulated loss from GPU once per subset
+  std::vector<T> lossVec(1);
+  this->core->template readBuffer<T>("accum_loss", lossVec, 0);
+  subsetLoss = lossVec[0];
 
   return subsetLoss;
 }
