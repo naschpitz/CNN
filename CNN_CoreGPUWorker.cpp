@@ -519,10 +519,27 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         ulong outH = outShape.h;
         ulong outW = outShape.w;
 
-        // calculate_dCost_dFilters
+        // calculate_dCost_dFilters (tiled for better GPU utilization)
         ulong nFilterElems = this->convInfos[convIdx].numFilterElems;
+        ulong totalOutPositions = outH * outW;
+
+        // Compute tile parameters: target ~256 output positions per tile
+        ulong filterTileSize = 256;
+        if (filterTileSize > totalOutPositions) filterTileSize = totalOutPositions;
+        ulong filterNumTiles = (totalOutPositions + filterTileSize - 1) / filterTileSize;
+
+        // If tiling, zero the dFilters buffer first (atomic adds require zeroed buffer)
+        if (filterNumTiles > 1) {
+          std::string zeroFilterId = "zero_dFilters_layer" + layerStr;
+          this->core->addKernel(zeroFilterId, "zero_buffer", nFilterElems, 0);
+          this->core->template addArgument<T>(zeroFilterId, "cnn_dFilters");
+          this->core->template addArgument<ulong>(zeroFilterId, this->convInfos[convIdx].filterOffset);
+          this->core->template addArgument<ulong>(zeroFilterId, nFilterElems);
+        }
+
+        ulong filterTotalWork = nFilterElems * filterNumTiles;
         std::string filterId = "calculate_dCost_dFilters_layer" + layerStr;
-        this->core->addKernel(filterId, "calculate_dCost_dFilters", nFilterElems, 0);
+        this->core->addKernel(filterId, "calculate_dCost_dFilters", filterTotalWork, 0);
         this->core->template addArgument<T>(filterId, "cnn_grads");
         this->core->template addArgument<T>(filterId, "cnn_actvs");
         this->core->template addArgument<T>(filterId, "cnn_dFilters");
@@ -541,10 +558,26 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         this->core->template addArgument<ulong>(filterId, padX);
         this->core->template addArgument<ulong>(filterId, outH);
         this->core->template addArgument<ulong>(filterId, outW);
+        this->core->template addArgument<ulong>(filterId, filterTileSize);
+        this->core->template addArgument<ulong>(filterId, filterNumTiles);
 
-        // calculate_dCost_dBiases
+        // calculate_dCost_dBiases (tiled for better GPU utilization)
+        ulong biasTileSize = 256;
+        if (biasTileSize > totalOutPositions) biasTileSize = totalOutPositions;
+        ulong biasNumTiles = (totalOutPositions + biasTileSize - 1) / biasTileSize;
+
+        // If tiling, zero the dBiases buffer first
+        if (biasNumTiles > 1) {
+          std::string zeroBiasId = "zero_dBiases_layer" + layerStr;
+          this->core->addKernel(zeroBiasId, "zero_buffer", conv.numFilters, 0);
+          this->core->template addArgument<T>(zeroBiasId, "cnn_dBiases");
+          this->core->template addArgument<ulong>(zeroBiasId, this->convInfos[convIdx].biasOffset);
+          this->core->template addArgument<ulong>(zeroBiasId, conv.numFilters);
+        }
+
+        ulong biasTotalWork = conv.numFilters * biasNumTiles;
         std::string biasId = "calculate_dCost_dBiases_layer" + layerStr;
-        this->core->addKernel(biasId, "calculate_dCost_dBiases", conv.numFilters, 0);
+        this->core->addKernel(biasId, "calculate_dCost_dBiases", biasTotalWork, 0);
         this->core->template addArgument<T>(biasId, "cnn_grads");
         this->core->template addArgument<T>(biasId, "cnn_dBiases");
         this->core->template addArgument<ulong>(biasId, gradOutOffset);
@@ -552,6 +585,8 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         this->core->template addArgument<ulong>(biasId, conv.numFilters);
         this->core->template addArgument<ulong>(biasId, outH);
         this->core->template addArgument<ulong>(biasId, outW);
+        this->core->template addArgument<ulong>(biasId, biasTileSize);
+        this->core->template addArgument<ulong>(biasId, biasNumTiles);
 
         // calculate_dCost_dInput (skip if first layer — no one reads the gradient)
         if (i > 0) {
