@@ -231,18 +231,42 @@ kernel void calculate_dCost_dFilters(
   ulong kh  = rem2 / filterW;
   ulong kw  = rem2 % filterW;
 
+  // Precompute base offsets
+  ulong gradFBase = grad_out_offset + f * outH * outW;
+  ulong actvCBase = actv_in_offset + c * inputH * inputW;
+
+  // Compute valid oh range: oh * strideY + kh - padY must be in [0, inputH)
+  // oh >= ceil((padY - kh) / strideY) and oh < floor((inputH - 1 + padY - kh) / strideY) + 1
+  ulong ohStart = 0;
+  if ((long)kh < (long)padY) {
+    ohStart = ((long)padY - (long)kh + (long)strideY - 1) / (long)strideY;
+  }
+  ulong ohEnd = outH;
+  if ((long)inputH + (long)padY - (long)kh - 1 >= 0) {
+    ulong maxOh = ((ulong)((long)inputH + (long)padY - (long)kh - 1)) / strideY + 1;
+    if (maxOh < ohEnd) ohEnd = maxOh;
+  }
+
+  ulong owStart = 0;
+  if ((long)kw < (long)padX) {
+    owStart = ((long)padX - (long)kw + (long)strideX - 1) / (long)strideX;
+  }
+  ulong owEnd = outW;
+  if ((long)inputW + (long)padX - (long)kw - 1 >= 0) {
+    ulong maxOw = ((ulong)((long)inputW + (long)padX - (long)kw - 1)) / strideX + 1;
+    if (maxOw < owEnd) owEnd = maxOw;
+  }
+
   TYPE sum = (TYPE)0;
 
-  for (ulong oh = 0; oh < outH; oh++) {
-    for (ulong ow = 0; ow < outW; ow++) {
-      long ih = (long)(oh * strideY + kh) - (long)padY;
-      long iw = (long)(ow * strideX + kw) - (long)padX;
+  for (ulong oh = ohStart; oh < ohEnd; oh++) {
+    ulong ih = oh * strideY + kh - padY;
+    ulong gradRowBase = gradFBase + oh * outW;
+    ulong actvRowBase = actvCBase + ih * inputW;
 
-      if (ih >= 0 && ih < (long)inputH && iw >= 0 && iw < (long)inputW) {
-        TYPE dOut = grads[grad_out_offset + f * outH * outW + oh * outW + ow];
-        TYPE inp = actvs[actv_in_offset + c * inputH * inputW + (ulong)ih * inputW + (ulong)iw];
-        sum += dOut * inp;
-      }
+    for (ulong ow = owStart; ow < owEnd; ow++) {
+      ulong iw = ow * strideX + kw - padX;
+      sum += grads[gradRowBase + ow] * actvs[actvRowBase + iw];
     }
   }
 
@@ -431,24 +455,48 @@ kernel void calculate_dCost_dInput(
 
   TYPE sum = (TYPE)0;
 
-  for (ulong f = 0; f < numFilters; f++) {
-    for (ulong kh = 0; kh < filterH; kh++) {
-      for (ulong kw = 0; kw < filterW; kw++) {
-        // Reverse the forward mapping: oh * strideY + kh - padY = ih
-        // So oh = (ih + padY - kh) / strideY, valid when (ih + padY - kh) % strideY == 0
+  // Precompute filter base offset for this channel
+  ulong filterCBase = filter_offset + c * filterH * filterW;
+
+  if (strideY == 1 && strideX == 1) {
+    // Optimized path for stride=1 (most common case): no modulo needed
+    for (ulong f = 0; f < numFilters; f++) {
+      ulong gradFBase = grad_out_offset + f * outH * outW;
+      ulong filterFBase = filterCBase + f * inputC * filterH * filterW;
+
+      for (ulong kh = 0; kh < filterH; kh++) {
+        long oh = (long)ih + (long)padY - (long)kh;
+        if (oh < 0 || oh >= (long)outH) continue;
+
+        for (ulong kw = 0; kw < filterW; kw++) {
+          long ow = (long)iw + (long)padX - (long)kw;
+          if (ow < 0 || ow >= (long)outW) continue;
+
+          sum += grads[gradFBase + (ulong)oh * outW + (ulong)ow]
+               * filters[filterFBase + kh * filterW + kw];
+        }
+      }
+    }
+  } else {
+    // General path with stride support
+    for (ulong f = 0; f < numFilters; f++) {
+      ulong gradFBase = grad_out_offset + f * outH * outW;
+      ulong filterFBase = filterCBase + f * inputC * filterH * filterW;
+
+      for (ulong kh = 0; kh < filterH; kh++) {
         long numerator_h = (long)ih + (long)padY - (long)kh;
-        long numerator_w = (long)iw + (long)padX - (long)kw;
+        if (numerator_h < 0 || numerator_h % (long)strideY != 0) continue;
+        ulong oh = (ulong)numerator_h / strideY;
+        if (oh >= outH) continue;
 
-        if (numerator_h >= 0 && numerator_w >= 0 &&
-            numerator_h % (long)strideY == 0 && numerator_w % (long)strideX == 0) {
-          ulong oh = (ulong)numerator_h / strideY;
+        for (ulong kw = 0; kw < filterW; kw++) {
+          long numerator_w = (long)iw + (long)padX - (long)kw;
+          if (numerator_w < 0 || numerator_w % (long)strideX != 0) continue;
           ulong ow = (ulong)numerator_w / strideX;
+          if (ow >= outW) continue;
 
-          if (oh < outH && ow < outW) {
-            TYPE dOut = grads[grad_out_offset + f * outH * outW + oh * outW + ow];
-            TYPE filt = filters[filter_offset + f * inputC * filterH * filterW + c * filterH * filterW + kh * filterW + kw];
-            sum += dOut * filt;
-          }
+          sum += grads[gradFBase + oh * outW + ow]
+               * filters[filterFBase + kh * filterW + kw];
         }
       }
     }
