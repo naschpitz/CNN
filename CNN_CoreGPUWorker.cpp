@@ -518,21 +518,12 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         ulong outH = outShape.h;
         ulong outW = outShape.w;
 
-        // calculate_dCost_dFilters
+        // calculate_dCost_dFilters — one work-group per filter element, tree-reduce output positions
         ulong nFilterElems = this->convInfos[convIdx].numFilterElems;
-        ulong totalOutPositions = outH * outW;
-
-        // Use work-group reduction when filter elements are few (GPU underutilized)
-        bool useFilterWG = (nFilterElems < 4096 && totalOutPositions > 256);
         std::string filterId = "calculate_dCost_dFilters_layer" + layerStr;
-
-        if (useFilterWG) {
-          ulong filterLocalWS = 256;
-          ulong filterGlobalWS = nFilterElems * filterLocalWS;
-          this->core->addKernel(filterId, "calculate_dCost_dFilters_wg", filterGlobalWS, 0, filterLocalWS);
-        } else {
-          this->core->addKernel(filterId, "calculate_dCost_dFilters", nFilterElems, 0);
-        }
+        ulong filterLocalWS = 256;
+        ulong filterGlobalWS = nFilterElems * filterLocalWS;
+        this->core->addKernel(filterId, "calculate_dCost_dFilters", filterGlobalWS, 0, filterLocalWS);
         this->core->template addArgument<T>(filterId, "cnn_grads");
         this->core->template addArgument<T>(filterId, "cnn_actvs");
         this->core->template addArgument<T>(filterId, "cnn_dFilters");
@@ -552,18 +543,11 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         this->core->template addArgument<ulong>(filterId, outH);
         this->core->template addArgument<ulong>(filterId, outW);
 
-        // calculate_dCost_dBiases
-        // Use work-group reduction when few filters (GPU underutilized)
-        bool useBiasWG = (conv.numFilters < 256 && totalOutPositions > 256);
+        // calculate_dCost_dBiases — one work-group per filter, tree-reduce output positions
         std::string biasId = "calculate_dCost_dBiases_layer" + layerStr;
-
-        if (useBiasWG) {
-          ulong biasLocalWS = 256;
-          ulong biasGlobalWS = conv.numFilters * biasLocalWS;
-          this->core->addKernel(biasId, "calculate_dCost_dBiases_wg", biasGlobalWS, 0, biasLocalWS);
-        } else {
-          this->core->addKernel(biasId, "calculate_dCost_dBiases", conv.numFilters, 0);
-        }
+        ulong biasLocalWS = 256;
+        ulong biasGlobalWS = conv.numFilters * biasLocalWS;
+        this->core->addKernel(biasId, "calculate_dCost_dBiases", biasGlobalWS, 0, biasLocalWS);
         this->core->template addArgument<T>(biasId, "cnn_grads");
         this->core->template addArgument<T>(biasId, "cnn_dBiases");
         this->core->template addArgument<ulong>(biasId, gradOutOffset);

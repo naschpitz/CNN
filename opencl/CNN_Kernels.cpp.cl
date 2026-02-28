@@ -196,90 +196,10 @@ kernel void calculate_dCost_dRelu(
 //===================================================================================================================//
 
 // Computes ∂Cost/∂W for convolution filters (backward pass)
-// One work-item per filter weight element: (f, c, kh, kw)
-// nElements = numFilters * inputC * filterH * filterW
-kernel void calculate_dCost_dFilters(
-    global TYPE* grads,
-    global TYPE* actvs,
-    global TYPE* dFilters,
-    ulong grad_out_offset,   // offset of output gradient in grads buffer
-    ulong actv_in_offset,    // offset of forward input in actvs buffer
-    ulong dfilter_offset,    // offset in dFilters buffer for this layer
-    ulong inputC,
-    ulong inputH,
-    ulong inputW,
-    ulong numFilters,
-    ulong filterH,
-    ulong filterW,
-    ulong strideY,
-    ulong strideX,
-    ulong padY,
-    ulong padX,
-    ulong outH,
-    ulong outW
-  ) {
-  size_t gid = get_global_id(0);
-
-  ulong totalFilterElems = numFilters * inputC * filterH * filterW;
-  if (gid >= totalFilterElems) return;
-
-  // Decompose gid into (f, c, kh, kw)
-  ulong f   = gid / (inputC * filterH * filterW);
-  ulong rem = gid % (inputC * filterH * filterW);
-  ulong c   = rem / (filterH * filterW);
-  ulong rem2 = rem % (filterH * filterW);
-  ulong kh  = rem2 / filterW;
-  ulong kw  = rem2 % filterW;
-
-  // Precompute base offsets
-  ulong gradFBase = grad_out_offset + f * outH * outW;
-  ulong actvCBase = actv_in_offset + c * inputH * inputW;
-
-  // Compute valid oh range: oh * strideY + kh - padY must be in [0, inputH)
-  // oh >= ceil((padY - kh) / strideY) and oh < floor((inputH - 1 + padY - kh) / strideY) + 1
-  ulong ohStart = 0;
-  if ((long)kh < (long)padY) {
-    ohStart = ((long)padY - (long)kh + (long)strideY - 1) / (long)strideY;
-  }
-  ulong ohEnd = outH;
-  if ((long)inputH + (long)padY - (long)kh - 1 >= 0) {
-    ulong maxOh = ((ulong)((long)inputH + (long)padY - (long)kh - 1)) / strideY + 1;
-    if (maxOh < ohEnd) ohEnd = maxOh;
-  }
-
-  ulong owStart = 0;
-  if ((long)kw < (long)padX) {
-    owStart = ((long)padX - (long)kw + (long)strideX - 1) / (long)strideX;
-  }
-  ulong owEnd = outW;
-  if ((long)inputW + (long)padX - (long)kw - 1 >= 0) {
-    ulong maxOw = ((ulong)((long)inputW + (long)padX - (long)kw - 1)) / strideX + 1;
-    if (maxOw < owEnd) owEnd = maxOw;
-  }
-
-  TYPE sum = (TYPE)0;
-
-  for (ulong oh = ohStart; oh < ohEnd; oh++) {
-    ulong ih = oh * strideY + kh - padY;
-    ulong gradRowBase = gradFBase + oh * outW;
-    ulong actvRowBase = actvCBase + ih * inputW;
-
-    for (ulong ow = owStart; ow < owEnd; ow++) {
-      ulong iw = ow * strideX + kw - padX;
-      sum += grads[gradRowBase + ow] * actvs[actvRowBase + iw];
-    }
-  }
-
-  dFilters[dfilter_offset + gid] = sum;
-}
-
-//===================================================================================================================//
-
-// Work-group reduction version of calculate_dCost_dFilters for layers with few filter elements.
 // One work-group per filter element (f, c, kh, kw). Work-items within a group split the
-// output positions, compute partial sums, then tree-reduce — no atomics needed.
+// output positions, compute partial sums, then tree-reduce in local memory.
 // Global work size = numFilterElems * localWorkSize. Local work size must be power of 2.
-kernel void calculate_dCost_dFilters_wg(
+kernel void calculate_dCost_dFilters(
     global TYPE* grads,
     global TYPE* actvs,
     global TYPE* dFilters,
@@ -355,36 +275,9 @@ kernel void calculate_dCost_dFilters_wg(
 //===================================================================================================================//
 
 // Computes ∂Cost/∂b for convolution biases (backward pass)
-// One work-item per filter: nElements = numFilters
-kernel void calculate_dCost_dBiases(
-    global TYPE* grads,
-    global TYPE* dBiases,
-    ulong grad_out_offset,
-    ulong dbias_offset,
-    ulong numFilters,
-    ulong outH,
-    ulong outW
-  ) {
-  size_t gid = get_global_id(0);
-  if (gid >= numFilters) return;
-
-  ulong f = gid;
-  ulong totalOutPositions = outH * outW;
-  TYPE sum = (TYPE)0;
-
-  for (ulong pos = 0; pos < totalOutPositions; pos++) {
-    sum += grads[grad_out_offset + f * totalOutPositions + pos];
-  }
-
-  dBiases[dbias_offset + f] = sum;
-}
-
-//===================================================================================================================//
-
-// Work-group reduction version of calculate_dCost_dBiases for layers with few filters.
 // One work-group per filter. Work-items split the output positions, then tree-reduce.
 // Global work size = numFilters * localWorkSize. Local work size must be power of 2.
-kernel void calculate_dCost_dBiases_wg(
+kernel void calculate_dCost_dBiases(
     global TYPE* grads,
     global TYPE* dBiases,
     ulong grad_out_offset,
