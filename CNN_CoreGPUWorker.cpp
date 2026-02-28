@@ -249,30 +249,28 @@ void CoreGPUWorker<T>::loadSources(bool skipDefines) {
 
 template <typename T>
 void CoreGPUWorker<T>::allocateBuffers() {
-  ulong batchSize = this->coreConfig.trainingConfig.batchSize;
-  if (this->logLevel >= CNN::LogLevel::INFO)
-    std::cout << "Allocating CNN GPU buffers (batchSize=" << batchSize << ")...\n";
+  if (this->logLevel >= CNN::LogLevel::INFO) std::cout << "Allocating CNN GPU buffers...\n";
 
-  // Per-sample buffers: allocated with batchSize multiplier
-  this->core->template allocateBuffer<T>("cnn_actvs", batchSize * this->totalActvSize);
-  this->core->template allocateBuffer<T>("cnn_grads", batchSize * this->totalActvSize);
+  // Activation and gradient buffers (same layout)
+  this->core->template allocateBuffer<T>("cnn_actvs", this->totalActvSize);
+  this->core->template allocateBuffer<T>("cnn_grads", this->totalActvSize);
 
-  // Per-sample gradient buffers (batched); shared parameter/accumulator buffers (not batched)
+  // Filter and bias parameter buffers
   if (this->totalFilterSize > 0) {
     this->core->template allocateBuffer<T>("cnn_filters", this->totalFilterSize);
-    this->core->template allocateBuffer<T>("cnn_dFilters", batchSize * this->totalFilterSize);
+    this->core->template allocateBuffer<T>("cnn_dFilters", this->totalFilterSize);
     this->core->template allocateBuffer<T>("cnn_accum_dFilters", this->totalFilterSize);
   }
 
   if (this->totalBiasSize > 0) {
     this->core->template allocateBuffer<T>("cnn_biases", this->totalBiasSize);
-    this->core->template allocateBuffer<T>("cnn_dBiases", batchSize * this->totalBiasSize);
+    this->core->template allocateBuffer<T>("cnn_dBiases", this->totalBiasSize);
     this->core->template allocateBuffer<T>("cnn_accum_dBiases", this->totalBiasSize);
   }
 
-  // Pool index buffer (per-sample, batched)
+  // Pool index buffer
   if (this->totalPoolIndexSize > 0) {
-    this->core->template allocateBuffer<ulong>("cnn_pool_indices", batchSize * this->totalPoolIndexSize);
+    this->core->template allocateBuffer<ulong>("cnn_pool_indices", this->totalPoolIndexSize);
   }
 
   // Write initial filter/bias values to GPU
@@ -330,12 +328,11 @@ void CoreGPUWorker<T>::buildANNWorker() {
     annLayers.push_back(layer);
   }
 
-  // Training config — pass CNN's batchSize to ANN so both use the same batch dimension
+  // Training config
   ANN::TrainingConfig<T> annTrainingConfig;
   annTrainingConfig.numEpochs = this->coreConfig.trainingConfig.numEpochs;
   annTrainingConfig.learningRate = this->coreConfig.trainingConfig.learningRate;
   annTrainingConfig.dropoutRate = this->coreConfig.trainingConfig.dropoutRate;
-  annTrainingConfig.batchSize = this->coreConfig.trainingConfig.batchSize;
 
   // Cost function config
   ANN::CostFunctionConfig<T> annCostFunctionConfig;
@@ -366,7 +363,6 @@ void CoreGPUWorker<T>::addForwardKernels() {
   Shape3D currentShape = this->coreConfig.inputShape;
   ulong convIdx = 0;
   ulong poolIdx = 0;
-  ulong bs = this->currentBatchSize;
 
   for (ulong i = 0; i < cnnLayers.size(); i++) {
     const auto& layerConfig = cnnLayers[i];
@@ -382,7 +378,7 @@ void CoreGPUWorker<T>::addForwardKernels() {
         ulong padX = SlidingStrategy::computePadding(conv.filterW, conv.slidingStrategy);
         ulong outH = (currentShape.h + 2 * padY - conv.filterH) / conv.strideY + 1;
         ulong outW = (currentShape.w + 2 * padX - conv.filterW) / conv.strideX + 1;
-        ulong nElements = bs * conv.numFilters * outH * outW;
+        ulong nElements = conv.numFilters * outH * outW;
 
         std::string kernelId = "calculate_conv2d_layer" + layerStr;
         this->core->addKernel(kernelId, "calculate_conv2d", nElements, 0);
@@ -405,8 +401,6 @@ void CoreGPUWorker<T>::addForwardKernels() {
         this->core->template addArgument<ulong>(kernelId, padX);
         this->core->template addArgument<ulong>(kernelId, outH);
         this->core->template addArgument<ulong>(kernelId, outW);
-        this->core->template addArgument<ulong>(kernelId, bs);
-        this->core->template addArgument<ulong>(kernelId, this->totalActvSize);
 
         currentShape = {conv.numFilters, outH, outW};
         convIdx++;
@@ -415,13 +409,11 @@ void CoreGPUWorker<T>::addForwardKernels() {
       case LayerType::RELU: {
         ulong size = currentShape.size();
         std::string kernelId = "calculate_relu_layer" + layerStr;
-        this->core->addKernel(kernelId, "calculate_relu", bs * size, 0);
+        this->core->addKernel(kernelId, "calculate_relu", size, 0);
         this->core->template addArgument<T>(kernelId, "cnn_actvs");
         this->core->template addArgument<ulong>(kernelId, inOffset);
         this->core->template addArgument<ulong>(kernelId, outOffset);
         this->core->template addArgument<ulong>(kernelId, size);
-        this->core->template addArgument<ulong>(kernelId, bs);
-        this->core->template addArgument<ulong>(kernelId, this->totalActvSize);
         break;
       }
       case LayerType::POOL: {
@@ -431,7 +423,7 @@ void CoreGPUWorker<T>::addForwardKernels() {
         ulong nElements = currentShape.c * outH * outW;
 
         std::string kernelId = "calculate_maxpool_layer" + layerStr;
-        this->core->addKernel(kernelId, "calculate_maxpool", bs * nElements, 0);
+        this->core->addKernel(kernelId, "calculate_maxpool", nElements, 0);
         this->core->template addArgument<T>(kernelId, "cnn_actvs");
         this->core->template addArgument<ulong>(kernelId, "cnn_pool_indices");
         this->core->template addArgument<ulong>(kernelId, inOffset);
@@ -446,9 +438,6 @@ void CoreGPUWorker<T>::addForwardKernels() {
         this->core->template addArgument<ulong>(kernelId, pool.strideX);
         this->core->template addArgument<ulong>(kernelId, outH);
         this->core->template addArgument<ulong>(kernelId, outW);
-        this->core->template addArgument<ulong>(kernelId, bs);
-        this->core->template addArgument<ulong>(kernelId, this->totalActvSize);
-        this->core->template addArgument<ulong>(kernelId, this->totalPoolIndexSize);
 
         currentShape = {currentShape.c, outH, outW};
         poolIdx++;
@@ -508,7 +497,6 @@ void CoreGPUWorker<T>::addBackwardKernels() {
   // Iterate backward through layers
   ulong convIdx = this->convInfos.size();
   ulong poolIdx = this->poolInfos.size();
-  ulong bs = this->currentBatchSize;
 
   for (long i = static_cast<long>(numLayers) - 1; i >= 0; i--) {
     const auto& layerConfig = cnnLayers[static_cast<ulong>(i)];
@@ -533,7 +521,7 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         // calculate_dCost_dFilters
         ulong nFilterElems = this->convInfos[convIdx].numFilterElems;
         std::string filterId = "calculate_dCost_dFilters_layer" + layerStr;
-        this->core->addKernel(filterId, "calculate_dCost_dFilters", bs * nFilterElems, 0);
+        this->core->addKernel(filterId, "calculate_dCost_dFilters", nFilterElems, 0);
         this->core->template addArgument<T>(filterId, "cnn_grads");
         this->core->template addArgument<T>(filterId, "cnn_actvs");
         this->core->template addArgument<T>(filterId, "cnn_dFilters");
@@ -552,13 +540,10 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         this->core->template addArgument<ulong>(filterId, padX);
         this->core->template addArgument<ulong>(filterId, outH);
         this->core->template addArgument<ulong>(filterId, outW);
-        this->core->template addArgument<ulong>(filterId, bs);
-        this->core->template addArgument<ulong>(filterId, this->totalActvSize);
-        this->core->template addArgument<ulong>(filterId, this->totalFilterSize);
 
         // calculate_dCost_dBiases
         std::string biasId = "calculate_dCost_dBiases_layer" + layerStr;
-        this->core->addKernel(biasId, "calculate_dCost_dBiases", bs * conv.numFilters, 0);
+        this->core->addKernel(biasId, "calculate_dCost_dBiases", conv.numFilters, 0);
         this->core->template addArgument<T>(biasId, "cnn_grads");
         this->core->template addArgument<T>(biasId, "cnn_dBiases");
         this->core->template addArgument<ulong>(biasId, gradOutOffset);
@@ -566,15 +551,12 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         this->core->template addArgument<ulong>(biasId, conv.numFilters);
         this->core->template addArgument<ulong>(biasId, outH);
         this->core->template addArgument<ulong>(biasId, outW);
-        this->core->template addArgument<ulong>(biasId, bs);
-        this->core->template addArgument<ulong>(biasId, this->totalActvSize);
-        this->core->template addArgument<ulong>(biasId, this->totalBiasSize);
 
         // calculate_dCost_dInput (skip if first layer — no one reads the gradient)
         if (i > 0) {
           ulong nInputElems = inShape.size();
           std::string inputId = "calculate_dCost_dInput_layer" + layerStr;
-          this->core->addKernel(inputId, "calculate_dCost_dInput", bs * nInputElems, 0);
+          this->core->addKernel(inputId, "calculate_dCost_dInput", nInputElems, 0);
           this->core->template addArgument<T>(inputId, "cnn_grads");
           this->core->template addArgument<T>(inputId, "cnn_filters");
           this->core->template addArgument<ulong>(inputId, gradOutOffset);
@@ -592,23 +574,19 @@ void CoreGPUWorker<T>::addBackwardKernels() {
           this->core->template addArgument<ulong>(inputId, padX);
           this->core->template addArgument<ulong>(inputId, outH);
           this->core->template addArgument<ulong>(inputId, outW);
-          this->core->template addArgument<ulong>(inputId, bs);
-          this->core->template addArgument<ulong>(inputId, this->totalActvSize);
         }
         break;
       }
       case LayerType::RELU: {
         ulong size = inShape.size();
         std::string kernelId = "calculate_dCost_dRelu_layer" + layerStr;
-        this->core->addKernel(kernelId, "calculate_dCost_dRelu", bs * size, 0);
+        this->core->addKernel(kernelId, "calculate_dCost_dRelu", size, 0);
         this->core->template addArgument<T>(kernelId, "cnn_grads");
         this->core->template addArgument<T>(kernelId, "cnn_actvs");
         this->core->template addArgument<ulong>(kernelId, gradInOffset);
         this->core->template addArgument<ulong>(kernelId, gradOutOffset);
         this->core->template addArgument<ulong>(kernelId, actvInOffset);
         this->core->template addArgument<ulong>(kernelId, size);
-        this->core->template addArgument<ulong>(kernelId, bs);
-        this->core->template addArgument<ulong>(kernelId, this->totalActvSize);
         break;
       }
       case LayerType::POOL: {
@@ -617,25 +595,20 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         // Zero the input gradient region first
         ulong inSize = inShape.size();
         std::string zeroId = "zero_pool_grad_layer" + layerStr;
-        this->core->addKernel(zeroId, "zero_buffer", bs * inSize, 0);
+        this->core->addKernel(zeroId, "zero_buffer", inSize, 0);
         this->core->template addArgument<T>(zeroId, "cnn_grads");
         this->core->template addArgument<ulong>(zeroId, gradInOffset);
         this->core->template addArgument<ulong>(zeroId, inSize);
-        this->core->template addArgument<ulong>(zeroId, bs);
-        this->core->template addArgument<ulong>(zeroId, this->totalActvSize);
 
         // calculate_dCost_dMaxpool
         ulong outSize = outShape.size();
         std::string poolId = "calculate_dCost_dMaxpool_layer" + layerStr;
-        this->core->addKernel(poolId, "calculate_dCost_dMaxpool", bs * outSize, 0);
+        this->core->addKernel(poolId, "calculate_dCost_dMaxpool", outSize, 0);
         this->core->template addArgument<T>(poolId, "cnn_grads");
         this->core->template addArgument<ulong>(poolId, "cnn_pool_indices");
         this->core->template addArgument<ulong>(poolId, gradOutOffset);
         this->core->template addArgument<ulong>(poolId, this->poolInfos[poolIdx].indexOffset);
         this->core->template addArgument<ulong>(poolId, outSize);
-        this->core->template addArgument<ulong>(poolId, bs);
-        this->core->template addArgument<ulong>(poolId, this->totalActvSize);
-        this->core->template addArgument<ulong>(poolId, this->totalPoolIndexSize);
         break;
       }
       case LayerType::FLATTEN: {
@@ -653,16 +626,11 @@ void CoreGPUWorker<T>::addBackwardKernels() {
 
 template <typename T>
 void CoreGPUWorker<T>::addCNNAccumulateKernels() {
-  ulong bs = this->currentBatchSize;
-
-  // accumulate_gradients reduces across batch dimension — work items = size (NOT batched)
   if (this->totalFilterSize > 0) {
     this->core->addKernel("accumulate_gradients_filters", "accumulate_gradients", this->totalFilterSize, 0);
     this->core->template addArgument<T>("accumulate_gradients_filters", "cnn_accum_dFilters");
     this->core->template addArgument<T>("accumulate_gradients_filters", "cnn_dFilters");
     this->core->template addArgument<ulong>("accumulate_gradients_filters", static_cast<ulong>(0));
-    this->core->template addArgument<ulong>("accumulate_gradients_filters", this->totalFilterSize);
-    this->core->template addArgument<ulong>("accumulate_gradients_filters", bs);
     this->core->template addArgument<ulong>("accumulate_gradients_filters", this->totalFilterSize);
   }
 
@@ -671,8 +639,6 @@ void CoreGPUWorker<T>::addCNNAccumulateKernels() {
     this->core->template addArgument<T>("accumulate_gradients_biases", "cnn_accum_dBiases");
     this->core->template addArgument<T>("accumulate_gradients_biases", "cnn_dBiases");
     this->core->template addArgument<ulong>("accumulate_gradients_biases", static_cast<ulong>(0));
-    this->core->template addArgument<ulong>("accumulate_gradients_biases", this->totalBiasSize);
-    this->core->template addArgument<ulong>("accumulate_gradients_biases", bs);
     this->core->template addArgument<ulong>("accumulate_gradients_biases", this->totalBiasSize);
   }
 }
@@ -714,17 +680,12 @@ template <typename T>
 void CoreGPUWorker<T>::addCopyBridgeKernels() {
   ulong lastLayerIdx = this->layerInfos.size() - 1;
   ulong cnnOutputOffset = this->layerInfos[lastLayerIdx].actvOffset;
-  ulong bs = this->currentBatchSize;
-  ulong annStride = this->annGPUWorker->getStride();
 
-  this->core->addKernel("copy_cnn_to_ann", bs * this->flattenSize, 0);
+  this->core->addKernel("copy_cnn_to_ann", this->flattenSize, 0);
   this->core->template addArgument<T>("copy_cnn_to_ann", "cnn_actvs");
   this->core->template addArgument<T>("copy_cnn_to_ann", "actvs");
   this->core->template addArgument<ulong>("copy_cnn_to_ann", cnnOutputOffset);
   this->core->template addArgument<ulong>("copy_cnn_to_ann", this->flattenSize);
-  this->core->template addArgument<ulong>("copy_cnn_to_ann", bs);
-  this->core->template addArgument<ulong>("copy_cnn_to_ann", this->totalActvSize);
-  this->core->template addArgument<ulong>("copy_cnn_to_ann", annStride);
 }
 
 //===================================================================================================================//
@@ -763,16 +724,11 @@ void CoreGPUWorker<T>::setupTrainingKernels() {
   // Reverse bridge: copy ANN input gradients to CNN gradient buffer
   ulong lastLayerIdx = this->layerInfos.size() - 1;
   ulong cnnOutputOffset = this->layerInfos[lastLayerIdx].actvOffset;
-  ulong bs = this->currentBatchSize;
-  ulong annStride = this->annGPUWorker->getStride();
-  this->core->addKernel("copy_ann_grad_to_cnn", bs * this->flattenSize, 0);
+  this->core->addKernel("copy_ann_grad_to_cnn", this->flattenSize, 0);
   this->core->template addArgument<T>("copy_ann_grad_to_cnn", "dCost_dActvs");
   this->core->template addArgument<T>("copy_ann_grad_to_cnn", "cnn_grads");
   this->core->template addArgument<ulong>("copy_ann_grad_to_cnn", cnnOutputOffset);
   this->core->template addArgument<ulong>("copy_ann_grad_to_cnn", this->flattenSize);
-  this->core->template addArgument<ulong>("copy_ann_grad_to_cnn", bs);
-  this->core->template addArgument<ulong>("copy_ann_grad_to_cnn", this->totalActvSize);
-  this->core->template addArgument<ulong>("copy_ann_grad_to_cnn", annStride);
 
   this->addBackwardKernels();
 
@@ -816,10 +772,8 @@ void CoreGPUWorker<T>::invalidateAllKernelFlags() {
 
 template <typename T>
 Output<T> CoreGPUWorker<T>::predict(const Input<T>& input) {
-  // Predict uses batchSize=1
-  if (!this->predictKernelsSetup || this->currentBatchSize != 1) {
-    this->currentBatchSize = 1;
-    this->annGPUWorker->setCurrentBatchSize(1);
+  // Set up predict kernels if needed (CNN forward → bridge → ANN forward)
+  if (!this->predictKernelsSetup) {
     this->setupPredictKernels();
   }
 
@@ -846,65 +800,52 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
                                 ulong epoch, ulong totalEpochs, const TrainingCallback<T>& callback) {
   ulong numSamplesInSubset = endIdx - startIdx;
   ulong totalSamples = samples.size();
-  ulong batchSize = this->coreConfig.trainingConfig.batchSize;
 
   T subsetLoss = static_cast<T>(0);
 
   // Reset CNN and ANN accumulators
   this->resetAccumulators();
 
+  // Set up training kernels once (full forward + backward + accumulate pipeline)
+  if (!this->trainingKernelsSetup) {
+    this->setupTrainingKernels();
+  }
+
   ulong lastANNLayerNeurons = this->annGPUWorker->getParameters().biases.back().size();
-  ulong inputSize = this->coreConfig.inputShape.size();
-  ulong annStride = this->annGPUWorker->getStride();
 
-  // Process samples in GPU batches
-  for (ulong batchStart = startIdx; batchStart < endIdx; batchStart += batchSize) {
-    ulong bs = std::min(batchSize, endIdx - batchStart);
+  for (ulong s = startIdx; s < endIdx; s++) {
+    const Sample<T>& sample = samples[indices[s]];
 
-    // Set up training kernels if batch size changed
-    if (!this->trainingKernelsSetup || this->currentBatchSize != bs) {
-      this->currentBatchSize = bs;
-      this->annGPUWorker->setCurrentBatchSize(bs);
-      this->setupTrainingKernels();
-    }
+    // Write CNN input to GPU
+    std::vector<T> inputVec(sample.input.data.begin(), sample.input.data.end());
+    this->core->template writeBuffer<T>("cnn_actvs", inputVec, 0);
 
-    // Write all samples in this batch to GPU buffers
-    for (ulong b = 0; b < bs; b++) {
-      const Sample<T>& sample = samples[indices[batchStart + b]];
+    // Write ANN expected output to GPU (for loss computation in backward pass)
+    std::vector<T> expectedVec(sample.output.begin(), sample.output.end());
+    this->core->template writeBuffer<T>("outputs", expectedVec, 0);
 
-      // Write CNN input at batch offset
-      std::vector<T> inputVec(sample.input.data.begin(), sample.input.data.end());
-      this->core->template writeBuffer<T>("cnn_actvs", inputVec, b * this->totalActvSize);
-
-      // Write ANN expected output at batch offset
-      std::vector<T> expectedVec(sample.output.begin(), sample.output.end());
-      this->core->template writeBuffer<T>("outputs", expectedVec, b * annStride);
-    }
-
-    // Generate and upload dropout mask for ANN dense layers (batch-aware)
+    // Generate and upload dropout mask for ANN dense layers (different mask per sample)
     if (this->annGPUWorker->hasDropout) this->annGPUWorker->generateAndUploadDropoutMask();
 
     // Single run: CNN forward → bridge → ANN forward → ANN backward → reverse bridge → CNN backward → accumulate
     this->core->run();
 
-    // Read ANN outputs for loss calculation (one per sample in batch)
-    for (ulong b = 0; b < bs; b++) {
-      ANN::Output<T> annOutput = this->annGPUWorker->readBatchOutput(b);
-      Output<T> predicted(annOutput.begin(), annOutput.end());
-      T sampleLoss = this->calculateLoss(predicted, samples[indices[batchStart + b]].output);
-      subsetLoss += sampleLoss;
+    // Read ANN output for loss calculation
+    ANN::Output<T> annOutput = this->annGPUWorker->readOutput();
+    Output<T> predicted(annOutput.begin(), annOutput.end());
+    T sampleLoss = this->calculateLoss(predicted, sample.output);
+    subsetLoss += sampleLoss;
 
-      // Report progress
-      if (callback) {
-        TrainingProgress<T> progress;
-        progress.currentEpoch = epoch;
-        progress.totalEpochs = totalEpochs;
-        progress.currentSample = batchStart + b + 1;
-        progress.totalSamples = totalSamples;
-        progress.sampleLoss = sampleLoss;
-        progress.epochLoss = static_cast<T>(0);
-        callback(progress);
-      }
+    // Report progress
+    if (callback) {
+      TrainingProgress<T> progress;
+      progress.currentEpoch = epoch;
+      progress.totalEpochs = totalEpochs;
+      progress.currentSample = s + 1;
+      progress.totalSamples = totalSamples;
+      progress.sampleLoss = sampleLoss;
+      progress.epochLoss = static_cast<T>(0);
+      callback(progress);
     }
   }
 
@@ -919,42 +860,17 @@ template <typename T>
 std::pair<T, ulong> CoreGPUWorker<T>::testSubset(const Samples<T>& samples, ulong startIdx, ulong endIdx) {
   T subsetLoss = static_cast<T>(0);
   ulong subsetCorrect = 0;
-  ulong batchSize = this->coreConfig.trainingConfig.batchSize;
 
-  // Process samples in GPU batches
-  for (ulong batchStart = startIdx; batchStart < endIdx; batchStart += batchSize) {
-    ulong bs = std::min(batchSize, endIdx - batchStart);
+  for (ulong s = startIdx; s < endIdx; s++) {
+    Output<T> predicted = this->predict(samples[s].input);
+    subsetLoss += this->calculateLoss(predicted, samples[s].output);
 
-    // Set up predict kernels if batch size changed
-    if (!this->predictKernelsSetup || this->currentBatchSize != bs) {
-      this->currentBatchSize = bs;
-      this->annGPUWorker->setCurrentBatchSize(bs);
-      this->setupPredictKernels();
-    }
+    // Accuracy: compare argmax of predicted vs expected
+    auto predIdx = std::distance(predicted.begin(), std::max_element(predicted.begin(), predicted.end()));
+    auto expIdx = std::distance(samples[s].output.begin(), std::max_element(samples[s].output.begin(), samples[s].output.end()));
 
-    // Write all samples in this batch to GPU
-    for (ulong b = 0; b < bs; b++) {
-      const Sample<T>& sample = samples[batchStart + b];
-      std::vector<T> inputVec(sample.input.data.begin(), sample.input.data.end());
-      this->core->template writeBuffer<T>("cnn_actvs", inputVec, b * this->totalActvSize);
-    }
-
-    // Run forward pass
-    this->core->run();
-
-    // Read ANN outputs for loss and accuracy
-    for (ulong b = 0; b < bs; b++) {
-      ANN::Output<T> annOutput = this->annGPUWorker->readBatchOutput(b);
-      Output<T> predicted(annOutput.begin(), annOutput.end());
-      subsetLoss += this->calculateLoss(predicted, samples[batchStart + b].output);
-
-      auto predIdx = std::distance(predicted.begin(), std::max_element(predicted.begin(), predicted.end()));
-      auto expIdx = std::distance(samples[batchStart + b].output.begin(),
-                                  std::max_element(samples[batchStart + b].output.begin(), samples[batchStart + b].output.end()));
-
-      if (predIdx == expIdx)
-        subsetCorrect++;
-    }
+    if (predIdx == expIdx)
+      subsetCorrect++;
   }
 
   return {subsetLoss, subsetCorrect};
@@ -967,10 +883,8 @@ std::pair<T, ulong> CoreGPUWorker<T>::testSubset(const Samples<T>& samples, ulon
 
 template <typename T>
 void CoreGPUWorker<T>::backpropagateSample(const Input<T>& input, const Output<T>& expected) {
-  // backpropagateSample uses batchSize=1
-  if (!this->trainingKernelsSetup || this->currentBatchSize != 1) {
-    this->currentBatchSize = 1;
-    this->annGPUWorker->setCurrentBatchSize(1);
+  // Set up full training pipeline if needed
+  if (!this->trainingKernelsSetup) {
     this->setupTrainingKernels();
   }
 

@@ -111,9 +111,6 @@ namespace CNN {
       //-- ANN GPU worker (dense layers on shared core) --//
       std::unique_ptr<ANN::CoreGPUWorker<T>> annGPUWorker;
 
-      //-- Batch parameters --//
-      ulong currentBatchSize = 1;  // Current batch size for kernel dispatch
-
       //-- Kernel setup flags --//
       bool predictKernelsSetup = false;
       bool trainingKernelsSetup = false;

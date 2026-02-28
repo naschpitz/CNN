@@ -8,15 +8,16 @@
 //===================================================================================================================//
 
 // Computes z = input ⊛ filter + bias (forward pass)
-// Work items = batchSize * numFilters * outH * outW
+// One work-item per output element (f, oh, ow)
+// nElements = numFilters * outH * outW
 kernel void calculate_conv2d(
     global TYPE* actvs,
     global TYPE* filters,
     global TYPE* biases,
-    ulong actv_in_offset,    // offset of input tensor (per-sample)
-    ulong actv_out_offset,   // offset of output tensor (per-sample)
-    ulong filter_offset,     // offset of this layer's filters (shared)
-    ulong bias_offset,       // offset of this layer's biases (shared)
+    ulong actv_in_offset,    // offset of input tensor in actvs buffer
+    ulong actv_out_offset,   // offset of output tensor in actvs buffer
+    ulong filter_offset,     // offset of this layer's filters
+    ulong bias_offset,       // offset of this layer's biases
     ulong inputC,
     ulong inputH,
     ulong inputW,
@@ -28,20 +29,16 @@ kernel void calculate_conv2d(
     ulong padY,
     ulong padX,
     ulong outH,
-    ulong outW,
-    ulong batchSize,
-    ulong actvStride         // totalActvSize — stride between samples in actvs
+    ulong outW
   ) {
   size_t gid = get_global_id(0);
 
   ulong totalOut = numFilters * outH * outW;
-  ulong batchIdx = gid / totalOut;
-  ulong localIdx = gid % totalOut;
-  ulong batchOffset = batchIdx * actvStride;
+  if (gid >= totalOut) return;
 
-  // Decompose localIdx into (f, oh, ow)
-  ulong f  = localIdx / (outH * outW);
-  ulong rem = localIdx % (outH * outW);
+  // Decompose gid into (f, oh, ow)
+  ulong f  = gid / (outH * outW);
+  ulong rem = gid % (outH * outW);
   ulong oh = rem / outW;
   ulong ow = rem % outW;
 
@@ -54,7 +51,7 @@ kernel void calculate_conv2d(
         long iw = (long)(ow * strideX + kw) - (long)padX;
 
         if (ih >= 0 && ih < (long)inputH && iw >= 0 && iw < (long)inputW) {
-          ulong input_idx = batchOffset + actv_in_offset + c * inputH * inputW + (ulong)ih * inputW + (ulong)iw;
+          ulong input_idx = actv_in_offset + c * inputH * inputW + (ulong)ih * inputW + (ulong)iw;
           ulong filter_idx = filter_offset + f * inputC * filterH * filterW + c * filterH * filterW + kh * filterW + kw;
           sum += actvs[input_idx] * filters[filter_idx];
         }
@@ -62,34 +59,31 @@ kernel void calculate_conv2d(
     }
   }
 
-  actvs[batchOffset + actv_out_offset + f * outH * outW + oh * outW + ow] = sum;
+  actvs[actv_out_offset + f * outH * outW + oh * outW + ow] = sum;
 }
 
 //===================================================================================================================//
 
 // Computes a = max(0, z) (forward pass)
-// Work items = batchSize * size
+// One work-item per element, nElements = layer tensor size
 kernel void calculate_relu(
     global TYPE* actvs,
     ulong in_offset,
     ulong out_offset,
-    ulong size,
-    ulong batchSize,
-    ulong actvStride
+    ulong size
   ) {
   size_t gid = get_global_id(0);
-  ulong batchIdx = gid / size;
-  ulong localIdx = gid % size;
-  ulong batchOffset = batchIdx * actvStride;
+  if (gid >= size) return;
 
-  TYPE val = actvs[batchOffset + in_offset + localIdx];
-  actvs[batchOffset + out_offset + localIdx] = (val > (TYPE)0) ? val : (TYPE)0;
+  TYPE val = actvs[in_offset + gid];
+  actvs[out_offset + gid] = (val > (TYPE)0) ? val : (TYPE)0;
 }
 
 //===================================================================================================================//
 
 // Computes a = max(region) and records max indices (forward pass)
-// Work items = batchSize * C * outH * outW
+// One work-item per output element (c, oh, ow)
+// nElements = C * outH * outW
 kernel void calculate_maxpool(
     global TYPE* actvs,
     global ulong* pool_indices,
@@ -104,21 +98,15 @@ kernel void calculate_maxpool(
     ulong strideY,
     ulong strideX,
     ulong outH,
-    ulong outW,
-    ulong batchSize,
-    ulong actvStride,
-    ulong poolIdxStride
+    ulong outW
   ) {
   size_t gid = get_global_id(0);
 
   ulong totalOut = channels * outH * outW;
-  ulong batchIdx = gid / totalOut;
-  ulong localIdx = gid % totalOut;
-  ulong batchActvOffset = batchIdx * actvStride;
-  ulong batchPoolOffset = batchIdx * poolIdxStride;
+  if (gid >= totalOut) return;
 
-  ulong c  = localIdx / (outH * outW);
-  ulong rem = localIdx % (outH * outW);
+  ulong c  = gid / (outH * outW);
+  ulong rem = gid % (outH * outW);
   ulong oh = rem / outW;
   ulong ow = rem % outW;
 
@@ -130,8 +118,7 @@ kernel void calculate_maxpool(
       ulong ih = oh * strideY + ph;
       ulong iw = ow * strideX + pw;
 
-      // Absolute index into batched actvs buffer (used by backward pass too)
-      ulong idx = batchActvOffset + actv_in_offset + c * inputH * inputW + ih * inputW + iw;
+      ulong idx = actv_in_offset + c * inputH * inputW + ih * inputW + iw;
       TYPE val = actvs[idx];
 
       if (val > maxVal) {
@@ -141,8 +128,8 @@ kernel void calculate_maxpool(
     }
   }
 
-  actvs[batchActvOffset + actv_out_offset + localIdx] = maxVal;
-  pool_indices[batchPoolOffset + pool_idx_offset + localIdx] = maxIdx;
+  actvs[actv_out_offset + gid] = maxVal;
+  pool_indices[pool_idx_offset + gid] = maxIdx;
 }
 
 //===================================================================================================================//
@@ -150,19 +137,15 @@ kernel void calculate_maxpool(
 //===================================================================================================================//
 
 // Zero a region of a buffer
-// Work items = batchSize * size
 kernel void zero_buffer(
     global TYPE* buf,
     ulong offset,
-    ulong size,
-    ulong batchSize,
-    ulong stride
+    ulong size
   ) {
   size_t gid = get_global_id(0);
-  ulong batchIdx = gid / size;
-  ulong localIdx = gid % size;
+  if (gid >= size) return;
 
-  buf[batchIdx * stride + offset + localIdx] = (TYPE)0;
+  buf[offset + gid] = (TYPE)0;
 }
 
 //===================================================================================================================//
@@ -170,66 +153,58 @@ kernel void zero_buffer(
 //===================================================================================================================//
 
 // Computes ∂Cost/∂maxpool_input: routes gradient to max position (backward pass)
-// Work items = batchSize * size
+// nElements = C * outH * outW (same as forward output size)
 kernel void calculate_dCost_dMaxpool(
     global TYPE* grads,
     global ulong* pool_indices,
-    ulong grad_out_offset,     // offset of pool output gradient (per-sample)
-    ulong pool_idx_offset,     // offset into pool_indices (per-sample)
-    ulong size,                // C * outH * outW
-    ulong batchSize,
-    ulong gradStride,
-    ulong poolIdxStride
+    ulong grad_out_offset,     // offset of pool output gradient (source)
+    ulong pool_idx_offset,     // offset into pool_indices for this layer
+    ulong size                 // C * outH * outW
   ) {
   size_t gid = get_global_id(0);
-  ulong batchIdx = gid / size;
-  ulong localIdx = gid % size;
-  ulong batchGradOffset = batchIdx * gradStride;
-  ulong batchPoolOffset = batchIdx * poolIdxStride;
+  if (gid >= size) return;
 
-  TYPE dOutVal = grads[batchGradOffset + grad_out_offset + localIdx];
-  // maxIdx is an absolute index into the batched grads buffer (includes batch offset)
-  ulong maxIdx = pool_indices[batchPoolOffset + pool_idx_offset + localIdx];
+  TYPE dOutVal = grads[grad_out_offset + gid];
+  ulong maxIdx = pool_indices[pool_idx_offset + gid];
 
+  // Route gradient to the max position in the input gradient buffer
+  // maxIdx is an absolute index into the actvs/grads buffer
   grads[maxIdx] += dOutVal;
 }
 
 //===================================================================================================================//
 
 // Computes ∂Cost/∂z = ∂Cost/∂a · (z > 0) (backward pass)
-// Work items = batchSize * size
+// One work-item per element
 kernel void calculate_dCost_dRelu(
     global TYPE* grads,
     global TYPE* actvs,
     ulong grad_in_offset,    // offset to write input gradient
     ulong grad_out_offset,   // offset to read output gradient
     ulong actv_in_offset,    // offset of forward input activations
-    ulong size,
-    ulong batchSize,
-    ulong actvStride          // same stride for actvs and grads
+    ulong size
   ) {
   size_t gid = get_global_id(0);
-  ulong batchIdx = gid / size;
-  ulong localIdx = gid % size;
-  ulong batchOffset = batchIdx * actvStride;
+  if (gid >= size) return;
 
-  TYPE actv = actvs[batchOffset + actv_in_offset + localIdx];
-  TYPE dOut = grads[batchOffset + grad_out_offset + localIdx];
+  TYPE actv = actvs[actv_in_offset + gid];
+  TYPE dOut = grads[grad_out_offset + gid];
 
-  grads[batchOffset + grad_in_offset + localIdx] = (actv > (TYPE)0) ? dOut : (TYPE)0;
+  grads[grad_in_offset + gid] = (actv > (TYPE)0) ? dOut : (TYPE)0;
 }
 
 //===================================================================================================================//
 
 // Computes ∂Cost/∂W for convolution filters (backward pass)
-// Work items = batchSize * numFilters * inputC * filterH * filterW
+// One work-item per filter weight element: (f, c, kh, kw)
+// nElements = numFilters * inputC * filterH * filterW
 kernel void calculate_dCost_dFilters(
     global TYPE* grads,
     global TYPE* actvs,
     global TYPE* dFilters,
-    ulong grad_out_offset,   // offset of output gradient (per-sample)
-    ulong actv_in_offset,    // offset of forward input (per-sample)
-    ulong dfilter_offset,    // offset in dFilters buffer (per-sample)
+    ulong grad_out_offset,   // offset of output gradient in grads buffer
+    ulong actv_in_offset,    // offset of forward input in actvs buffer
+    ulong dfilter_offset,    // offset in dFilters buffer for this layer
     ulong inputC,
     ulong inputH,
     ulong inputW,
@@ -241,22 +216,16 @@ kernel void calculate_dCost_dFilters(
     ulong padY,
     ulong padX,
     ulong outH,
-    ulong outW,
-    ulong batchSize,
-    ulong actvStride,
-    ulong dFilterStride
+    ulong outW
   ) {
   size_t gid = get_global_id(0);
 
   ulong totalFilterElems = numFilters * inputC * filterH * filterW;
-  ulong batchIdx = gid / totalFilterElems;
-  ulong localIdx = gid % totalFilterElems;
-  ulong batchActvOffset = batchIdx * actvStride;
-  ulong batchDFilterOffset = batchIdx * dFilterStride;
+  if (gid >= totalFilterElems) return;
 
-  // Decompose localIdx into (f, c, kh, kw)
-  ulong f   = localIdx / (inputC * filterH * filterW);
-  ulong rem = localIdx % (inputC * filterH * filterW);
+  // Decompose gid into (f, c, kh, kw)
+  ulong f   = gid / (inputC * filterH * filterW);
+  ulong rem = gid % (inputC * filterH * filterW);
   ulong c   = rem / (filterH * filterW);
   ulong rem2 = rem % (filterH * filterW);
   ulong kh  = rem2 / filterW;
@@ -270,20 +239,20 @@ kernel void calculate_dCost_dFilters(
       long iw = (long)(ow * strideX + kw) - (long)padX;
 
       if (ih >= 0 && ih < (long)inputH && iw >= 0 && iw < (long)inputW) {
-        TYPE dOut = grads[batchActvOffset + grad_out_offset + f * outH * outW + oh * outW + ow];
-        TYPE inp = actvs[batchActvOffset + actv_in_offset + c * inputH * inputW + (ulong)ih * inputW + (ulong)iw];
+        TYPE dOut = grads[grad_out_offset + f * outH * outW + oh * outW + ow];
+        TYPE inp = actvs[actv_in_offset + c * inputH * inputW + (ulong)ih * inputW + (ulong)iw];
         sum += dOut * inp;
       }
     }
   }
 
-  dFilters[batchDFilterOffset + dfilter_offset + localIdx] = sum;
+  dFilters[dfilter_offset + gid] = sum;
 }
 
 //===================================================================================================================//
 
 // Computes ∂Cost/∂b for convolution biases (backward pass)
-// Work items = batchSize * numFilters
+// One work-item per filter: nElements = numFilters
 kernel void calculate_dCost_dBiases(
     global TYPE* grads,
     global TYPE* dBiases,
@@ -291,38 +260,34 @@ kernel void calculate_dCost_dBiases(
     ulong dbias_offset,
     ulong numFilters,
     ulong outH,
-    ulong outW,
-    ulong batchSize,
-    ulong gradStride,
-    ulong dBiasStride
+    ulong outW
   ) {
   size_t gid = get_global_id(0);
-  ulong batchIdx = gid / numFilters;
-  ulong f = gid % numFilters;
-  ulong batchGradOffset = batchIdx * gradStride;
-  ulong batchDBiasOffset = batchIdx * dBiasStride;
+  if (gid >= numFilters) return;
 
+  ulong f = gid;
   TYPE sum = (TYPE)0;
 
   for (ulong oh = 0; oh < outH; oh++) {
     for (ulong ow = 0; ow < outW; ow++) {
-      sum += grads[batchGradOffset + grad_out_offset + f * outH * outW + oh * outW + ow];
+      sum += grads[grad_out_offset + f * outH * outW + oh * outW + ow];
     }
   }
 
-  dBiases[batchDBiasOffset + dbias_offset + f] = sum;
+  dBiases[dbias_offset + f] = sum;
 }
 
 //===================================================================================================================//
 
 // Computes ∂Cost/∂input via transposed convolution (backward pass)
-// Work items = batchSize * inputC * inputH * inputW
+// One work-item per input element: (c, ih, iw)
+// nElements = inputC * inputH * inputW
 kernel void calculate_dCost_dInput(
     global TYPE* grads,
     global TYPE* filters,
-    ulong grad_out_offset,   // offset of conv output gradient (per-sample)
-    ulong grad_in_offset,    // offset to write input gradient (per-sample)
-    ulong filter_offset,     // offset of this layer's filters (shared)
+    ulong grad_out_offset,   // offset of conv output gradient
+    ulong grad_in_offset,    // offset to write input gradient
+    ulong filter_offset,     // offset of this layer's filters
     ulong inputC,
     ulong inputH,
     ulong inputW,
@@ -334,20 +299,16 @@ kernel void calculate_dCost_dInput(
     ulong padY,
     ulong padX,
     ulong outH,
-    ulong outW,
-    ulong batchSize,
-    ulong gradStride
+    ulong outW
   ) {
   size_t gid = get_global_id(0);
 
   ulong totalInput = inputC * inputH * inputW;
-  ulong batchIdx = gid / totalInput;
-  ulong localIdx = gid % totalInput;
-  ulong batchGradOffset = batchIdx * gradStride;
+  if (gid >= totalInput) return;
 
-  // Decompose localIdx into (c, ih, iw)
-  ulong c  = localIdx / (inputH * inputW);
-  ulong rem = localIdx % (inputH * inputW);
+  // Decompose gid into (c, ih, iw)
+  ulong c  = gid / (inputH * inputW);
+  ulong rem = gid % (inputH * inputW);
   ulong ih = rem / inputW;
   ulong iw = rem % inputW;
 
@@ -356,6 +317,8 @@ kernel void calculate_dCost_dInput(
   for (ulong f = 0; f < numFilters; f++) {
     for (ulong kh = 0; kh < filterH; kh++) {
       for (ulong kw = 0; kw < filterW; kw++) {
+        // Reverse the forward mapping: oh * strideY + kh - padY = ih
+        // So oh = (ih + padY - kh) / strideY, valid when (ih + padY - kh) % strideY == 0
         long numerator_h = (long)ih + (long)padY - (long)kh;
         long numerator_w = (long)iw + (long)padX - (long)kw;
 
@@ -365,7 +328,7 @@ kernel void calculate_dCost_dInput(
           ulong ow = (ulong)numerator_w / strideX;
 
           if (oh < outH && ow < outW) {
-            TYPE dOut = grads[batchGradOffset + grad_out_offset + f * outH * outW + oh * outW + ow];
+            TYPE dOut = grads[grad_out_offset + f * outH * outW + oh * outW + ow];
             TYPE filt = filters[filter_offset + f * inputC * filterH * filterW + c * filterH * filterW + kh * filterW + kw];
             sum += dOut * filt;
           }
@@ -374,31 +337,24 @@ kernel void calculate_dCost_dInput(
     }
   }
 
-  grads[batchGradOffset + grad_in_offset + localIdx] = sum;
+  grads[grad_in_offset + gid] = sum;
 }
 
 //===================================================================================================================//
 // Accumulate and Update kernels
 //===================================================================================================================//
 
-// Accumulates per-sample gradients: reduces across batch dimension
-// Work items = size (NOT batched — each work item sums over batchSize samples)
+// Accumulates per-sample gradients: accum[gid] += grad[gid]
 kernel void accumulate_gradients(
     global TYPE* accum,
     global TYPE* grad,
     ulong offset,
-    ulong size,
-    ulong batchSize,
-    ulong gradStride
+    ulong size
   ) {
   size_t gid = get_global_id(0);
   if (gid >= size) return;
 
-  TYPE sum = (TYPE)0;
-  for (ulong b = 0; b < batchSize; b++) {
-    sum += grad[b * gradStride + offset + gid];
-  }
-  accum[offset + gid] += sum;
+  accum[offset + gid] += grad[offset + gid];
 }
 
 //===================================================================================================================//
@@ -420,23 +376,20 @@ kernel void update_parameters(
 
 //===================================================================================================================//
 // Bridge kernels: copy data between CNN and ANN buffers on the same OpenCL core.
-// Both are batch-aware: each sample's CNN output → corresponding ANN input slot.
+// copy_cnn_to_ann: copies the last CNN activation (flatten output) into ANN's actvs buffer (layer 0).
+// copy_ann_grad_to_cnn: copies ANN's input gradients (dCost_dActvs, layer 0) into CNN's gradient buffer.
 //===================================================================================================================//
 
 __kernel void copy_cnn_to_ann(
     __global const TYPE* cnn_actvs,
     __global TYPE* actvs,
     const ulong cnn_offset,
-    const ulong size,
-    const ulong batchSize,
-    const ulong cnnStride,
-    const ulong annStride) {
+    const ulong size) {
   ulong gid = get_global_id(0);
 
-  ulong batchIdx = gid / size;
-  ulong localIdx = gid % size;
+  if (gid >= size) return;
 
-  actvs[batchIdx * annStride + localIdx] = cnn_actvs[batchIdx * cnnStride + cnn_offset + localIdx];
+  actvs[gid] = cnn_actvs[cnn_offset + gid];
 }
 
 //===================================================================================================================//
@@ -445,16 +398,12 @@ __kernel void copy_ann_grad_to_cnn(
     __global const TYPE* dCost_dActvs,
     __global TYPE* cnn_grads,
     const ulong cnn_offset,
-    const ulong size,
-    const ulong batchSize,
-    const ulong cnnStride,
-    const ulong annStride) {
+    const ulong size) {
   ulong gid = get_global_id(0);
 
-  ulong batchIdx = gid / size;
-  ulong localIdx = gid % size;
+  if (gid >= size) return;
 
-  cnn_grads[batchIdx * cnnStride + cnn_offset + localIdx] = dCost_dActvs[batchIdx * annStride + localIdx];
+  cnn_grads[cnn_offset + gid] = dCost_dActvs[gid];
 }
 
 //===================================================================================================================//
