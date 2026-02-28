@@ -855,7 +855,7 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
 
   ulong lastANNLayerNeurons = this->annGPUWorker->getParameters().biases.back().size();
   ulong inputSize = this->coreConfig.inputShape.size();
-  ulong annStride = this->annGPUWorker->getStride();
+  ulong numOutputNeurons = lastANNLayerNeurons;
 
   // Process samples in GPU batches
   for (ulong batchStart = startIdx; batchStart < endIdx; batchStart += batchSize) {
@@ -878,7 +878,7 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
 
       // Write ANN expected output at batch offset
       std::vector<T> expectedVec(sample.output.begin(), sample.output.end());
-      this->core->template writeBuffer<T>("outputs", expectedVec, b * annStride);
+      this->core->template writeBuffer<T>("outputs", expectedVec, b * numOutputNeurons);
     }
 
     // Generate and upload dropout mask for ANN dense layers (batch-aware)
