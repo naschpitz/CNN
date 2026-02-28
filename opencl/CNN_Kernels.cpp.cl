@@ -275,11 +275,11 @@ kernel void calculate_dCost_dFilters(
 
 //===================================================================================================================//
 
-// Tiled version of calculate_dCost_dFilters for layers with few filter elements.
-// Parallelized over (f, c, kh, kw, tile) where tile partitions the output spatial dims.
-// nElements = numFilters * inputC * filterH * filterW * numTiles
-// Requires dFilters to be zeroed before invocation.
-kernel void calculate_dCost_dFilters_tiled(
+// Work-group reduction version of calculate_dCost_dFilters for layers with few filter elements.
+// One work-group per filter element (f, c, kh, kw). Work-items within a group split the
+// output positions, compute partial sums, then tree-reduce — no atomics needed.
+// Global work size = numFilterElems * localWorkSize. Local work size must be power of 2.
+kernel void calculate_dCost_dFilters_wg(
     global TYPE* grads,
     global TYPE* actvs,
     global TYPE* dFilters,
@@ -297,19 +297,17 @@ kernel void calculate_dCost_dFilters_tiled(
     ulong padY,
     ulong padX,
     ulong outH,
-    ulong outW,
-    ulong tileSize,
-    ulong numTiles
+    ulong outW
   ) {
-  size_t gid = get_global_id(0);
+  local TYPE partials[256];
 
-  ulong totalFilterElems = numFilters * inputC * filterH * filterW;
-  ulong totalWork = totalFilterElems * numTiles;
-  if (gid >= totalWork) return;
+  size_t groupId = get_group_id(0);   // filter element index
+  size_t lid = get_local_id(0);
+  size_t localSize = get_local_size(0);
 
-  ulong filterElemIdx = gid / numTiles;
-  ulong tileIdx = gid % numTiles;
+  ulong filterElemIdx = groupId;
 
+  // Decompose filterElemIdx into (f, c, kh, kw)
   ulong f   = filterElemIdx / (inputC * filterH * filterW);
   ulong rem = filterElemIdx % (inputC * filterH * filterW);
   ulong c   = rem / (filterH * filterW);
@@ -317,14 +315,15 @@ kernel void calculate_dCost_dFilters_tiled(
   ulong kh  = rem2 / filterW;
   ulong kw  = rem2 % filterW;
 
-  ulong totalOutPositions = outH * outW;
-  ulong tileStart = tileIdx * tileSize;
-  ulong tileEnd = tileStart + tileSize;
-  if (tileEnd > totalOutPositions) tileEnd = totalOutPositions;
+  // Precompute base offsets
+  ulong gradFBase = grad_out_offset + f * outH * outW;
+  ulong actvCBase = actv_in_offset + c * inputH * inputW;
 
+  // Each work-item processes a strided subset of output positions
+  ulong totalOutPositions = outH * outW;
   TYPE sum = (TYPE)0;
 
-  for (ulong pos = tileStart; pos < tileEnd; pos++) {
+  for (ulong pos = lid; pos < totalOutPositions; pos += localSize) {
     ulong oh = pos / outW;
     ulong ow = pos % outW;
 
@@ -332,19 +331,25 @@ kernel void calculate_dCost_dFilters_tiled(
     long iw = (long)(ow * strideX + kw) - (long)padX;
 
     if (ih >= 0 && ih < (long)inputH && iw >= 0 && iw < (long)inputW) {
-      TYPE dOut = grads[grad_out_offset + f * outH * outW + oh * outW + ow];
-      TYPE inp = actvs[actv_in_offset + c * inputH * inputW + (ulong)ih * inputW + (ulong)iw];
-      sum += dOut * inp;
+      sum += grads[gradFBase + oh * outW + ow]
+           * actvs[actvCBase + (ulong)ih * inputW + (ulong)iw];
     }
   }
 
-  // Atomic add since multiple tiles write to the same filter element
-  global volatile TYPE* addr = (global volatile TYPE*)&dFilters[dfilter_offset + filterElemIdx];
-  union { TYPE f; uint i; } expected, desired;
-  do {
-    expected.f = *addr;
-    desired.f = expected.f + sum;
-  } while (atomic_cmpxchg((global volatile uint*)addr, expected.i, desired.i) != expected.i);
+  partials[lid] = sum;
+  barrier(CLK_LOCAL_MEM_FENCE);
+
+  // Tree reduction
+  for (ulong stride = localSize / 2; stride > 0; stride >>= 1) {
+    if (lid < stride) {
+      partials[lid] += partials[lid + stride];
+    }
+    barrier(CLK_LOCAL_MEM_FENCE);
+  }
+
+  if (lid == 0) {
+    dFilters[dfilter_offset + filterElemIdx] = partials[0];
+  }
 }
 
 //===================================================================================================================//
@@ -376,46 +381,48 @@ kernel void calculate_dCost_dBiases(
 
 //===================================================================================================================//
 
-// Tiled version of calculate_dCost_dBiases for layers with few filters.
-// Parallelized over (f, tile). Requires dBiases to be zeroed before invocation.
-// nElements = numFilters * numTiles
-kernel void calculate_dCost_dBiases_tiled(
+// Work-group reduction version of calculate_dCost_dBiases for layers with few filters.
+// One work-group per filter. Work-items split the output positions, then tree-reduce.
+// Global work size = numFilters * localWorkSize. Local work size must be power of 2.
+kernel void calculate_dCost_dBiases_wg(
     global TYPE* grads,
     global TYPE* dBiases,
     ulong grad_out_offset,
     ulong dbias_offset,
     ulong numFilters,
     ulong outH,
-    ulong outW,
-    ulong tileSize,
-    ulong numTiles
+    ulong outW
   ) {
-  size_t gid = get_global_id(0);
+  local TYPE partials[256];
 
-  ulong totalWork = numFilters * numTiles;
-  if (gid >= totalWork) return;
+  size_t groupId = get_group_id(0);   // filter index
+  size_t lid = get_local_id(0);
+  size_t localSize = get_local_size(0);
 
-  ulong f = gid / numTiles;
-  ulong tileIdx = gid % numTiles;
-
+  ulong f = groupId;
   ulong totalOutPositions = outH * outW;
-  ulong tileStart = tileIdx * tileSize;
-  ulong tileEnd = tileStart + tileSize;
-  if (tileEnd > totalOutPositions) tileEnd = totalOutPositions;
+  ulong gradFBase = grad_out_offset + f * totalOutPositions;
 
   TYPE sum = (TYPE)0;
 
-  for (ulong pos = tileStart; pos < tileEnd; pos++) {
-    sum += grads[grad_out_offset + f * totalOutPositions + pos];
+  for (ulong pos = lid; pos < totalOutPositions; pos += localSize) {
+    sum += grads[gradFBase + pos];
   }
 
-  // Atomic add since multiple tiles write to the same bias
-  global volatile TYPE* addr = (global volatile TYPE*)&dBiases[dbias_offset + f];
-  union { TYPE f; uint i; } expected, desired;
-  do {
-    expected.f = *addr;
-    desired.f = expected.f + sum;
-  } while (atomic_cmpxchg((global volatile uint*)addr, expected.i, desired.i) != expected.i);
+  partials[lid] = sum;
+  barrier(CLK_LOCAL_MEM_FENCE);
+
+  // Tree reduction
+  for (ulong stride = localSize / 2; stride > 0; stride >>= 1) {
+    if (lid < stride) {
+      partials[lid] += partials[lid + stride];
+    }
+    barrier(CLK_LOCAL_MEM_FENCE);
+  }
+
+  if (lid == 0) {
+    dBiases[dbias_offset + f] = partials[0];
+  }
 }
 
 //===================================================================================================================//

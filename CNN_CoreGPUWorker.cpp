@@ -522,102 +522,55 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         ulong nFilterElems = this->convInfos[convIdx].numFilterElems;
         ulong totalOutPositions = outH * outW;
 
-        // Use tiled version when filter elements are few (GPU underutilized)
-        bool useFilterTiling = (nFilterElems < 4096 && totalOutPositions > 256);
+        // Use work-group reduction when filter elements are few (GPU underutilized)
+        bool useFilterWG = (nFilterElems < 4096 && totalOutPositions > 256);
         std::string filterId = "calculate_dCost_dFilters_layer" + layerStr;
 
-        if (useFilterTiling) {
-          ulong filterTileSize = 256;
-          ulong filterNumTiles = (totalOutPositions + filterTileSize - 1) / filterTileSize;
-
-          // Zero dFilters buffer first (atomic adds require zeroed buffer)
-          std::string zeroFilterId = "zero_dFilters_layer" + layerStr;
-          this->core->addKernel(zeroFilterId, "zero_buffer", nFilterElems, 0);
-          this->core->template addArgument<T>(zeroFilterId, "cnn_dFilters");
-          this->core->template addArgument<ulong>(zeroFilterId, this->convInfos[convIdx].filterOffset);
-          this->core->template addArgument<ulong>(zeroFilterId, nFilterElems);
-
-          ulong filterTotalWork = nFilterElems * filterNumTiles;
-          this->core->addKernel(filterId, "calculate_dCost_dFilters_tiled", filterTotalWork, 0);
-          this->core->template addArgument<T>(filterId, "cnn_grads");
-          this->core->template addArgument<T>(filterId, "cnn_actvs");
-          this->core->template addArgument<T>(filterId, "cnn_dFilters");
-          this->core->template addArgument<ulong>(filterId, gradOutOffset);
-          this->core->template addArgument<ulong>(filterId, actvInOffset);
-          this->core->template addArgument<ulong>(filterId, this->convInfos[convIdx].filterOffset);
-          this->core->template addArgument<ulong>(filterId, inShape.c);
-          this->core->template addArgument<ulong>(filterId, inShape.h);
-          this->core->template addArgument<ulong>(filterId, inShape.w);
-          this->core->template addArgument<ulong>(filterId, conv.numFilters);
-          this->core->template addArgument<ulong>(filterId, conv.filterH);
-          this->core->template addArgument<ulong>(filterId, conv.filterW);
-          this->core->template addArgument<ulong>(filterId, conv.strideY);
-          this->core->template addArgument<ulong>(filterId, conv.strideX);
-          this->core->template addArgument<ulong>(filterId, padY);
-          this->core->template addArgument<ulong>(filterId, padX);
-          this->core->template addArgument<ulong>(filterId, outH);
-          this->core->template addArgument<ulong>(filterId, outW);
-          this->core->template addArgument<ulong>(filterId, filterTileSize);
-          this->core->template addArgument<ulong>(filterId, filterNumTiles);
+        if (useFilterWG) {
+          ulong filterLocalWS = 256;
+          ulong filterGlobalWS = nFilterElems * filterLocalWS;
+          this->core->addKernel(filterId, "calculate_dCost_dFilters_wg", filterGlobalWS, 0, filterLocalWS);
         } else {
           this->core->addKernel(filterId, "calculate_dCost_dFilters", nFilterElems, 0);
-          this->core->template addArgument<T>(filterId, "cnn_grads");
-          this->core->template addArgument<T>(filterId, "cnn_actvs");
-          this->core->template addArgument<T>(filterId, "cnn_dFilters");
-          this->core->template addArgument<ulong>(filterId, gradOutOffset);
-          this->core->template addArgument<ulong>(filterId, actvInOffset);
-          this->core->template addArgument<ulong>(filterId, this->convInfos[convIdx].filterOffset);
-          this->core->template addArgument<ulong>(filterId, inShape.c);
-          this->core->template addArgument<ulong>(filterId, inShape.h);
-          this->core->template addArgument<ulong>(filterId, inShape.w);
-          this->core->template addArgument<ulong>(filterId, conv.numFilters);
-          this->core->template addArgument<ulong>(filterId, conv.filterH);
-          this->core->template addArgument<ulong>(filterId, conv.filterW);
-          this->core->template addArgument<ulong>(filterId, conv.strideY);
-          this->core->template addArgument<ulong>(filterId, conv.strideX);
-          this->core->template addArgument<ulong>(filterId, padY);
-          this->core->template addArgument<ulong>(filterId, padX);
-          this->core->template addArgument<ulong>(filterId, outH);
-          this->core->template addArgument<ulong>(filterId, outW);
         }
+        this->core->template addArgument<T>(filterId, "cnn_grads");
+        this->core->template addArgument<T>(filterId, "cnn_actvs");
+        this->core->template addArgument<T>(filterId, "cnn_dFilters");
+        this->core->template addArgument<ulong>(filterId, gradOutOffset);
+        this->core->template addArgument<ulong>(filterId, actvInOffset);
+        this->core->template addArgument<ulong>(filterId, this->convInfos[convIdx].filterOffset);
+        this->core->template addArgument<ulong>(filterId, inShape.c);
+        this->core->template addArgument<ulong>(filterId, inShape.h);
+        this->core->template addArgument<ulong>(filterId, inShape.w);
+        this->core->template addArgument<ulong>(filterId, conv.numFilters);
+        this->core->template addArgument<ulong>(filterId, conv.filterH);
+        this->core->template addArgument<ulong>(filterId, conv.filterW);
+        this->core->template addArgument<ulong>(filterId, conv.strideY);
+        this->core->template addArgument<ulong>(filterId, conv.strideX);
+        this->core->template addArgument<ulong>(filterId, padY);
+        this->core->template addArgument<ulong>(filterId, padX);
+        this->core->template addArgument<ulong>(filterId, outH);
+        this->core->template addArgument<ulong>(filterId, outW);
 
         // calculate_dCost_dBiases
-        // Use tiled version when few filters (GPU underutilized)
-        bool useBiasTiling = (conv.numFilters < 256 && totalOutPositions > 256);
+        // Use work-group reduction when few filters (GPU underutilized)
+        bool useBiasWG = (conv.numFilters < 256 && totalOutPositions > 256);
         std::string biasId = "calculate_dCost_dBiases_layer" + layerStr;
 
-        if (useBiasTiling) {
-          ulong biasTileSize = 256;
-          ulong biasNumTiles = (totalOutPositions + biasTileSize - 1) / biasTileSize;
-
-          // Zero dBiases buffer first
-          std::string zeroBiasId = "zero_dBiases_layer" + layerStr;
-          this->core->addKernel(zeroBiasId, "zero_buffer", conv.numFilters, 0);
-          this->core->template addArgument<T>(zeroBiasId, "cnn_dBiases");
-          this->core->template addArgument<ulong>(zeroBiasId, this->convInfos[convIdx].biasOffset);
-          this->core->template addArgument<ulong>(zeroBiasId, conv.numFilters);
-
-          ulong biasTotalWork = conv.numFilters * biasNumTiles;
-          this->core->addKernel(biasId, "calculate_dCost_dBiases_tiled", biasTotalWork, 0);
-          this->core->template addArgument<T>(biasId, "cnn_grads");
-          this->core->template addArgument<T>(biasId, "cnn_dBiases");
-          this->core->template addArgument<ulong>(biasId, gradOutOffset);
-          this->core->template addArgument<ulong>(biasId, this->convInfos[convIdx].biasOffset);
-          this->core->template addArgument<ulong>(biasId, conv.numFilters);
-          this->core->template addArgument<ulong>(biasId, outH);
-          this->core->template addArgument<ulong>(biasId, outW);
-          this->core->template addArgument<ulong>(biasId, biasTileSize);
-          this->core->template addArgument<ulong>(biasId, biasNumTiles);
+        if (useBiasWG) {
+          ulong biasLocalWS = 256;
+          ulong biasGlobalWS = conv.numFilters * biasLocalWS;
+          this->core->addKernel(biasId, "calculate_dCost_dBiases_wg", biasGlobalWS, 0, biasLocalWS);
         } else {
           this->core->addKernel(biasId, "calculate_dCost_dBiases", conv.numFilters, 0);
-          this->core->template addArgument<T>(biasId, "cnn_grads");
-          this->core->template addArgument<T>(biasId, "cnn_dBiases");
-          this->core->template addArgument<ulong>(biasId, gradOutOffset);
-          this->core->template addArgument<ulong>(biasId, this->convInfos[convIdx].biasOffset);
-          this->core->template addArgument<ulong>(biasId, conv.numFilters);
-          this->core->template addArgument<ulong>(biasId, outH);
-          this->core->template addArgument<ulong>(biasId, outW);
         }
+        this->core->template addArgument<T>(biasId, "cnn_grads");
+        this->core->template addArgument<T>(biasId, "cnn_dBiases");
+        this->core->template addArgument<ulong>(biasId, gradOutOffset);
+        this->core->template addArgument<ulong>(biasId, this->convInfos[convIdx].biasOffset);
+        this->core->template addArgument<ulong>(biasId, conv.numFilters);
+        this->core->template addArgument<ulong>(biasId, outH);
+        this->core->template addArgument<ulong>(biasId, outW);
 
         // calculate_dCost_dInput (skip if first layer — no one reads the gradient)
         if (i > 0) {
