@@ -815,7 +815,7 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
   ulong lastANNLayerNeurons = this->annGPUWorker->getParameters().biases.back().size();
 
   // Profiling: enable for first epoch only, first 100 samples
-  bool doProfiling = (epoch == 0 && !this->profilingDone);
+  bool doProfiling = (epoch <= 1 && !this->profilingDone);
   ulong profilingSamples = std::min(numSamplesInSubset, static_cast<ulong>(100));
   double timeWrite = 0, timeKernel = 0, timeRead = 0, timeCallback = 0;
 
