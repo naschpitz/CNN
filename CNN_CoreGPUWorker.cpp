@@ -519,14 +519,18 @@ void CoreGPUWorker<T>::addBackwardKernels() {
         ulong outH = outShape.h;
         ulong outW = outShape.w;
 
-        // calculate_dCost_dFilters (tiled for better GPU utilization)
+        // calculate_dCost_dFilters (tiled for better GPU utilization when few filter elements)
         ulong nFilterElems = this->convInfos[convIdx].numFilterElems;
         ulong totalOutPositions = outH * outW;
 
-        // Compute tile parameters: target ~256 output positions per tile
-        ulong filterTileSize = 256;
-        if (filterTileSize > totalOutPositions) filterTileSize = totalOutPositions;
-        ulong filterNumTiles = (totalOutPositions + filterTileSize - 1) / filterTileSize;
+        // Only tile when filter elements are few (GPU underutilized without tiling)
+        // Above 4096 work-items, the GPU is well-utilized and atomics add overhead
+        ulong filterTileSize = totalOutPositions;  // default: no tiling
+        ulong filterNumTiles = 1;
+        if (nFilterElems < 4096 && totalOutPositions > 256) {
+          filterTileSize = 256;
+          filterNumTiles = (totalOutPositions + filterTileSize - 1) / filterTileSize;
+        }
 
         // If tiling, zero the dFilters buffer first (atomic adds require zeroed buffer)
         if (filterNumTiles > 1) {
