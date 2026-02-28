@@ -196,9 +196,8 @@ kernel void calculate_dCost_dRelu(
 //===================================================================================================================//
 
 // Computes ∂Cost/∂W for convolution filters (backward pass)
-// Parallelized over (f, c, kh, kw, tile) where tile partitions the output spatial dims.
-// Each work-item handles a tile of output positions and atomically adds to dFilters.
-// nElements = numFilters * inputC * filterH * filterW * numTiles
+// One work-item per filter weight element: (f, c, kh, kw)
+// nElements = numFilters * inputC * filterH * filterW
 kernel void calculate_dCost_dFilters(
     global TYPE* grads,
     global TYPE* actvs,
@@ -217,9 +216,66 @@ kernel void calculate_dCost_dFilters(
     ulong padY,
     ulong padX,
     ulong outH,
+    ulong outW
+  ) {
+  size_t gid = get_global_id(0);
+
+  ulong totalFilterElems = numFilters * inputC * filterH * filterW;
+  if (gid >= totalFilterElems) return;
+
+  // Decompose gid into (f, c, kh, kw)
+  ulong f   = gid / (inputC * filterH * filterW);
+  ulong rem = gid % (inputC * filterH * filterW);
+  ulong c   = rem / (filterH * filterW);
+  ulong rem2 = rem % (filterH * filterW);
+  ulong kh  = rem2 / filterW;
+  ulong kw  = rem2 % filterW;
+
+  TYPE sum = (TYPE)0;
+
+  for (ulong oh = 0; oh < outH; oh++) {
+    for (ulong ow = 0; ow < outW; ow++) {
+      long ih = (long)(oh * strideY + kh) - (long)padY;
+      long iw = (long)(ow * strideX + kw) - (long)padX;
+
+      if (ih >= 0 && ih < (long)inputH && iw >= 0 && iw < (long)inputW) {
+        TYPE dOut = grads[grad_out_offset + f * outH * outW + oh * outW + ow];
+        TYPE inp = actvs[actv_in_offset + c * inputH * inputW + (ulong)ih * inputW + (ulong)iw];
+        sum += dOut * inp;
+      }
+    }
+  }
+
+  dFilters[dfilter_offset + gid] = sum;
+}
+
+//===================================================================================================================//
+
+// Tiled version of calculate_dCost_dFilters for layers with few filter elements.
+// Parallelized over (f, c, kh, kw, tile) where tile partitions the output spatial dims.
+// nElements = numFilters * inputC * filterH * filterW * numTiles
+// Requires dFilters to be zeroed before invocation.
+kernel void calculate_dCost_dFilters_tiled(
+    global TYPE* grads,
+    global TYPE* actvs,
+    global TYPE* dFilters,
+    ulong grad_out_offset,
+    ulong actv_in_offset,
+    ulong dfilter_offset,
+    ulong inputC,
+    ulong inputH,
+    ulong inputW,
+    ulong numFilters,
+    ulong filterH,
+    ulong filterW,
+    ulong strideY,
+    ulong strideX,
+    ulong padY,
+    ulong padX,
+    ulong outH,
     ulong outW,
-    ulong tileSize,          // number of output positions per tile
-    ulong numTiles           // total number of tiles
+    ulong tileSize,
+    ulong numTiles
   ) {
   size_t gid = get_global_id(0);
 
@@ -227,11 +283,9 @@ kernel void calculate_dCost_dFilters(
   ulong totalWork = totalFilterElems * numTiles;
   if (gid >= totalWork) return;
 
-  // Decompose gid into (filterElemIdx, tileIdx)
   ulong filterElemIdx = gid / numTiles;
   ulong tileIdx = gid % numTiles;
 
-  // Decompose filterElemIdx into (f, c, kh, kw)
   ulong f   = filterElemIdx / (inputC * filterH * filterW);
   ulong rem = filterElemIdx % (inputC * filterH * filterW);
   ulong c   = rem / (filterH * filterW);
@@ -239,7 +293,6 @@ kernel void calculate_dCost_dFilters(
   ulong kh  = rem2 / filterW;
   ulong kw  = rem2 % filterW;
 
-  // This tile covers output positions [tileStart, tileEnd)
   ulong totalOutPositions = outH * outW;
   ulong tileStart = tileIdx * tileSize;
   ulong tileEnd = tileStart + tileSize;
@@ -261,33 +314,48 @@ kernel void calculate_dCost_dFilters(
     }
   }
 
-  if (numTiles == 1) {
-    // No tiling — direct write (no atomics needed)
-    dFilters[dfilter_offset + filterElemIdx] = sum;
-  } else {
-    // Multiple tiles — need atomic add
-    // For float, use atomic_add if available; otherwise use atomic_cmpxchg loop
-    global volatile TYPE* addr = (global volatile TYPE*)&dFilters[dfilter_offset + filterElemIdx];
-#if defined(cl_khr_global_int32_base_atomics) || defined(cl_khr_int64_base_atomics)
-    // Use compare-and-swap loop for float atomics
-    union { TYPE f; uint i; } expected, desired;
-    do {
-      expected.f = *addr;
-      desired.f = expected.f + sum;
-    } while (atomic_cmpxchg((global volatile uint*)addr, expected.i, desired.i) != expected.i);
-#else
-    // Fallback: non-atomic (may have races, but better than nothing)
-    *addr += sum;
-#endif
-  }
+  // Atomic add since multiple tiles write to the same filter element
+  global volatile TYPE* addr = (global volatile TYPE*)&dFilters[dfilter_offset + filterElemIdx];
+  union { TYPE f; uint i; } expected, desired;
+  do {
+    expected.f = *addr;
+    desired.f = expected.f + sum;
+  } while (atomic_cmpxchg((global volatile uint*)addr, expected.i, desired.i) != expected.i);
 }
 
 //===================================================================================================================//
 
 // Computes ∂Cost/∂b for convolution biases (backward pass)
-// Parallelized over (f, tile) where tile partitions the output spatial dims.
-// nElements = numFilters * numTiles
+// One work-item per filter: nElements = numFilters
 kernel void calculate_dCost_dBiases(
+    global TYPE* grads,
+    global TYPE* dBiases,
+    ulong grad_out_offset,
+    ulong dbias_offset,
+    ulong numFilters,
+    ulong outH,
+    ulong outW
+  ) {
+  size_t gid = get_global_id(0);
+  if (gid >= numFilters) return;
+
+  ulong f = gid;
+  ulong totalOutPositions = outH * outW;
+  TYPE sum = (TYPE)0;
+
+  for (ulong pos = 0; pos < totalOutPositions; pos++) {
+    sum += grads[grad_out_offset + f * totalOutPositions + pos];
+  }
+
+  dBiases[dbias_offset + f] = sum;
+}
+
+//===================================================================================================================//
+
+// Tiled version of calculate_dCost_dBiases for layers with few filters.
+// Parallelized over (f, tile). Requires dBiases to be zeroed before invocation.
+// nElements = numFilters * numTiles
+kernel void calculate_dCost_dBiases_tiled(
     global TYPE* grads,
     global TYPE* dBiases,
     ulong grad_out_offset,
@@ -317,16 +385,13 @@ kernel void calculate_dCost_dBiases(
     sum += grads[grad_out_offset + f * totalOutPositions + pos];
   }
 
-  if (numTiles == 1) {
-    dBiases[dbias_offset + f] = sum;
-  } else {
-    global volatile TYPE* addr = (global volatile TYPE*)&dBiases[dbias_offset + f];
-    union { TYPE f; uint i; } expected, desired;
-    do {
-      expected.f = *addr;
-      desired.f = expected.f + sum;
-    } while (atomic_cmpxchg((global volatile uint*)addr, expected.i, desired.i) != expected.i);
-  }
+  // Atomic add since multiple tiles write to the same bias
+  global volatile TYPE* addr = (global volatile TYPE*)&dBiases[dbias_offset + f];
+  union { TYPE f; uint i; } expected, desired;
+  do {
+    expected.f = *addr;
+    desired.f = expected.f + sum;
+  } while (atomic_cmpxchg((global volatile uint*)addr, expected.i, desired.i) != expected.i);
 }
 
 //===================================================================================================================//
