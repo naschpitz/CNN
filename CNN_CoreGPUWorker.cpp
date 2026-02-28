@@ -11,6 +11,7 @@
 #include <QDebug>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <random>
@@ -813,8 +814,20 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
 
   ulong lastANNLayerNeurons = this->annGPUWorker->getParameters().biases.back().size();
 
+  // Profiling: enable for first epoch only, first 100 samples
+  bool doProfiling = (epoch == 0 && !this->profilingDone);
+  ulong profilingSamples = std::min(numSamplesInSubset, static_cast<ulong>(100));
+  double timeWrite = 0, timeKernel = 0, timeRead = 0, timeCallback = 0;
+
+  if (doProfiling) {
+    this->core->setProfiling(true);
+    this->core->resetProfilingResults();
+  }
+
   for (ulong s = startIdx; s < endIdx; s++) {
     const Sample<T>& sample = samples[indices[s]];
+
+    auto t0 = std::chrono::high_resolution_clock::now();
 
     // Write CNN input to GPU
     std::vector<T> inputVec(sample.input.data.begin(), sample.input.data.end());
@@ -827,14 +840,20 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
     // Generate and upload dropout mask for ANN dense layers (different mask per sample)
     if (this->annGPUWorker->hasDropout) this->annGPUWorker->generateAndUploadDropoutMask();
 
+    auto t1 = std::chrono::high_resolution_clock::now();
+
     // Single run: CNN forward → bridge → ANN forward → ANN backward → reverse bridge → CNN backward → accumulate
     this->core->run();
+
+    auto t2 = std::chrono::high_resolution_clock::now();
 
     // Read ANN output for loss calculation
     ANN::Output<T> annOutput = this->annGPUWorker->readOutput();
     Output<T> predicted(annOutput.begin(), annOutput.end());
     T sampleLoss = this->calculateLoss(predicted, sample.output);
     subsetLoss += sampleLoss;
+
+    auto t3 = std::chrono::high_resolution_clock::now();
 
     // Report progress
     if (callback) {
@@ -846,6 +865,31 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
       progress.sampleLoss = sampleLoss;
       progress.epochLoss = static_cast<T>(0);
       callback(progress);
+    }
+
+    auto t4 = std::chrono::high_resolution_clock::now();
+
+    if (doProfiling && (s - startIdx) < profilingSamples) {
+      timeWrite += std::chrono::duration<double, std::milli>(t1 - t0).count();
+      timeKernel += std::chrono::duration<double, std::milli>(t2 - t1).count();
+      timeRead += std::chrono::duration<double, std::milli>(t3 - t2).count();
+      timeCallback += std::chrono::duration<double, std::milli>(t4 - t3).count();
+    }
+
+    if (doProfiling && (s - startIdx) == profilingSamples - 1) {
+      double total = timeWrite + timeKernel + timeRead + timeCallback;
+      std::cout << "\n=== CNN Training Profiling (" << profilingSamples << " samples) ===\n";
+      std::cout << "  Host→GPU write:  " << timeWrite << " ms (" << 100.0 * timeWrite / total << "%)\n";
+      std::cout << "  GPU kernel exec: " << timeKernel << " ms (" << 100.0 * timeKernel / total << "%)\n";
+      std::cout << "  GPU→Host read:   " << timeRead << " ms (" << 100.0 * timeRead / total << "%)\n";
+      std::cout << "  Callback:        " << timeCallback << " ms (" << 100.0 * timeCallback / total << "%)\n";
+      std::cout << "  TOTAL:           " << total << " ms (" << total / profilingSamples << " ms/sample)\n";
+
+      // Print per-kernel breakdown
+      this->core->printProfilingResults();
+
+      this->core->setProfiling(false);
+      this->profilingDone = true;
     }
   }
 

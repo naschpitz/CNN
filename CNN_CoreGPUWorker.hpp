@@ -116,6 +116,9 @@ namespace CNN {
       bool trainingKernelsSetup = false;
       bool updateKernelsSetup = false;
 
+      //-- Profiling --//
+      bool profilingDone = false;
+
       //-- Initialization --//
       void computeLayerOffsets();
       void initializeConvParams();
