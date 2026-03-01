@@ -2,6 +2,7 @@
 #define CNN_COREGPUWORKER_HPP
 
 #include "CNN_Core.hpp"
+#include "CNN_Worker.hpp"
 
 #include <ANN_CoreGPUWorker.hpp>
 #include <OCLW_Core.hpp>
@@ -13,7 +14,7 @@
 
 namespace CNN {
   template <typename T>
-  class CoreGPUWorker {
+  class CoreGPUWorker : public Worker<T> {
     public:
       // Standalone constructor — creates its own OpenCL core
       CoreGPUWorker(const CoreConfig<T>& config);
@@ -66,9 +67,9 @@ namespace CNN {
       void allocateBuffers();
 
       //-- Shared-core integration: kernel building blocks --//
-      void addForwardKernels();
+      void addPropagateKernels();
       void addCopyBridgeKernels();
-      void addBackwardKernels();
+      void addBackpropagateKernels();
       void addCNNAccumulateKernels();
       void addCNNUpdateKernels(ulong numSamples);
 
@@ -123,7 +124,6 @@ namespace CNN {
 
       //-- Initialization --//
       void computeLayerOffsets();
-      void initializeConvParams();
       void buildANNWorker();
 
       //-- Kernel setup (standalone mode) --//
@@ -133,7 +133,6 @@ namespace CNN {
 
       //-- Helpers --//
       void invalidateAllKernelFlags();
-      T calculateLoss(const Output<T>& predicted, const Output<T>& expected);
   };
 }
 

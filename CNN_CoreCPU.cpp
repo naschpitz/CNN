@@ -1,14 +1,8 @@
 #include "CNN_CoreCPU.hpp"
-#include "CNN_Conv2D.hpp"
-#include "CNN_ReLU.hpp"
-#include "CNN_Pool.hpp"
-#include "CNN_Flatten.hpp"
 
 #include <ANN_Core.hpp>
-#include <ANN_ActvFunc.hpp>
 
 #include <QDebug>
-#include <cmath>
 #include <QMutex>
 #include <QThreadPool>
 #include <QtConcurrent>
@@ -26,349 +20,36 @@ using namespace CNN;
 
 template <typename T>
 CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config) {
-  // Compute CNN output shape (before flatten)
-  this->cnnOutputShape = this->layersConfig.validateShapes(this->inputShape);
-  this->flattenSize = this->cnnOutputShape.size();
-
   // Initialize conv parameters if not loaded
-  this->initializeConvParams();
+  Worker<T>::initializeConvParams(this->layersConfig, this->inputShape, this->parameters);
 
-  // Build and create ANN core for dense layers
-  ANN::CoreConfig<T> annConfig = this->buildANNConfig(config);
-  this->annCore = ANN::Core<T>::makeCore(annConfig);
+  // Create the step worker (used for predict and single-threaded paths)
+  bool allocateTraining = (this->modeType == ModeType::TRAIN);
+  this->stepWorker = std::make_unique<CoreCPUWorker<T>>(config, this->layersConfig, this->parameters, allocateTraining);
 
-  // Initialize CNN gradient accumulators
-  this->accumDConvFilters.resize(this->parameters.convParams.size());
-  this->accumDConvBiases.resize(this->parameters.convParams.size());
+  // Initialize global CNN gradient accumulators if training
+  if (allocateTraining) {
+    this->accumDConvFilters.resize(this->parameters.convParams.size());
+    this->accumDConvBiases.resize(this->parameters.convParams.size());
 
-  for (ulong i = 0; i < this->parameters.convParams.size(); i++) {
-    this->accumDConvFilters[i].resize(this->parameters.convParams[i].filters.size(), static_cast<T>(0));
-    this->accumDConvBiases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
+    for (ulong i = 0; i < this->parameters.convParams.size(); i++) {
+      this->accumDConvFilters[i].resize(this->parameters.convParams[i].filters.size(), static_cast<T>(0));
+      this->accumDConvBiases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
+    }
   }
 }
-
-//===================================================================================================================//
-
-template <typename T>
-ANN::CoreConfig<T> CoreCPU<T>::buildANNConfig(const CoreConfig<T>& cnnConfig) {
-  ANN::CoreConfig<T> annConfig;
-
-  // Map CNN mode to ANN mode
-  switch (cnnConfig.modeType) {
-    case ModeType::TRAIN:
-      annConfig.modeType = ANN::ModeType::TRAIN;
-      break;
-    case ModeType::TEST:
-      annConfig.modeType = ANN::ModeType::TEST;
-      break;
-    default:
-      annConfig.modeType = ANN::ModeType::PREDICT;
-      break;
-  }
-
-  annConfig.deviceType = ANN::DeviceType::CPU;
-
-  // Build ANN layers config: first layer = flatten size (input), rest from denseLayersConfig
-  ANN::LayersConfig annLayers;
-
-  // Input layer (flatten output size) - use identity activation (not used in forward pass per ANN convention)
-  ANN::Layer inputLayer;
-  inputLayer.numNeurons = this->flattenSize;
-  // ANN's first layer is input-only: its activation is never used in propagate().
-  // Use RELU as a harmless placeholder (ANN has no IDENTITY type).
-  inputLayer.actvFuncType = ANN::ActvFuncType::RELU;
-  annLayers.push_back(inputLayer);
-
-  // Hidden/output layers from CNN's dense config
-  for (const auto& denseConfig : cnnConfig.layersConfig.denseLayers) {
-    ANN::Layer layer;
-    layer.numNeurons = denseConfig.numNeurons;
-    layer.actvFuncType = denseConfig.actvFuncType;
-    annLayers.push_back(layer);
-  }
-
-  annConfig.layersConfig = annLayers;
-
-  // Training config
-  annConfig.trainingConfig.numEpochs = cnnConfig.trainingConfig.numEpochs;
-  annConfig.trainingConfig.learningRate = cnnConfig.trainingConfig.learningRate;
-  annConfig.trainingConfig.dropoutRate = cnnConfig.trainingConfig.dropoutRate;
-  annConfig.numThreads = 1; // CNN manages its own threading
-
-  // Cost function config
-  annConfig.costFunctionConfig.type = static_cast<ANN::CostFunctionType>(cnnConfig.costFunctionConfig.type);
-  annConfig.costFunctionConfig.weights = cnnConfig.costFunctionConfig.weights;
-
-  // Dense parameters (if loaded from file)
-  annConfig.parameters = cnnConfig.parameters.denseParams;
-
-  annConfig.logLevel = static_cast<ANN::LogLevel>(cnnConfig.logLevel);
-
-  return annConfig;
-}
-
-//===================================================================================================================//
-
-template <typename T>
-void CoreCPU<T>::initializeConvParams() {
-  ulong convIdx = 0;
-  Shape3D currentShape = this->inputShape;
-
-  for (const auto& layerConfig : this->layersConfig.cnnLayers) {
-    if (layerConfig.type != LayerType::CONV) {
-      // Update shape for non-conv layers
-      if (layerConfig.type == LayerType::POOL) {
-        const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
-        ulong outH = (currentShape.h - pool.poolH) / pool.strideY + 1;
-        ulong outW = (currentShape.w - pool.poolW) / pool.strideX + 1;
-        currentShape = {currentShape.c, outH, outW};
-      }
-      // ReLU and Flatten don't change shape (Flatten is at end)
-      continue;
-    }
-
-    const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
-
-    // Check if parameters already loaded
-    if (convIdx < this->parameters.convParams.size() &&
-        !this->parameters.convParams[convIdx].filters.empty()) {
-      // Parameters already loaded - update shape and continue
-      ulong padY = SlidingStrategy::computePadding(conv.filterH, conv.slidingStrategy);
-      ulong padX = SlidingStrategy::computePadding(conv.filterW, conv.slidingStrategy);
-      ulong outH = (currentShape.h + 2 * padY - conv.filterH) / conv.strideY + 1;
-      ulong outW = (currentShape.w + 2 * padX - conv.filterW) / conv.strideX + 1;
-      currentShape = {conv.numFilters, outH, outW};
-      convIdx++;
-      continue;
-    }
-
-    // Ensure convParams vector is large enough
-    if (convIdx >= this->parameters.convParams.size()) {
-      this->parameters.convParams.resize(convIdx + 1);
-    }
-
-    ConvParameters<T>& cp = this->parameters.convParams[convIdx];
-    cp.numFilters = conv.numFilters;
-    cp.inputC = currentShape.c;
-    cp.filterH = conv.filterH;
-    cp.filterW = conv.filterW;
-
-    ulong filterSize = cp.numFilters * cp.inputC * cp.filterH * cp.filterW;
-    cp.filters.resize(filterSize);
-    cp.biases.assign(cp.numFilters, static_cast<T>(0));
-
-    // He initialization: stddev = sqrt(2 / fan_in), fan_in = inputC * filterH * filterW
-    T fanIn = static_cast<T>(cp.inputC * cp.filterH * cp.filterW);
-    T stddev = std::sqrt(static_cast<T>(2) / fanIn);
-
-    std::mt19937 gen(42 + convIdx); // Deterministic seed per layer
-    std::normal_distribution<double> dist(0.0, static_cast<double>(stddev));
-
-    for (ulong i = 0; i < filterSize; i++) {
-      cp.filters[i] = static_cast<T>(dist(gen));
-    }
-
-    // Update shape for next layer
-    ulong padY = SlidingStrategy::computePadding(conv.filterH, conv.slidingStrategy);
-    ulong padX = SlidingStrategy::computePadding(conv.filterW, conv.slidingStrategy);
-    ulong outH = (currentShape.h + 2 * padY - conv.filterH) / conv.strideY + 1;
-    ulong outW = (currentShape.w + 2 * padX - conv.filterW) / conv.strideX + 1;
-    currentShape = {conv.numFilters, outH, outW};
-
-    convIdx++;
-  }
-}
-
-//===================================================================================================================//
-
-template <typename T>
-Tensor3D<T> CoreCPU<T>::forwardCNN(const Input<T>& input) {
-  Tensor3D<T> current = input;
-  ulong convIdx = 0;
-
-  for (const auto& layerConfig : this->layersConfig.cnnLayers) {
-    switch (layerConfig.type) {
-      case LayerType::CONV: {
-        const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
-        current = Conv2D<T>::predict(current, conv, this->parameters.convParams[convIdx]);
-        convIdx++;
-        break;
-      }
-      case LayerType::RELU: {
-        current = ReLU<T>::predict(current);
-        break;
-      }
-      case LayerType::POOL: {
-        const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
-        std::vector<ulong> unused;
-        current = Pool<T>::predict(current, pool, unused);
-        break;
-      }
-      case LayerType::FLATTEN: {
-        // Flatten is handled separately after CNN layers
-        break;
-      }
-    }
-  }
-
-  return current;
-}
-
-//===================================================================================================================//
-
-template <typename T>
-Tensor3D<T> CoreCPU<T>::forwardCNN(const Input<T>& input,
-                                   std::vector<Tensor3D<T>>& intermediates,
-                                   std::vector<std::vector<ulong>>& poolMaxIndices) {
-  intermediates.clear();
-  poolMaxIndices.clear();
-
-  Tensor3D<T> current = input;
-  ulong convIdx = 0;
-  ulong poolIdx = 0;
-
-  for (const auto& layerConfig : this->layersConfig.cnnLayers) {
-    // Store input to this layer (for backprop)
-    intermediates.push_back(current);
-
-    switch (layerConfig.type) {
-      case LayerType::CONV: {
-        const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
-        current = Conv2D<T>::predict(current, conv, this->parameters.convParams[convIdx]);
-        convIdx++;
-        break;
-      }
-      case LayerType::RELU: {
-        current = ReLU<T>::predict(current);
-        break;
-      }
-      case LayerType::POOL: {
-        const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
-        poolMaxIndices.push_back({});
-        current = Pool<T>::predict(current, pool, poolMaxIndices.back());
-        poolIdx++;
-        break;
-      }
-      case LayerType::FLATTEN: {
-        break;
-      }
-    }
-  }
-
-  return current;
-}
-
-
 
 //===================================================================================================================//
 
 template <typename T>
 Output<T> CoreCPU<T>::predict(const Input<T>& input) {
-  // Forward through CNN layers
-  Tensor3D<T> cnnOut = this->forwardCNN(input);
-
-  // Flatten
-  Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
-
-  // Forward through ANN dense layers
-  ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-  ANN::Output<T> annOutput = this->annCore->predict(annInput);
-
-  return Output<T>(annOutput.begin(), annOutput.end());
+  return this->stepWorker->predict(input);
 }
 
 //===================================================================================================================//
 
 template <typename T>
-void CoreCPU<T>::backwardCNN(const Tensor3D<T>& dCNNOut,
-                             const std::vector<Tensor3D<T>>& intermediates,
-                             const std::vector<std::vector<ulong>>& poolMaxIndices,
-                             std::vector<std::vector<T>>& dConvFilters,
-                             std::vector<std::vector<T>>& dConvBiases) {
-  ulong numCNNLayers = this->layersConfig.cnnLayers.size();
-  ulong numConvLayers = this->parameters.convParams.size();
-
-  dConvFilters.resize(numConvLayers);
-  dConvBiases.resize(numConvLayers);
-
-  Tensor3D<T> dCurrent = dCNNOut;
-
-  // Count conv and pool layers for reverse indexing
-  ulong convIdx = numConvLayers;
-  ulong poolIdx = poolMaxIndices.size();
-
-  // Backward pass through CNN layers in reverse
-  for (long i = static_cast<long>(numCNNLayers) - 1; i >= 0; i--) {
-    const CNNLayerConfig& layerConfig = this->layersConfig.cnnLayers[static_cast<ulong>(i)];
-    const Tensor3D<T>& layerInput = intermediates[static_cast<ulong>(i)];
-
-    switch (layerConfig.type) {
-      case LayerType::CONV: {
-        convIdx--;
-        const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
-        dCurrent = Conv2D<T>::backpropagate(dCurrent, layerInput, conv,
-                                            this->parameters.convParams[convIdx],
-                                            dConvFilters[convIdx], dConvBiases[convIdx]);
-        break;
-      }
-      case LayerType::RELU: {
-        dCurrent = ReLU<T>::backpropagate(dCurrent, layerInput);
-        break;
-      }
-      case LayerType::POOL: {
-        poolIdx--;
-        const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
-        dCurrent = Pool<T>::backpropagate(dCurrent, layerInput.shape, pool, poolMaxIndices[poolIdx]);
-        break;
-      }
-      case LayerType::FLATTEN: {
-        // Flatten layer doesn't have its own backprop in the CNN loop
-        // (handled by unflatten before entering backwardCNN)
-        break;
-      }
-    }
-  }
-}
-
-//===================================================================================================================//
-
-template <typename T>
-T CoreCPU<T>::calculateLoss(const Output<T>& predicted, const Output<T>& expected) {
-  T loss = static_cast<T>(0);
-
-  switch (this->coreConfig.costFunctionConfig.type) {
-    case CostFunctionType::CROSS_ENTROPY: {
-      // Cross-entropy: L = -sum(w_i * y_i * log(a_i))
-      const T epsilon = static_cast<T>(1e-7);
-      for (ulong i = 0; i < expected.size(); i++) {
-        T pred = std::max(predicted[i], epsilon);
-        T weight = (!this->coreConfig.costFunctionConfig.weights.empty()) ? this->coreConfig.costFunctionConfig.weights[i] : static_cast<T>(1);
-        loss -= weight * expected[i] * std::log(pred);
-      }
-      break;
-    }
-
-    case CostFunctionType::SQUARED_DIFFERENCE:
-    case CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE:
-    default: {
-      // Squared difference: L = sum(w_i * (a_i - y_i)^2) / N
-      for (ulong i = 0; i < expected.size(); i++) {
-        T diff = predicted[i] - expected[i];
-        T weight = (!this->coreConfig.costFunctionConfig.weights.empty()) ? this->coreConfig.costFunctionConfig.weights[i] : static_cast<T>(1);
-        loss += weight * diff * diff;
-      }
-      loss /= static_cast<T>(expected.size());
-      break;
-    }
-  }
-
-  return loss;
-}
-
-//===================================================================================================================//
-
-template <typename T>
-void CoreCPU<T>::resetCNNAccumulators() {
+void CoreCPU<T>::resetGlobalCNNAccumulators() {
   for (ulong i = 0; i < this->accumDConvFilters.size(); i++) {
     std::fill(this->accumDConvFilters[i].begin(), this->accumDConvFilters[i].end(), static_cast<T>(0));
     std::fill(this->accumDConvBiases[i].begin(), this->accumDConvBiases[i].end(), static_cast<T>(0));
@@ -378,16 +59,15 @@ void CoreCPU<T>::resetCNNAccumulators() {
 //===================================================================================================================//
 
 template <typename T>
-void CoreCPU<T>::accumulateCNNGradients(const std::vector<std::vector<T>>& dConvFilters,
-                                        const std::vector<std::vector<T>>& dConvBiases) {
-  for (ulong i = 0; i < dConvFilters.size(); i++) {
-    for (ulong j = 0; j < dConvFilters[i].size(); j++) {
-      this->accumDConvFilters[i][j] += dConvFilters[i][j];
-    }
+void CoreCPU<T>::mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker) {
+  const auto& wFilters = worker.getAccumConvFilters();
+  const auto& wBiases = worker.getAccumConvBiases();
 
-    for (ulong j = 0; j < dConvBiases[i].size(); j++) {
-      this->accumDConvBiases[i][j] += dConvBiases[i][j];
-    }
+  for (ulong i = 0; i < wFilters.size(); i++) {
+    for (ulong j = 0; j < wFilters[i].size(); j++)
+      this->accumDConvFilters[i][j] += wFilters[i][j];
+    for (ulong j = 0; j < wBiases[i].size(); j++)
+      this->accumDConvBiases[i][j] += wBiases[i][j];
   }
 }
 
@@ -429,27 +109,10 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
     qDebug() << "CNN Training:" << numEpochs << "epochs," << numSamples << "samples,"
              << numThreads << "threads, batch size" << batchSize;
 
-  // Create per-worker ANN cores for fully parallel ANN operations (no mutex needed)
-  ANN::CoreConfig<T> workerANNConfig = this->buildANNConfig(this->coreConfig);
-  workerANNConfig.progressReports = 0;
-  std::vector<std::unique_ptr<ANN::Core<T>>> workerANNCores(numThreads);
-  for (int i = 0; i < numThreads; i++)
-    workerANNCores[i] = ANN::Core<T>::makeCore(workerANNConfig);
-
-  // Per-worker CNN gradient accumulators
-  struct CNNWorker {
-    std::vector<std::vector<T>> accumDConvFilters, accumDConvBiases;
-    T accum_loss = static_cast<T>(0);
-  };
-
-  std::vector<CNNWorker> workers(numThreads);
+  // Create per-thread CoreCPUWorkers (each owns its own ANN core)
+  std::vector<std::unique_ptr<CoreCPUWorker<T>>> workers;
   for (int i = 0; i < numThreads; i++) {
-    workers[i].accumDConvFilters.resize(this->accumDConvFilters.size());
-    workers[i].accumDConvBiases.resize(this->accumDConvBiases.size());
-    for (ulong j = 0; j < this->accumDConvFilters.size(); j++) {
-      workers[i].accumDConvFilters[j].resize(this->accumDConvFilters[j].size(), static_cast<T>(0));
-      workers[i].accumDConvBiases[j].resize(this->accumDConvBiases[j].size(), static_cast<T>(0));
-    }
+    workers.push_back(std::make_unique<CoreCPUWorker<T>>(this->coreConfig, this->layersConfig, this->parameters, true));
   }
 
   QMutex callbackMutex;
@@ -463,7 +126,6 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
     T epochLoss = static_cast<T>(0);
     std::atomic<ulong> completedSamples{0};
 
-    // Shuffle sample order for this epoch
     if (this->trainingConfig.shuffleSamples) {
       std::shuffle(sampleIndices.begin(), sampleIndices.end(), rng);
     }
@@ -473,7 +135,6 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       ulong batchEnd = std::min(batchStart + batchSize, numSamples);
       ulong currentBatchSize = batchEnd - batchStart;
 
-      // Fetch batch samples via provider
       Samples<T> batchSamples = sampleProvider(sampleIndices, batchSize, batchIndex);
 
       // Per-worker sample counts (extras distributed to first workers)
@@ -483,15 +144,11 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
                               + (static_cast<ulong>(i) < currentBatchSize % static_cast<ulong>(numThreads) ? 1 : 0);
 
       // Sync worker ANN cores with main parameters and reset all accumulators
-      ANN::Parameters<T> mainANNParams = this->annCore->getParameters();
+      ANN::Parameters<T> mainANNParams = this->stepWorker->getANNCore()->getParameters();
       for (int i = 0; i < numThreads; i++) {
-        workerANNCores[i]->setParameters(mainANNParams);
-        workerANNCores[i]->resetAccumulators();
-        workers[i].accum_loss = static_cast<T>(0);
-        for (ulong j = 0; j < workers[i].accumDConvFilters.size(); j++) {
-          std::fill(workers[i].accumDConvFilters[j].begin(), workers[i].accumDConvFilters[j].end(), static_cast<T>(0));
-          std::fill(workers[i].accumDConvBiases[j].begin(), workers[i].accumDConvBiases[j].end(), static_cast<T>(0));
-        }
+        workers[i]->getANNCore()->setParameters(mainANNParams);
+        workers[i]->resetAccumulators();
+        workers[i]->resetAccumLoss();
       }
 
       // Each worker processes its chunk of the batch end-to-end (fully parallel)
@@ -499,8 +156,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       for (int i = 0; i < numThreads; i++) workerIndices[i] = i;
 
       QtConcurrent::blockingMap(workerIndices, [&](int workerIdx) {
-        CNNWorker& worker = workers[workerIdx];
-        ANN::Core<T>* workerANN = workerANNCores[workerIdx].get();
+        CoreCPUWorker<T>& worker = *workers[workerIdx];
 
         ulong workerLocalStart = 0;
         for (int i = 0; i < workerIdx; i++) workerLocalStart += workerSampleCounts[i];
@@ -508,40 +164,8 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 
         for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
           const Sample<T>& sample = batchSamples[s];
+          T sampleLoss = worker.processSample(sample.input, sample.output);
 
-          // CNN forward (reads shared conv params — thread-safe)
-          std::vector<Tensor3D<T>> intermediates;
-          std::vector<std::vector<ulong>> poolMaxIndices;
-          Tensor3D<T> cnnOut = this->forwardCNN(sample.input, intermediates, poolMaxIndices);
-          Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
-
-          // ANN forward + backward (worker's own core — no contention)
-          ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-          ANN::Output<T> annOutput = workerANN->predict(annInput);
-          Output<T> predicted(annOutput.begin(), annOutput.end());
-          T sampleLoss = this->calculateLoss(predicted, sample.output);
-
-          ANN::Output<T> annExpected(sample.output.begin(), sample.output.end());
-          ANN::Tensor1D<T> dFlatInput = workerANN->backpropagate(annExpected);
-          workerANN->accumulate();
-
-          // CNN backward (reads shared conv params — thread-safe)
-          Tensor1D<T> dFlat(dFlatInput.begin(), dFlatInput.end());
-          Tensor3D<T> dCNNOut = Flatten<T>::backpropagate(dFlat, this->cnnOutputShape);
-          std::vector<std::vector<T>> dConvFilters, dConvBiases;
-          this->backwardCNN(dCNNOut, intermediates, poolMaxIndices, dConvFilters, dConvBiases);
-
-          // Accumulate CNN gradients to worker's local accumulators
-          for (ulong i = 0; i < dConvFilters.size(); i++) {
-            for (ulong j = 0; j < dConvFilters[i].size(); j++)
-              worker.accumDConvFilters[i][j] += dConvFilters[i][j];
-            for (ulong j = 0; j < dConvBiases[i].size(); j++)
-              worker.accumDConvBiases[i][j] += dConvBiases[i][j];
-          }
-
-          worker.accum_loss += sampleLoss;
-
-          // Progress callback (epochLoss = 0 signals per-sample, not epoch-complete)
           ulong completed = ++completedSamples;
           if (this->trainingCallback) {
             QMutexLocker locker(&callbackMutex);
@@ -558,12 +182,11 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       });
 
       // Merge: update each worker's ANN, then weighted-average their parameters
-      // w_i = w_old - lr*(accum_i/n_i); weighted avg Σ(w_i*n_i)/B = w_old - lr*Σaccum_i/B ✓
       for (int i = 0; i < numThreads; i++)
-        if (workerSampleCounts[i] > 0) workerANNCores[i]->update(workerSampleCounts[i]);
+        if (workerSampleCounts[i] > 0) workers[i]->getANNCore()->update(workerSampleCounts[i]);
 
       ANN::Parameters<T> mergedParams;
-      const ANN::Parameters<T>& ref = workerANNCores[0]->getParameters();
+      const ANN::Parameters<T>& ref = workers[0]->getANNCore()->getParameters();
       mergedParams.weights.resize(ref.weights.size());
       for (ulong l = 0; l < ref.weights.size(); l++) {
         mergedParams.weights[l].resize(ref.weights[l].size());
@@ -577,7 +200,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       for (int i = 0; i < numThreads; i++) {
         if (workerSampleCounts[i] == 0) continue;
         T w = static_cast<T>(workerSampleCounts[i]) / static_cast<T>(currentBatchSize);
-        const ANN::Parameters<T>& wp = workerANNCores[i]->getParameters();
+        const ANN::Parameters<T>& wp = workers[i]->getANNCore()->getParameters();
         for (ulong l = 0; l < wp.weights.size(); l++)
           for (ulong j = 0; j < wp.weights[l].size(); j++)
             for (ulong k = 0; k < wp.weights[l][j].size(); k++)
@@ -587,19 +210,19 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
             mergedParams.biases[l][j] += wp.biases[l][j] * w;
       }
 
-      this->annCore->setParameters(mergedParams);
+      this->stepWorker->getANNCore()->setParameters(mergedParams);
 
       // Merge worker CNN accumulators and update CNN parameters
-      this->resetCNNAccumulators();
+      this->resetGlobalCNNAccumulators();
       for (int i = 0; i < numThreads; i++) {
-        this->accumulateCNNGradients(workers[i].accumDConvFilters, workers[i].accumDConvBiases);
-        epochLoss += workers[i].accum_loss;
+        this->mergeWorkerCNNAccumulators(*workers[i]);
+        epochLoss += workers[i]->getAccumLoss();
       }
       this->updateCNNParameters(currentBatchSize);
     }
 
     // Sync ANN parameters for checkpoint saves
-    this->parameters.denseParams = this->annCore->getParameters();
+    this->parameters.denseParams = this->stepWorker->getANNCore()->getParameters();
 
     T avgLoss = epochLoss / static_cast<T>(numSamples);
     this->trainingMetadata.finalLoss = avgLoss;
@@ -607,7 +230,6 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
     if (this->logLevel >= CNN::LogLevel::INFO)
       qDebug() << "Epoch " << (e + 1) << "/" << numEpochs << " - Loss: " << avgLoss;
 
-    // Report epoch completion with actual epoch loss
     if (this->trainingCallback) {
       TrainingProgress<T> progress;
       progress.currentEpoch = e + 1;
@@ -633,10 +255,9 @@ TestResult<T> CoreCPU<T>::test(const Samples<T>& samples) {
   result.numCorrect = 0;
 
   for (ulong i = 0; i < samples.size(); i++) {
-    Output<T> predicted = this->predict(samples[i].input);
-    result.totalLoss += this->calculateLoss(predicted, samples[i].output);
+    Output<T> predicted = this->stepWorker->predict(samples[i].input);
+    result.totalLoss += this->stepWorker->calculateLoss(predicted, samples[i].output);
 
-    // Accuracy: compare argmax of predicted vs expected
     auto predIdx = std::distance(predicted.begin(), std::max_element(predicted.begin(), predicted.end()));
     auto expIdx = std::distance(samples[i].output.begin(), std::max_element(samples[i].output.begin(), samples[i].output.end()));
 

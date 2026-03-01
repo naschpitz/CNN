@@ -38,8 +38,8 @@
     <li><a href="#architecture">GPU Architecture Overview</a></li>
     <li><a href="#kernel-files">Kernel Files</a></li>
     <li><a href="#buffer-layout">GPU Buffer Layout</a></li>
-    <li><a href="#forward-kernels">Forward Pass Kernels</a></li>
-    <li><a href="#backward-kernels">Backward Pass Kernels</a></li>
+    <li><a href="#propagate-kernels">Propagation Kernels</a></li>
+    <li><a href="#backpropagate-kernels">Backpropagation Kernels</a></li>
     <li><a href="#utility-kernels">Utility Kernels</a></li>
     <li><a href="#multi-gpu">Multi-GPU Training</a></li>
     <li><a href="#lazy-compilation">Lazy Kernel Compilation</a></li>
@@ -136,7 +136,7 @@
     </tr>
     <tr>
       <td><code>opencl/CNN_Kernels.cpp.cl</code></td>
-      <td>All forward, backward, and utility kernels (conv2d, relu, maxpool, accumulate, update, etc.)</td>
+      <td>All propagation, backpropagation, and utility kernels (conv2d, relu, maxpool, accumulate, update, etc.)</td>
     </tr>
   </tbody>
 </table>
@@ -192,7 +192,7 @@
   <p>Size: sum of all max-pool output sizes.</p>
 </div>
 
-<h2 id="forward-kernels">Forward Pass Kernels</h2>
+<h2 id="propagate-kernels">Propagation Kernels</h2>
 
 <h3>calculate_conv2d</h3>
 <p><strong>Work distribution:</strong> One work-item per output element. Total work-items = \(\text{numFilters} \times \text{outH} \times \text{outW}\).</p>
@@ -256,7 +256,7 @@
   pool_indices[pool_idx_offset + gid] = maxIdx  // Store absolute index
 }</code></pre>
 
-<h2 id="backward-kernels">Backward Pass Kernels</h2>
+<h2 id="backpropagate-kernels">Backpropagation Kernels</h2>
 
 <h3>calculate_dCost_dFilters</h3>
 <p><strong>Work distribution:</strong> One work-item per filter weight element. Total work-items = \(\text{numFilters} \times \text{inputC} \times \text{filterH} \times \text{filterW}\).</p>
@@ -430,11 +430,11 @@ for each GPU worker:
 <p>Kernels are compiled only when first needed, not at initialization. This reduces startup time and memory usage.</p>
 
 <div class="info-box">
-  <strong>Predict mode:</strong> Compiles only forward kernels (calculate_conv2d, calculate_relu, calculate_maxpool).
+  <strong>Predict mode:</strong> Compiles only propagation kernels (calculate_conv2d, calculate_relu, calculate_maxpool).
 </div>
 
 <div class="info-box">
-  <strong>Training mode:</strong> Compiles forward, backward, accumulate, and update kernels.
+  <strong>Training mode:</strong> Compiles propagation, backpropagation, accumulate, and update kernels.
 </div>
 
 <p>Flags in <code>CoreGPUWorker</code> track which kernel sets have been compiled:</p>

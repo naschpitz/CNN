@@ -27,6 +27,8 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
       parameters(config.parameters),
       logLevel(config.logLevel) {
 
+  this->costFunctionConfig = config.costFunctionConfig;
+
   this->ownedCore = std::make_unique<OpenCLWrapper::Core>(false);
   this->core = this->ownedCore.get();
   this->core->setVerbose(this->logLevel >= CNN::LogLevel::DEBUG);
@@ -36,7 +38,7 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
   this->flattenSize = this->cnnOutputShape.size();
 
   // Initialize conv parameters (He initialization if not loaded)
-  this->initializeConvParams();
+  Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
 
   // Compute buffer offsets for all layers
   this->computeLayerOffsets();
@@ -60,12 +62,14 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config, OpenCLWrapper::Core
       logLevel(config.logLevel),
       core(&sharedCore) {
 
+  this->costFunctionConfig = config.costFunctionConfig;
+
   // Compute CNN output shape
   this->cnnOutputShape = config.layersConfig.validateShapes(config.inputShape);
   this->flattenSize = this->cnnOutputShape.size();
 
   // Initialize conv parameters (He initialization if not loaded)
-  this->initializeConvParams();
+  Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
 
   // Compute buffer offsets for all layers
   this->computeLayerOffsets();
@@ -156,71 +160,6 @@ void CoreGPUWorker<T>::computeLayerOffsets() {
 }
 
 //===================================================================================================================//
-//-- Initialization: He-init conv parameters --//
-//===================================================================================================================//
-
-template <typename T>
-void CoreGPUWorker<T>::initializeConvParams() {
-  ulong convIdx = 0;
-  Shape3D currentShape = this->coreConfig.inputShape;
-
-  for (const auto& layerConfig : this->coreConfig.layersConfig.cnnLayers) {
-    if (layerConfig.type != LayerType::CONV) {
-      if (layerConfig.type == LayerType::POOL) {
-        const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
-        ulong outH = (currentShape.h - pool.poolH) / pool.strideY + 1;
-        ulong outW = (currentShape.w - pool.poolW) / pool.strideX + 1;
-        currentShape = {currentShape.c, outH, outW};
-      }
-      continue;
-    }
-
-    const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
-
-    if (convIdx < this->parameters.convParams.size() &&
-        !this->parameters.convParams[convIdx].filters.empty()) {
-      ulong padY = SlidingStrategy::computePadding(conv.filterH, conv.slidingStrategy);
-      ulong padX = SlidingStrategy::computePadding(conv.filterW, conv.slidingStrategy);
-      ulong outH = (currentShape.h + 2 * padY - conv.filterH) / conv.strideY + 1;
-      ulong outW = (currentShape.w + 2 * padX - conv.filterW) / conv.strideX + 1;
-      currentShape = {conv.numFilters, outH, outW};
-      convIdx++;
-      continue;
-    }
-
-    if (convIdx >= this->parameters.convParams.size()) {
-      this->parameters.convParams.resize(convIdx + 1);
-    }
-
-    ConvParameters<T>& cp = this->parameters.convParams[convIdx];
-    cp.numFilters = conv.numFilters;
-    cp.inputC = currentShape.c;
-    cp.filterH = conv.filterH;
-    cp.filterW = conv.filterW;
-
-    ulong filterSize = cp.numFilters * cp.inputC * cp.filterH * cp.filterW;
-    cp.filters.resize(filterSize);
-    cp.biases.assign(cp.numFilters, static_cast<T>(0));
-
-    T fanIn = static_cast<T>(cp.inputC * cp.filterH * cp.filterW);
-    T stddev = std::sqrt(static_cast<T>(2) / fanIn);
-
-    std::mt19937 gen(42 + convIdx);
-    std::normal_distribution<double> dist(0.0, static_cast<double>(stddev));
-
-    for (ulong i = 0; i < filterSize; i++) {
-      cp.filters[i] = static_cast<T>(dist(gen));
-    }
-
-    ulong padY = SlidingStrategy::computePadding(conv.filterH, conv.slidingStrategy);
-    ulong padX = SlidingStrategy::computePadding(conv.filterW, conv.slidingStrategy);
-    ulong outH = (currentShape.h + 2 * padY - conv.filterH) / conv.strideY + 1;
-    ulong outW = (currentShape.w + 2 * padX - conv.filterW) / conv.strideX + 1;
-    currentShape = {conv.numFilters, outH, outW};
-    convIdx++;
-  }
-}
-
 //===================================================================================================================//
 //-- Initialization: load OpenCL sources --//
 //===================================================================================================================//
@@ -357,11 +296,11 @@ void CoreGPUWorker<T>::buildANNWorker() {
 
 
 //===================================================================================================================//
-//-- Kernel building: forward pass --//
+//-- Kernel building: propagate --//
 //===================================================================================================================//
 
 template <typename T>
-void CoreGPUWorker<T>::addForwardKernels() {
+void CoreGPUWorker<T>::addPropagateKernels() {
   const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
   Shape3D currentShape = this->coreConfig.inputShape;
   ulong convIdx = 0;
@@ -456,15 +395,15 @@ void CoreGPUWorker<T>::addForwardKernels() {
 
 
 //===================================================================================================================//
-//-- Kernel building: backward pass --//
+//-- Kernel building: backpropagate --//
 //===================================================================================================================//
 
 template <typename T>
-void CoreGPUWorker<T>::addBackwardKernels() {
+void CoreGPUWorker<T>::addBackpropagateKernels() {
   const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
   ulong numLayers = cnnLayers.size();
 
-  // Precompute shapes for each layer (forward direction)
+  // Precompute shapes for each layer (propagate direction)
   std::vector<Shape3D> shapes(numLayers + 1);
   shapes[0] = this->coreConfig.inputShape;
 
@@ -497,7 +436,7 @@ void CoreGPUWorker<T>::addBackwardKernels() {
     }
   }
 
-  // Iterate backward through layers
+  // Iterate through layers in reverse
   ulong convIdx = this->convInfos.size();
   ulong poolIdx = this->poolInfos.size();
 
@@ -696,7 +635,7 @@ void CoreGPUWorker<T>::addCopyBridgeKernels() {
 }
 
 //===================================================================================================================//
-//-- Kernel setup: predict (CNN forward → bridge → ANN forward) --//
+//-- Kernel setup: predict (CNN propagate → bridge → ANN propagate) --//
 //===================================================================================================================//
 
 template <typename T>
@@ -704,7 +643,7 @@ void CoreGPUWorker<T>::setupPredictKernels() {
   this->core->clearKernels();
   this->invalidateAllKernelFlags();
 
-  this->addForwardKernels();
+  this->addPropagateKernels();
   this->addCopyBridgeKernels();
   this->annGPUWorker->addPropagateKernels();
 
@@ -712,7 +651,7 @@ void CoreGPUWorker<T>::setupPredictKernels() {
 }
 
 //===================================================================================================================//
-//-- Kernel setup: training (full forward + backward + accumulate pipeline) --//
+//-- Kernel setup: training (full propagate + backpropagate + accumulate pipeline) --//
 //===================================================================================================================//
 
 template <typename T>
@@ -720,12 +659,12 @@ void CoreGPUWorker<T>::setupTrainingKernels() {
   this->core->clearKernels();
   this->invalidateAllKernelFlags();
 
-  // Forward pipeline: CNN forward → copy → ANN forward
-  this->addForwardKernels();
+  // Propagate pipeline: CNN propagate → copy → ANN propagate
+  this->addPropagateKernels();
   this->addCopyBridgeKernels();
   this->annGPUWorker->addPropagateKernels();
 
-  // Backward pipeline: ANN backward (with input gradients) → reverse bridge → CNN backward
+  // Backpropagate pipeline: ANN backpropagate (with input gradients) → reverse bridge → CNN backpropagate
   this->annGPUWorker->addBackpropagateKernels(true);
 
   // Reverse bridge: copy ANN input gradients to CNN gradient buffer
@@ -737,7 +676,7 @@ void CoreGPUWorker<T>::setupTrainingKernels() {
   this->core->template addArgument<ulong>("copy_ann_grad_to_cnn", cnnOutputOffset);
   this->core->template addArgument<ulong>("copy_ann_grad_to_cnn", this->flattenSize);
 
-  this->addBackwardKernels();
+  this->addBackpropagateKernels();
 
   // Accumulate: CNN + ANN
   this->addCNNAccumulateKernels();
@@ -791,7 +730,7 @@ void CoreGPUWorker<T>::invalidateAllKernelFlags() {
 
 template <typename T>
 Output<T> CoreGPUWorker<T>::predict(const Input<T>& input) {
-  // Set up predict kernels if needed (CNN forward → bridge → ANN forward)
+  // Set up predict kernels if needed (CNN propagate → bridge → ANN propagate)
   if (!this->predictKernelsSetup) {
     this->setupPredictKernels();
   }
@@ -800,7 +739,7 @@ Output<T> CoreGPUWorker<T>::predict(const Input<T>& input) {
   std::vector<T> inputVec(input.data.begin(), input.data.end());
   this->core->template writeBuffer<T>("cnn_actvs", inputVec, 0);
 
-  // Single run: CNN forward → copy_cnn_to_ann → ANN forward
+  // Single run: CNN propagate → copy_cnn_to_ann → ANN propagate
   this->core->run();
 
   // Read ANN output
@@ -824,7 +763,7 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& batchSamples,
   // Reset CNN and ANN accumulators
   this->resetAccumulators();
 
-  // Set up training kernels once (full forward + backward + accumulate pipeline)
+  // Set up training kernels once (full propagate + backpropagate + accumulate pipeline)
   if (!this->trainingKernelsSetup) {
     this->setupTrainingKernels();
   }
@@ -840,14 +779,14 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& batchSamples,
     std::vector<T> inputVec(sample.input.data.begin(), sample.input.data.end());
     this->core->template writeBuffer<T>("cnn_actvs", inputVec, 0);
 
-    // Write ANN expected output to GPU (for loss computation in backward pass)
+    // Write ANN expected output to GPU (for loss computation in backpropagation)
     std::vector<T> expectedVec(sample.output.begin(), sample.output.end());
     this->core->template writeBuffer<T>("outputs", expectedVec, 0);
 
     // Generate and upload dropout mask for ANN dense layers (different mask per sample)
     if (this->annGPUWorker->hasDropout) this->annGPUWorker->generateAndUploadDropoutMask();
 
-    // Single run: CNN forward → bridge → ANN forward → ANN backward → reverse bridge → CNN backward → accumulate → loss
+    // Single run: CNN propagate → bridge → ANN propagate → ANN backpropagate → reverse bridge → CNN backpropagate → accumulate → loss
     this->core->run();
 
     // Report progress (no per-sample loss — accumulated on GPU)
@@ -918,7 +857,7 @@ void CoreGPUWorker<T>::backpropagateSample(const Input<T>& input, const Output<T
   // Generate and upload dropout mask for ANN dense layers (different mask per sample)
   if (this->annGPUWorker->hasDropout) this->annGPUWorker->generateAndUploadDropoutMask();
 
-  // Single run: full forward + backward + accumulate
+  // Single run: full propagate + backpropagate + accumulate
   this->core->run();
 }
 
@@ -1074,38 +1013,7 @@ void CoreGPUWorker<T>::syncParametersFromGPU() {
 //-- Loss calculation --//
 //===================================================================================================================//
 
-template <typename T>
-T CoreGPUWorker<T>::calculateLoss(const Output<T>& predicted, const Output<T>& expected) {
-  T loss = static_cast<T>(0);
-
-  switch (this->coreConfig.costFunctionConfig.type) {
-    case CostFunctionType::CROSS_ENTROPY: {
-      // Cross-entropy: L = -sum(w_i * y_i * log(a_i))
-      const T epsilon = static_cast<T>(1e-7);
-      for (ulong i = 0; i < expected.size(); i++) {
-        T pred = std::max(predicted[i], epsilon);
-        T weight = (!this->coreConfig.costFunctionConfig.weights.empty()) ? this->coreConfig.costFunctionConfig.weights[i] : static_cast<T>(1);
-        loss -= weight * expected[i] * std::log(pred);
-      }
-      break;
-    }
-
-    case CostFunctionType::SQUARED_DIFFERENCE:
-    case CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE:
-    default: {
-      // Squared difference: L = sum(w_i * (a_i - y_i)^2) / N
-      for (ulong i = 0; i < expected.size(); i++) {
-        T diff = predicted[i] - expected[i];
-        T weight = (!this->coreConfig.costFunctionConfig.weights.empty()) ? this->coreConfig.costFunctionConfig.weights[i] : static_cast<T>(1);
-        loss += weight * diff * diff;
-      }
-      loss /= static_cast<T>(expected.size());
-      break;
-    }
-  }
-
-  return loss;
-}
+// Note: calculateLoss is now inherited from Worker<T>.
 
 //===================================================================================================================//
 //-- Explicit template instantiations --//

@@ -2,8 +2,8 @@
 
 //===================================================================================================================//
 
-static void testConv2DForward() {
-  std::cout << "--- testConv2DForward ---" << std::endl;
+static void testConv2DPropagate() {
+  std::cout << "--- testConv2DPropagate ---" << std::endl;
 
   CNN::Tensor3D<double> input({1, 4, 4});
   for (ulong i = 0; i < 16; i++) input.data[i] = static_cast<double>(i + 1);
@@ -248,7 +248,7 @@ static void testConv2DFullPadding() {
 //===================================================================================================================//
 
 void runConv2DTests() {
-  testConv2DForward();
+  testConv2DPropagate();
   testConv2DBackprop();
   testConv2DWithBias();
   testConv2DMultiFilter();

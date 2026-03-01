@@ -9,7 +9,7 @@ namespace CNN {
   template <typename T>
   class Flatten {
     public:
-      // Forward pass: reshape 3D tensor to 1D vector
+      // Propagate: reshape 3D tensor to 1D vector
       static Tensor1D<T> predict(const Tensor3D<T>& input);
 
       // Backpropagation: reshape 1D gradient back to 3D tensor

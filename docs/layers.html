@@ -29,7 +29,7 @@
 <main class="main">
 
 <h1>Layer Documentation</h1>
-<p>Detailed reference for all layer types in the CNN library: Conv2D, ReLU, Pool (Max &amp; Average), and Flatten. Each section covers the mathematical operation, forward pass, backpropagation, and implementation details.</p>
+<p>Detailed reference for all layer types in the CNN library: Conv2D, ReLU, Pool (Max &amp; Average), and Flatten. Each section covers the mathematical operation, propagation, backpropagation, and implementation details.</p>
 
 <div class="toc">
   <h4>Contents</h4>
@@ -54,8 +54,8 @@
   <li><strong>Padding</strong> — how to handle boundaries (VALID, SAME, FULL)</li>
 </ul>
 
-<h3>Forward Pass</h3>
-<p>For each filter, the forward pass computes:</p>
+<h3>Propagation</h3>
+<p>For each filter, propagation computes:</p>
 <div class="math-block">
 \[ \text{output}[f, h, w] = \text{bias}[f] + \sum_{c=0}^{C-1} \sum_{kh=0}^{K_h-1} \sum_{kw=0}^{K_w-1} \text{input}[c, h \cdot s_y + kh - p_y, w \cdot s_x + kw - p_x] \times \text{filter}[f, c, kh, kw] \]
 </div>
@@ -121,7 +121,7 @@
       </marker>
     </defs>
   </svg>
-  <figcaption>Conv2D forward pass: filter slides over input, computing dot products at each position</figcaption>
+  <figcaption>Conv2D propagation: filter slides over input, computing dot products at each position</figcaption>
 </div>
 
 <h3>Output Shape Formula</h3>
@@ -182,7 +182,7 @@
   <figcaption>Padding strategies: VALID (no padding), SAME (preserve size), FULL (expand)</figcaption>
 </div>
 
-<h3>Backward Pass</h3>
+<h3>Backpropagation</h3>
 <p>Backpropagation computes three gradients simultaneously:</p>
 <ul>
   <li><strong>dFilters</strong> — gradient w.r.t. filter weights: \(\frac{\partial L}{\partial w_{f,c,kh,kw}}\)</li>
@@ -191,7 +191,7 @@
 </ul>
 
 <div class="info-box">
-  <strong>Implementation Detail:</strong> The backward pass uses transposed convolution to compute dInput, allowing efficient gradient computation through the layer.
+  <strong>Implementation Detail:</strong> Backpropagation uses transposed convolution to compute dInput, allowing efficient gradient computation through the layer.
 </div>
 
 <h3>Parameters</h3>
@@ -207,7 +207,7 @@
 <h3>Purpose</h3>
 <p>ReLU breaks the linearity of the network. Without activation functions, stacking multiple linear layers would be equivalent to a single linear transformation. ReLU is computationally efficient and works well with gradient-based optimization.</p>
 
-<h3>Forward Pass</h3>
+<h3>Propagation</h3>
 <p>Element-wise operation:</p>
 <div class="math-block">
 \[ \text{output}[i] = \max(0, \text{input}[i]) \]
@@ -241,7 +241,7 @@
   <figcaption>ReLU function: zero for negative inputs, identity for positive inputs</figcaption>
 </div>
 
-<h3>Backward Pass</h3>
+<h3>Backpropagation</h3>
 <p>Gradient flows only where input was positive:</p>
 <div class="math-block">
 \[ \frac{\partial L}{\partial x_i} = \begin{cases} \frac{\partial L}{\partial y_i} & \text{if } x_i > 0 \\ 0 & \text{otherwise} \end{cases} \]
@@ -346,7 +346,7 @@
   <figcaption>Max pooling: 2×2 window on 4×4 input produces 2×2 output</figcaption>
 </div>
 
-<h3>Backward Pass</h3>
+<h3>Backpropagation</h3>
 <p><strong>Max Pooling:</strong> Gradient flows only to the position that had the maximum value:</p>
 <div class="math-block">
 \[ \frac{\partial L}{\partial x_{max}} = \frac{\partial L}{\partial y}, \quad \frac{\partial L}{\partial x_{other}} = 0 \]
@@ -366,7 +366,7 @@
 <h3>Purpose</h3>
 <p>Dense layers expect 1D input. Flatten reshapes the 3D feature maps from convolutional layers into a single vector while preserving the data order (NCHW layout).</p>
 
-<h3>Forward Pass</h3>
+<h3>Propagation</h3>
 <p>Returns the underlying 1D data vector. Since the CNN library uses NCHW layout internally, the data is already stored contiguously in memory:</p>
 <div class="math-block">
 \[ \text{output} = \text{input.data} \]
@@ -374,7 +374,7 @@
 
 <p>This is a <strong>zero-copy operation</strong> — no data movement occurs.</p>
 
-<h3>Backward Pass</h3>
+<h3>Backpropagation</h3>
 <p>Reshapes the 1D gradient back to the original 3D shape:</p>
 <div class="math-block">
 \[ \frac{\partial L}{\partial x} = \text{reshape}\left(\frac{\partial L}{\partial y}, \text{inputShape}\right) \]

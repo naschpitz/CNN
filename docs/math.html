@@ -131,7 +131,7 @@ When using SAME padding with stride=1, the output spatial dimensions exactly mat
 </div>
 
 <h2 id="conv-backprop">Backpropagation through Conv2D</h2>
-<p>During backpropagation, gradients flow backward through the convolution layer. Given the upstream gradient \(\frac{\partial L}{\partial O[f,o_h,o_w]}\), we compute gradients with respect to filters, biases, and inputs.</p>
+<p>During backpropagation, gradients flow through the convolution layer in reverse. Given the upstream gradient \(\frac{\partial L}{\partial O[f,o_h,o_w]}\), we compute gradients with respect to filters, biases, and inputs.</p>
 
 <h3>Filter Gradient</h3>
 <div class="math-block">
@@ -169,11 +169,11 @@ On GPU: <code>calculate_dCost_dBiases</code> kernel (one work-item per filter).
 
 <div class="tip-box">
 <strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> — the line <code>dInput.at(c, ih, iw) += dOutVal * params.filterAt(f, c, kh, kw)</code>.
-On GPU: <code>calculate_dCost_dInput</code> kernel (one work-item per input element, reverses the forward mapping).
+On GPU: <code>calculate_dCost_dInput</code> kernel (one work-item per input element, reverses the propagation mapping).
 </div>
 
 <div class="info-box">
-The input gradient is essential when stacking multiple convolutional layers, since it propagates the error signal to previous layers. In <code>CoreCPU&lt;T&gt;::backwardCNN()</code>, this gradient is passed as <code>dCurrent</code> to the next layer in reverse order.
+The input gradient is essential when stacking multiple convolutional layers, since it propagates the error signal to previous layers. In <code>CoreCPUWorker&lt;T&gt;::backpropagateCNN()</code>, this gradient is passed as <code>dCurrent</code> to the next layer in reverse order.
 </div>
 
 <h2 id="pooling-backprop">Pooling Backpropagation</h2>
@@ -220,12 +220,12 @@ Max pooling is more commonly used in practice because it preserves sharp feature
 <p>This can be written compactly as: \(\frac{\partial L}{\partial X_i} = \mathbb{1}_{X_i > 0} \cdot \frac{\partial L}{\partial Y_i}\), where \(\mathbb{1}\) is the indicator function.</p>
 
 <div class="tip-box">
-<strong>Code:</strong> <code>ReLU&lt;T&gt;::predict(input)</code> and <code>ReLU&lt;T&gt;::backpropagate(dOut, input)</code> in <code>CNN_ReLU.cpp</code>. The backward pass uses the original input to determine where the gradient passes through (<code>input.data[i] &gt; 0</code>).
+<strong>Code:</strong> <code>ReLU&lt;T&gt;::predict(input)</code> and <code>ReLU&lt;T&gt;::backpropagate(dOut, input)</code> in <code>CNN_ReLU.cpp</code>. Backpropagation uses the original input to determine where the gradient passes through (<code>input.data[i] &gt; 0</code>).
 On GPU: <code>calculate_relu</code> and <code>calculate_dCost_dRelu</code> kernels in <code>opencl/CNN_Kernels.cpp.cl</code>.
 </div>
 
 <div class="info-box">
-ReLU is computationally efficient and helps mitigate the vanishing gradient problem compared to sigmoid or tanh activations. The gradient is either 0 or 1, making backpropagation straightforward.
+ReLU is computationally efficient and helps mitigate the vanishing gradient problem compared to sigmoid or tanh activations. The gradient is either 0 or 1, making the backpropagation straightforward.
 </div>
 
 <h2 id="he-init">He Initialization</h2>
@@ -241,7 +241,7 @@ W \sim \mathcal{N}\left(0, \sqrt{\frac{2}{\text{fan\_in}}}\right)
 
 <h3>Why He Initialization Works with ReLU</h3>
 <ul>
-  <li><strong>Variance preservation:</strong> He initialization ensures that the variance of activations remains roughly constant across layers during forward propagation.</li>
+  <li><strong>Variance preservation:</strong> He initialization ensures that the variance of activations remains roughly constant across layers during propagation.</li>
   <li><strong>Gradient flow:</strong> By maintaining consistent activation variance, gradients flow more effectively during backpropagation, avoiding vanishing or exploding gradients.</li>
   <li><strong>ReLU-specific:</strong> The factor of 2 accounts for the fact that ReLU zeros out approximately half of the activations (on average), which would otherwise reduce variance.</li>
 </ul>
@@ -289,7 +289,7 @@ Modern variants like Adam and RMSprop build on SGD by adaptively scaling the lea
 </div>
 
 <h2 id="gradient-flow">End-to-End Gradient Flow</h2>
-<p>In a complete CNN pipeline, gradients flow backward through multiple layers. Understanding this flow is essential for debugging training issues.</p>
+<p>In a complete CNN pipeline, gradients flow through multiple layers in reverse. Understanding this flow is essential for debugging training issues.</p>
 
 <h3>Typical Architecture</h3>
 <p>A standard CNN followed by an ANN classifier has this structure:</p>
@@ -303,8 +303,8 @@ Modern variants like Adam and RMSprop build on SGD by adaptively scaling the lea
   <li><strong>Output:</strong> Logits or probabilities</li>
 </ol>
 
-<h3>Backward Pass</h3>
-<p>Gradients flow backward in reverse order:</p>
+<h3>Backpropagation</h3>
+<p>Gradients flow in reverse order:</p>
 <div class="math-block">
 \[
 \text{Loss} \to \text{ANN output} \to \text{ANN hidden} \to \text{ANN input} \to \text{Unflatten} \to \text{Pool} \to \text{ReLU} \to \text{Conv2D} \to \text{Input}
@@ -313,7 +313,7 @@ Modern variants like Adam and RMSprop build on SGD by adaptively scaling the lea
 
 <h3>Key Considerations</h3>
 <ul>
-  <li><strong>Gradient magnitude:</strong> Each layer's backward pass can amplify or attenuate gradients. Deep networks are prone to vanishing gradients (exponentially small) or exploding gradients (exponentially large).</li>
+  <li><strong>Gradient magnitude:</strong> Each layer's backpropagation can amplify or attenuate gradients. Deep networks are prone to vanishing gradients (exponentially small) or exploding gradients (exponentially large).</li>
   <li><strong>Batch normalization:</strong> Often inserted between Conv2D and ReLU to stabilize gradient flow and allow higher learning rates.</li>
   <li><strong>Skip connections:</strong> Residual networks use skip connections to provide direct gradient paths, mitigating vanishing gradients in very deep networks.</li>
   <li><strong>Gradient clipping:</strong> Useful for preventing exploding gradients, especially in recurrent architectures.</li>
@@ -327,19 +327,19 @@ The input gradient from the first Conv2D layer is typically discarded since ther
 <p>Consider a simple architecture: Conv2D → ReLU → MaxPool → Conv2D → ReLU → MaxPool → Flatten → Dense → Softmax.</p>
 <p>During backpropagation:</p>
 <ol>
-  <li>Softmax backward computes gradient w.r.t. Dense input</li>
-  <li>Dense backward computes gradient w.r.t. flattened features and updates Dense weights</li>
+  <li>Softmax backpropagation computes gradient w.r.t. Dense input</li>
+  <li>Dense backpropagation computes gradient w.r.t. flattened features and updates Dense weights</li>
   <li>Unflatten reshapes gradient back to 4D</li>
-  <li>MaxPool backward routes gradients to max positions</li>
-  <li>ReLU backward zeros out gradients for negative activations</li>
-  <li>Conv2D backward computes filter gradients and input gradients</li>
+  <li>MaxPool backpropagation routes gradients to max positions</li>
+  <li>ReLU backpropagation zeros out gradients for negative activations</li>
+  <li>Conv2D backpropagation computes filter gradients and input gradients</li>
   <li>Filter gradients are accumulated and used to update Conv2D weights</li>
   <li>Input gradients are discarded (no parameters to update)</li>
 </ol>
 
 <div class="tip-box">
-<strong>Code:</strong> <strong>Forward:</strong> <code>CoreCPU&lt;T&gt;::forwardCNN(input)</code> iterates Conv2D/ReLU/Pool layers, then <code>Flatten&lt;T&gt;::predict()</code> converts the 3D tensor to a 1D vector, and the ANN's <code>annCore-&gt;predict()</code> runs the dense layers.
-<strong>Backward:</strong> ANN's <code>annCore-&gt;backpropagate()</code> returns the input gradient, <code>Flatten&lt;T&gt;::backpropagate()</code> reshapes it back to 3D, then <code>CoreCPU&lt;T&gt;::backwardCNN()</code> iterates CNN layers in reverse, dispatching to <code>Conv2D::backpropagate()</code>, <code>ReLU::backpropagate()</code>, and <code>Pool::backpropagate()</code>.
+<strong>Code:</strong> <strong>Propagation:</strong> <code>CoreCPUWorker&lt;T&gt;::propagateCNN(input)</code> iterates Conv2D/ReLU/Pool layers, then <code>Flatten&lt;T&gt;::predict()</code> converts the 3D tensor to a 1D vector, and the ANN's <code>annCore-&gt;predict()</code> runs the dense layers.
+<strong>Backpropagation:</strong> ANN's <code>annCore-&gt;backpropagate()</code> returns the input gradient, <code>Flatten&lt;T&gt;::backpropagate()</code> reshapes it back to 3D, then <code>CoreCPUWorker&lt;T&gt;::backpropagateCNN()</code> iterates CNN layers in reverse, dispatching to <code>Conv2D::backpropagate()</code>, <code>ReLU::backpropagate()</code>, and <code>Pool::backpropagate()</code>.
 </div>
 
 </main>

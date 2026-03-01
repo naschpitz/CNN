@@ -11,7 +11,7 @@ namespace CNN {
   template <typename T>
   class Conv2D {
     public:
-      // Forward pass: input -> output
+      // Propagate: input -> output
       static Tensor3D<T> predict(const Tensor3D<T>& input, const ConvLayerConfig& config,
                                  const ConvParameters<T>& params);
 

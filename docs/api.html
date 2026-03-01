@@ -88,9 +88,9 @@
 <h3>ModeType</h3>
 <table>
   <tr><th>Value</th><th>Description</th></tr>
-  <tr><td><code>TRAIN</code></td><td>Training mode (forward + backward + update)</td></tr>
-  <tr><td><code>PREDICT</code></td><td>Inference mode (forward only)</td></tr>
-  <tr><td><code>TEST</code></td><td>Evaluation mode (forward + loss calculation)</td></tr>
+  <tr><td><code>TRAIN</code></td><td>Training mode (propagation + backpropagation + update)</td></tr>
+  <tr><td><code>PREDICT</code></td><td>Inference mode (propagation only)</td></tr>
+  <tr><td><code>TEST</code></td><td>Evaluation mode (propagation + loss calculation)</td></tr>
 </table>
 
 <h3>LayerType</h3>
@@ -227,7 +227,7 @@
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
   <tr><td><code>makeCore(config)</code></td><td><code>unique_ptr&lt;Core&lt;T&gt;&gt;</code></td><td><strong>Factory:</strong> creates CoreCPU or CoreGPU</td></tr>
-  <tr><td><code>predict(input)</code></td><td><code>Output&lt;T&gt;</code></td><td>Forward pass — CNN → Flatten → ANN</td></tr>
+  <tr><td><code>predict(input)</code></td><td><code>Output&lt;T&gt;</code></td><td>Propagation — CNN → Flatten → ANN</td></tr>
   <tr><td><code>train(numSamples, sampleProvider)</code></td><td><code>void</code></td><td>Full training loop with SGD</td></tr>
   <tr><td><code>test(samples)</code></td><td><code>TestResult&lt;T&gt;</code></td><td>Evaluate loss on a test set</td></tr>
   <tr><td><code>setTrainingCallback(cb)</code></td><td><code>void</code></td><td>Attach progress callback</td></tr>
@@ -241,9 +241,9 @@
 
 <table>
   <tr><th>Internal Method</th><th>Description</th></tr>
-  <tr><td><code>forwardCNN(input)</code></td><td>Run input through all CNN layers</td></tr>
-  <tr><td><code>forwardCNN(input, intermediates, poolMaxIndices)</code></td><td>Forward pass storing all intermediate activations (for training)</td></tr>
-  <tr><td><code>backwardCNN(dCNNOut, intermediates, poolMaxIndices, dFilters, dBiases)</code></td><td>Backpropagate through CNN layers</td></tr>
+  <tr><td><code>propagateCNN(input)</code></td><td>Run input through all CNN layers</td></tr>
+  <tr><td><code>propagateCNN(input, intermediates, poolMaxIndices)</code></td><td>Propagation storing all intermediate activations (for training)</td></tr>
+  <tr><td><code>backpropagateCNN(dCNNOut, intermediates, poolMaxIndices, dFilters, dBiases)</code></td><td>Backpropagate through CNN layers</td></tr>
   <tr><td><code>initializeConvParams()</code></td><td>He initialisation for conv filters</td></tr>
   <tr><td><code>resetCNNAccumulators()</code></td><td>Zero gradient accumulators</td></tr>
   <tr><td><code>accumulateCNNGradients()</code></td><td>Add sample gradients to accumulators</td></tr>
@@ -278,7 +278,7 @@
 <h3>Conv2D&lt;T&gt;</h3>
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-  <tr><td><code>predict(input, config, params)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Forward convolution with padding</td></tr>
+  <tr><td><code>predict(input, config, params)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Convolution with padding</td></tr>
   <tr><td><code>backpropagate(dOut, input, config, params, dFilters, dBiases)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Compute gradients for filters, biases, and input</td></tr>
 </table>
 

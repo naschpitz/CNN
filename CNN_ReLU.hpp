@@ -9,7 +9,7 @@ namespace CNN {
   template <typename T>
   class ReLU {
     public:
-      // Forward pass: element-wise max(0, x)
+      // Propagate: element-wise max(0, x)
       static Tensor3D<T> predict(const Tensor3D<T>& input);
 
       // Backpropagation: gradient passes through where input > 0
