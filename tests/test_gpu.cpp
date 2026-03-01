@@ -57,7 +57,7 @@ static void testGPUEndToEnd() {
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
     core = CNN::Core<float>::makeCore(config);
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
     if (pred0[0] > 0.7f && pred1[0] < 0.3f) converged = true;
@@ -125,7 +125,7 @@ static void testGPUPredictOnly() {
   samples[1].input = CNN::Tensor3D<float>({1, 5, 5}, 0.0f);
   samples[1].output = {0.0f};
 
-  cpuCore->train(samples);
+  cpuCore->train(samples.size(), CNN::makeSampleProvider(samples));
 
   // Get trained parameters from CPU core
   const CNN::Parameters<float>& trainedParams = cpuCore->getParameters();
@@ -222,7 +222,7 @@ static void testGPUWithPoolLayer() {
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(config);
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
     if (pred0[0] > pred1[0]) converged = true;
@@ -294,7 +294,7 @@ static void testGPUMultiConvStack() {
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(config);
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
     if (pred0[0] > pred1[0]) converged = true;
@@ -359,7 +359,7 @@ static void testGPUShuffleSamples() {
   for (int attempt = 0; attempt < 5 && !shuffleConverged; ++attempt) {
     if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(makeConfig(true));
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     auto p0 = core->predict(samples[0].input);
     auto p1 = core->predict(samples[1].input);
     if (p0[0] > p1[0]) shuffleConverged = true;
@@ -370,7 +370,7 @@ static void testGPUShuffleSamples() {
   for (int attempt = 0; attempt < 5 && !noShuffleConverged; ++attempt) {
     if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(makeConfig(false));
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     auto p0 = core->predict(samples[0].input);
     auto p1 = core->predict(samples[1].input);
     if (p0[0] > p1[0]) noShuffleConverged = true;

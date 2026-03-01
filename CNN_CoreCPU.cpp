@@ -391,9 +391,8 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples) {
 //===================================================================================================================//
 
 template <typename T>
-void CoreCPU<T>::train(const Samples<T>& samples) {
+void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider) {
   ulong numEpochs = this->trainingConfig.numEpochs;
-  ulong numSamples = samples.size();
 
   if (numSamples == 0)
     throw std::runtime_error("No training samples provided");
@@ -448,9 +447,13 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
       std::shuffle(sampleIndices.begin(), sampleIndices.end(), rng);
     }
 
-    for (ulong batchStart = 0; batchStart < numSamples; batchStart += batchSize) {
+    ulong batchIndex = 0;
+    for (ulong batchStart = 0; batchStart < numSamples; batchStart += batchSize, batchIndex++) {
       ulong batchEnd = std::min(batchStart + batchSize, numSamples);
       ulong currentBatchSize = batchEnd - batchStart;
+
+      // Fetch batch samples via provider
+      Samples<T> batchSamples = sampleProvider(sampleIndices, batchSize, batchIndex);
 
       // Per-worker sample counts (extras distributed to first workers)
       std::vector<ulong> workerSampleCounts(numThreads);
@@ -478,12 +481,12 @@ void CoreCPU<T>::train(const Samples<T>& samples) {
         CNNWorker& worker = workers[workerIdx];
         ANN::Core<T>* workerANN = workerANNCores[workerIdx].get();
 
-        ulong workerStart = batchStart;
-        for (int i = 0; i < workerIdx; i++) workerStart += workerSampleCounts[i];
-        ulong workerEnd = workerStart + workerSampleCounts[workerIdx];
+        ulong workerLocalStart = 0;
+        for (int i = 0; i < workerIdx; i++) workerLocalStart += workerSampleCounts[i];
+        ulong workerLocalEnd = workerLocalStart + workerSampleCounts[workerIdx];
 
-        for (ulong s = workerStart; s < workerEnd; s++) {
-          const Sample<T>& sample = samples[sampleIndices[s]];
+        for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
+          const Sample<T>& sample = batchSamples[s];
 
           // CNN forward (reads shared conv params — thread-safe)
           std::vector<Tensor3D<T>> intermediates;

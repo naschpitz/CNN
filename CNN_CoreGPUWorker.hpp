@@ -27,9 +27,9 @@ namespace CNN {
       Output<T> predict(const Input<T>& input);
 
       //-- Training (called by CoreGPU orchestrator) --//
-      T trainSubset(const Samples<T>& samples, const std::vector<ulong>& indices,
-                    ulong startIdx, ulong endIdx,
-                    ulong epoch, ulong totalEpochs, const TrainingCallback<T>& callback);
+      T trainSubset(const Samples<T>& batchSamples,
+                    ulong totalSamples, ulong epoch, ulong totalEpochs,
+                    const TrainingCallback<T>& callback);
 
       //-- Testing --//
       std::pair<T, ulong> testSubset(const Samples<T>& samples, ulong startIdx, ulong endIdx);
@@ -115,8 +115,6 @@ namespace CNN {
       bool predictKernelsSetup = false;
       bool trainingKernelsSetup = false;
       bool updateKernelsSetup = false;
-
-
 
       //-- Initialization --//
       void computeLayerOffsets();

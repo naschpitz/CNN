@@ -813,11 +813,10 @@ Output<T> CoreGPUWorker<T>::predict(const Input<T>& input) {
 //===================================================================================================================//
 
 template <typename T>
-T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulong>& indices,
-                                ulong startIdx, ulong endIdx,
-                                ulong epoch, ulong totalEpochs, const TrainingCallback<T>& callback) {
-  ulong numSamplesInSubset = endIdx - startIdx;
-  ulong totalSamples = samples.size();
+T CoreGPUWorker<T>::trainSubset(const Samples<T>& batchSamples,
+                                ulong totalSamples, ulong epoch, ulong totalEpochs,
+                                const TrainingCallback<T>& callback) {
+  ulong numSamplesInSubset = batchSamples.size();
 
   T subsetLoss = static_cast<T>(0);
 
@@ -833,8 +832,8 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& samples, const std::vector<ulo
   std::vector<T> zero = {static_cast<T>(0)};
   this->core->template writeBuffer<T>("accum_loss", zero, 0);
 
-  for (ulong s = startIdx; s < endIdx; s++) {
-    const Sample<T>& sample = samples[indices[s]];
+  for (ulong s = 0; s < numSamplesInSubset; s++) {
+    const Sample<T>& sample = batchSamples[s];
 
     // Write CNN input to GPU
     std::vector<T> inputVec(sample.input.data.begin(), sample.input.data.end());

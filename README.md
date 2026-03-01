@@ -63,7 +63,7 @@ config.trainingConfig.learningRate = 0.01f;
 
 // Create, train, and query
 auto core = CNN::Core<float>::makeCore(config);
-core->train(samples);
+core->train(samples.size(), CNN::makeSampleProvider(samples));
 
 const auto& params = core->getParameters();   // conv + dense params
 const auto& meta   = core->getTrainingMetadata();

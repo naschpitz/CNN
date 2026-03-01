@@ -55,7 +55,7 @@ static void testEndToEnd() {
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
     core = CNN::Core<double>::makeCore(config);
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
     if (pred0[0] > pred1[0]) converged = true;
@@ -139,7 +139,7 @@ static void testMultiConvStack() {
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
     if (pred0[0] > pred1[0]) converged = true;
@@ -214,7 +214,7 @@ static void testConvPoolConv() {
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
     if (pred0[0] > pred1[0]) converged = true;
@@ -273,7 +273,7 @@ static void testMultiChannelInput() {
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
     if (pred0[0] > pred1[0]) converged = true;
@@ -327,7 +327,7 @@ static void testParameterRoundTrip() {
   samples[1].input = CNN::Tensor3D<double>({1, 5, 5}, 0.0);
   samples[1].output = {0.0};
 
-  core->train(samples);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
 
   // Get trained parameters
   const CNN::Parameters<double>& params = core->getParameters();
@@ -429,7 +429,7 @@ static void testParametersDuringTraining() {
     lastEpoch = progress.currentEpoch;
   });
 
-  core->train(samples);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
 
   CHECK(paramsChecked, "epoch transition detected in callback");
   CHECK(convFiltersNonEmpty, "convParams[0].filters non-empty during training");
@@ -486,7 +486,7 @@ static void testMultipleOutputNeurons() {
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
     if (pred0[0] > pred1[0]) converged = true;
@@ -586,7 +586,7 @@ static void testWeightedLossTraining() {
   samples[1].output = {0.0, 1.0};
 
   auto core = CNN::Core<double>::makeCore(config);
-  core->train(samples);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
 
   // Verify training completed and test produces valid results
   CNN::TestResult<double> result = core->test(samples);
@@ -666,7 +666,7 @@ static void testShuffleSamplesTraining() {
   bool shuffleConverged = false;
   for (int attempt = 0; attempt < 5 && !shuffleConverged; ++attempt) {
     auto core = CNN::Core<double>::makeCore(makeConfig(true));
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     auto p0 = core->predict(samples[0].input);
     auto p1 = core->predict(samples[1].input);
     if (p0[0] > p1[0]) shuffleConverged = true;
@@ -677,7 +677,7 @@ static void testShuffleSamplesTraining() {
   bool noShuffleConverged = false;
   for (int attempt = 0; attempt < 5 && !noShuffleConverged; ++attempt) {
     auto core = CNN::Core<double>::makeCore(makeConfig(false));
-    core->train(samples);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
     auto p0 = core->predict(samples[0].input);
     auto p1 = core->predict(samples[1].input);
     if (p0[0] > p1[0]) noShuffleConverged = true;

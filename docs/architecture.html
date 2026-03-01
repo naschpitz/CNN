@@ -168,7 +168,7 @@
   <p><strong>Implementation:</strong> <code>Core&lt;T&gt;::makeCore(const CoreConfig&lt;T&gt;&amp; config)</code> examines <code>config.deviceType</code> and returns either <code>CoreCPU&lt;T&gt;</code> or <code>CoreGPU&lt;T&gt;</code>.</p>
   <pre><code class="keyword">auto</code> core = Core&lt;<span class="type">float</span>&gt;::makeCore(config);
 <span class="comment">// Returns CoreCPU or CoreGPU transparently</span>
-core-&gt;train(samples);  <span class="comment">// Works with either backend</span></code></pre>
+core-&gt;train(samples.size(), CNN::makeSampleProvider(samples));  <span class="comment">// Works with either backend</span></code></pre>
   <p><strong>Benefit:</strong> Client code doesn't need to know which backend is in use. Easy to switch between CPU and GPU without code changes.</p>
 </div>
 

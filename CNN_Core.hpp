@@ -23,7 +23,7 @@ namespace CNN {
 
       //-- Core interface --//
       virtual Output<T> predict(const Input<T>& input) = 0;
-      virtual void train(const Samples<T>& samples) = 0;
+      virtual void train(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
       virtual TestResult<T> test(const Samples<T>& samples) = 0;
 
       //-- Destructor --//

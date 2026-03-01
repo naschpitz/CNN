@@ -228,7 +228,7 @@
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
   <tr><td><code>makeCore(config)</code></td><td><code>unique_ptr&lt;Core&lt;T&gt;&gt;</code></td><td><strong>Factory:</strong> creates CoreCPU or CoreGPU</td></tr>
   <tr><td><code>predict(input)</code></td><td><code>Output&lt;T&gt;</code></td><td>Forward pass — CNN → Flatten → ANN</td></tr>
-  <tr><td><code>train(samples)</code></td><td><code>void</code></td><td>Full training loop with SGD</td></tr>
+  <tr><td><code>train(numSamples, sampleProvider)</code></td><td><code>void</code></td><td>Full training loop with SGD</td></tr>
   <tr><td><code>test(samples)</code></td><td><code>TestResult&lt;T&gt;</code></td><td>Evaluate loss on a test set</td></tr>
   <tr><td><code>setTrainingCallback(cb)</code></td><td><code>void</code></td><td>Attach progress callback</td></tr>
   <tr><td><code>getParameters()</code></td><td><code>const Parameters&lt;T&gt;&amp;</code></td><td>Get current conv + dense parameters</td></tr>
