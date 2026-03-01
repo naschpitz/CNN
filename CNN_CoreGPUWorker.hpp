@@ -50,6 +50,11 @@ namespace CNN {
       //-- Weight update --//
       void update(ulong numSamples);
 
+      //-- Kernel save/restore (delegates to OpenCL core) --//
+      std::vector<std::vector<OpenCLWrapper::Kernel>> saveKernels();
+      void restoreKernels(const std::vector<std::vector<OpenCLWrapper::Kernel>>& kernels);
+      void setTrainingKernelsReady(bool ready);
+
       //-- Parameter synchronization --//
       void syncParametersFromGPU();
 
@@ -115,7 +120,6 @@ namespace CNN {
       bool predictKernelsSetup = false;
       bool trainingKernelsSetup = false;
       bool updateKernelsSetup = false;
-      std::vector<std::vector<OpenCLWrapper::Kernel>> savedTrainingKernels;
 
       //-- Initialization --//
       void computeLayerOffsets();

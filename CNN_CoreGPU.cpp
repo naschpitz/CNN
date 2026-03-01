@@ -83,6 +83,10 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
   std::mt19937 rng(std::random_device{}());
 
+  // Saved training kernels per GPU — populated after first trainSubset
+  std::vector<std::vector<std::vector<OpenCLWrapper::Kernel>>> savedKernels(this->numGPUs);
+  bool kernelsSaved = false;
+
   for (ulong e = 0; e < numEpochs; e++) {
     T epochLoss = 0;
 
@@ -141,6 +145,14 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
             gpuSamples, numSamples, e + 1, numEpochs, callback);
       });
 
+      // Save training kernels after first batch (when setupTrainingKernels has run)
+      if (!kernelsSaved) {
+        for (size_t i = 0; i < this->numGPUs; i++) {
+          savedKernels[i] = this->gpuWorkers[i]->saveKernels();
+        }
+        kernelsSaved = true;
+      }
+
       // Update cumulative counters after batch completes
       for (const auto& item : workItems) {
         gpuCumulativeSamples[item.gpuIdx] += (item.endIdx - item.startIdx);
@@ -160,6 +172,16 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
         for (size_t i = 0; i < this->numGPUs; i++) gpuIndices.append(i);
         QtConcurrent::blockingMap(gpuIndices, [this, currentBatchSize](size_t gpuIdx) {
           this->gpuWorkers[gpuIdx]->update(currentBatchSize);
+        });
+      }
+
+      // Restore training kernels after update to avoid expensive re-setup next batch
+      if (kernelsSaved) {
+        QVector<size_t> gpuIndices;
+        for (size_t i = 0; i < this->numGPUs; i++) gpuIndices.append(i);
+        QtConcurrent::blockingMap(gpuIndices, [this, &savedKernels](size_t gpuIdx) {
+          this->gpuWorkers[gpuIdx]->restoreKernels(savedKernels[gpuIdx]);
+          this->gpuWorkers[gpuIdx]->setTrainingKernelsReady(true);
         });
       }
 

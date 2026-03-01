@@ -753,9 +753,6 @@ void CoreGPUWorker<T>::setupTrainingKernels() {
   this->core->template addArgument<ulong>("calculate_sample_loss", numOutputNeurons);
 
   this->trainingKernelsSetup = true;
-
-  // Save training kernels so they can be restored after update without re-setup
-  this->savedTrainingKernels = this->core->saveKernels();
 }
 
 //===================================================================================================================//
@@ -1007,11 +1004,26 @@ template <typename T>
 void CoreGPUWorker<T>::update(ulong numSamples) {
   this->setupUpdateKernels(numSamples);
   this->core->run();
+  this->invalidateAllKernelFlags();
+}
 
-  // Restore the saved training kernels instead of invalidating all flags.
-  // This avoids the expensive re-setup of training kernels (~250ms) every batch.
-  this->core->restoreKernels(this->savedTrainingKernels);
-  this->trainingKernelsSetup = true;
+//===================================================================================================================//
+//-- Kernel save/restore --//
+//===================================================================================================================//
+
+template <typename T>
+std::vector<std::vector<OpenCLWrapper::Kernel>> CoreGPUWorker<T>::saveKernels() {
+  return this->core->saveKernels();
+}
+
+template <typename T>
+void CoreGPUWorker<T>::restoreKernels(const std::vector<std::vector<OpenCLWrapper::Kernel>>& kernels) {
+  this->core->restoreKernels(kernels);
+}
+
+template <typename T>
+void CoreGPUWorker<T>::setTrainingKernelsReady(bool ready) {
+  this->trainingKernelsSetup = ready;
   this->updateKernelsSetup = false;
   this->predictKernelsSetup = false;
 }
