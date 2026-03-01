@@ -753,6 +753,9 @@ void CoreGPUWorker<T>::setupTrainingKernels() {
   this->core->template addArgument<ulong>("calculate_sample_loss", numOutputNeurons);
 
   this->trainingKernelsSetup = true;
+
+  // Save training kernels so they can be restored after update without re-setup
+  this->core->saveKernels();
 }
 
 //===================================================================================================================//
@@ -827,8 +830,8 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& batchSamples,
   }
 
   // Zero the GPU loss accumulator once per subset
-  std::vector<T> zero = {static_cast<T>(0)};
-  this->core->template writeBuffer<T>("accum_loss", zero, 0);
+  T zeroVal = static_cast<T>(0);
+  this->core->template fillBuffer<T>("accum_loss", zeroVal, 1);
 
   for (ulong s = 0; s < numSamplesInSubset; s++) {
     const Sample<T>& sample = batchSamples[s];
@@ -934,15 +937,15 @@ void CoreGPUWorker<T>::accumulate() {
 
 template <typename T>
 void CoreGPUWorker<T>::resetAccumulators() {
-  // Reset CNN accumulators
+  T zero = static_cast<T>(0);
+
+  // Reset CNN accumulators using GPU fill (no host-side vector allocation)
   if (this->totalFilterSize > 0) {
-    std::vector<T> zeros(this->totalFilterSize, static_cast<T>(0));
-    this->core->template writeBuffer<T>("cnn_accum_dFilters", zeros, 0);
+    this->core->template fillBuffer<T>("cnn_accum_dFilters", zero, this->totalFilterSize);
   }
 
   if (this->totalBiasSize > 0) {
-    std::vector<T> zeros(this->totalBiasSize, static_cast<T>(0));
-    this->core->template writeBuffer<T>("cnn_accum_dBiases", zeros, 0);
+    this->core->template fillBuffer<T>("cnn_accum_dBiases", zero, this->totalBiasSize);
   }
 
   // Reset ANN accumulators
@@ -1004,7 +1007,13 @@ template <typename T>
 void CoreGPUWorker<T>::update(ulong numSamples) {
   this->setupUpdateKernels(numSamples);
   this->core->run();
-  this->invalidateAllKernelFlags();
+
+  // Restore the saved training kernels instead of invalidating all flags.
+  // This avoids the expensive re-setup of training kernels (~250ms) every batch.
+  this->core->restoreKernels();
+  this->trainingKernelsSetup = true;
+  this->updateKernelsSetup = false;
+  this->predictKernelsSetup = false;
 }
 
 //===================================================================================================================//

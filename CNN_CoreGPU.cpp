@@ -154,9 +154,13 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       this->mergeCNNGradients();
       this->mergeANNGradients();
 
-      // Update weights after each mini-batch
-      for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-        this->gpuWorkers[gpuIdx]->update(currentBatchSize);
+      // Update weights after each mini-batch (parallel across GPUs)
+      {
+        QVector<size_t> gpuIndices;
+        for (size_t i = 0; i < this->numGPUs; i++) gpuIndices.append(i);
+        QtConcurrent::blockingMap(gpuIndices, [this, currentBatchSize](size_t gpuIdx) {
+          this->gpuWorkers[gpuIdx]->update(currentBatchSize);
+        });
       }
 
     }
@@ -262,33 +266,29 @@ template <typename T>
 void CoreGPU<T>::mergeCNNGradients() {
   if (this->numGPUs <= 1) return;
 
-  std::vector<T> totalAccumFilters;
-  std::vector<T> totalAccumBiases;
+  // Read gradients from all GPUs in parallel
+  std::vector<std::vector<T>> allFilters(this->numGPUs);
+  std::vector<std::vector<T>> allBiases(this->numGPUs);
 
-  for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-    std::vector<T> workerFilters;
-    std::vector<T> workerBiases;
+  QVector<size_t> gpuIndices;
+  for (size_t i = 0; i < this->numGPUs; i++) gpuIndices.append(i);
 
-    this->gpuWorkers[gpuIdx]->readAccumulatedGradients(workerFilters, workerBiases);
+  QtConcurrent::blockingMap(gpuIndices, [this, &allFilters, &allBiases](size_t gpuIdx) {
+    this->gpuWorkers[gpuIdx]->readAccumulatedGradients(allFilters[gpuIdx], allBiases[gpuIdx]);
+  });
 
-    if (gpuIdx == 0) {
-      totalAccumFilters = workerFilters;
-      totalAccumBiases = workerBiases;
-    } else {
-      for (size_t i = 0; i < workerFilters.size(); i++) {
-        totalAccumFilters[i] += workerFilters[i];
-      }
-
-      for (size_t i = 0; i < workerBiases.size(); i++) {
-        totalAccumBiases[i] += workerBiases[i];
-      }
-    }
+  // Sum on CPU
+  std::vector<T>& totalFilters = allFilters[0];
+  std::vector<T>& totalBiases = allBiases[0];
+  for (size_t g = 1; g < this->numGPUs; g++) {
+    for (size_t i = 0; i < totalFilters.size(); i++) totalFilters[i] += allFilters[g][i];
+    for (size_t i = 0; i < totalBiases.size(); i++) totalBiases[i] += allBiases[g][i];
   }
 
-  // Write merged gradients back to all workers
-  for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-    this->gpuWorkers[gpuIdx]->setAccumulators(totalAccumFilters, totalAccumBiases);
-  }
+  // Write merged gradients back to all workers in parallel
+  QtConcurrent::blockingMap(gpuIndices, [this, &totalFilters, &totalBiases](size_t gpuIdx) {
+    this->gpuWorkers[gpuIdx]->setAccumulators(totalFilters, totalBiases);
+  });
 }
 
 //===================================================================================================================//
@@ -299,33 +299,29 @@ template <typename T>
 void CoreGPU<T>::mergeANNGradients() {
   if (this->numGPUs <= 1) return;
 
-  ANN::Tensor1D<T> totalAccumWeights;
-  ANN::Tensor1D<T> totalAccumBiases;
+  // Read gradients from all GPUs in parallel
+  std::vector<ANN::Tensor1D<T>> allWeights(this->numGPUs);
+  std::vector<ANN::Tensor1D<T>> allBiases(this->numGPUs);
 
-  for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-    ANN::Tensor1D<T> workerWeights;
-    ANN::Tensor1D<T> workerBiases;
+  QVector<size_t> gpuIndices;
+  for (size_t i = 0; i < this->numGPUs; i++) gpuIndices.append(i);
 
-    this->gpuWorkers[gpuIdx]->readANNAccumulatedGradients(workerWeights, workerBiases);
+  QtConcurrent::blockingMap(gpuIndices, [this, &allWeights, &allBiases](size_t gpuIdx) {
+    this->gpuWorkers[gpuIdx]->readANNAccumulatedGradients(allWeights[gpuIdx], allBiases[gpuIdx]);
+  });
 
-    if (gpuIdx == 0) {
-      totalAccumWeights = workerWeights;
-      totalAccumBiases = workerBiases;
-    } else {
-      for (size_t i = 0; i < workerWeights.size(); i++) {
-        totalAccumWeights[i] += workerWeights[i];
-      }
-
-      for (size_t i = 0; i < workerBiases.size(); i++) {
-        totalAccumBiases[i] += workerBiases[i];
-      }
-    }
+  // Sum on CPU
+  ANN::Tensor1D<T>& totalWeights = allWeights[0];
+  ANN::Tensor1D<T>& totalBiases = allBiases[0];
+  for (size_t g = 1; g < this->numGPUs; g++) {
+    for (size_t i = 0; i < totalWeights.size(); i++) totalWeights[i] += allWeights[g][i];
+    for (size_t i = 0; i < totalBiases.size(); i++) totalBiases[i] += allBiases[g][i];
   }
 
-  // Write merged gradients back to all workers
-  for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-    this->gpuWorkers[gpuIdx]->setANNAccumulators(totalAccumWeights, totalAccumBiases);
-  }
+  // Write merged gradients back to all workers in parallel
+  QtConcurrent::blockingMap(gpuIndices, [this, &totalWeights, &totalBiases](size_t gpuIdx) {
+    this->gpuWorkers[gpuIdx]->setANNAccumulators(totalWeights, totalBiases);
+  });
 }
 
 //===================================================================================================================//
