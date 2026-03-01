@@ -8,6 +8,8 @@
 #include <ANN_CoreGPUWorker.hpp>
 #include <OCLW_Core.hpp>
 
+#include <cmath>
+
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -751,6 +753,7 @@ void CoreGPUWorker<T>::setupTrainingKernels() {
   this->core->template addArgument<T>("calculate_sample_loss", "accum_loss");
   this->core->template addArgument<ulong>("calculate_sample_loss", outputActvOffset);
   this->core->template addArgument<ulong>("calculate_sample_loss", numOutputNeurons);
+  this->core->template addArgument<ulong>("calculate_sample_loss", static_cast<ulong>(this->coreConfig.costFunctionConfig.type));
 
   this->trainingKernelsSetup = true;
 }
@@ -1068,20 +1071,40 @@ void CoreGPUWorker<T>::syncParametersFromGPU() {
 }
 
 //===================================================================================================================//
-//-- Loss calculation (MSE) --//
+//-- Loss calculation --//
 //===================================================================================================================//
 
 template <typename T>
 T CoreGPUWorker<T>::calculateLoss(const Output<T>& predicted, const Output<T>& expected) {
   T loss = static_cast<T>(0);
 
-  for (ulong i = 0; i < expected.size(); i++) {
-    T diff = predicted[i] - expected[i];
-    T weight = (!this->coreConfig.costFunctionConfig.weights.empty()) ? this->coreConfig.costFunctionConfig.weights[i] : static_cast<T>(1);
-    loss += weight * diff * diff;
+  switch (this->coreConfig.costFunctionConfig.type) {
+    case CostFunctionType::CROSS_ENTROPY: {
+      // Cross-entropy: L = -sum(w_i * y_i * log(a_i))
+      const T epsilon = static_cast<T>(1e-7);
+      for (ulong i = 0; i < expected.size(); i++) {
+        T pred = std::max(predicted[i], epsilon);
+        T weight = (!this->coreConfig.costFunctionConfig.weights.empty()) ? this->coreConfig.costFunctionConfig.weights[i] : static_cast<T>(1);
+        loss -= weight * expected[i] * std::log(pred);
+      }
+      break;
+    }
+
+    case CostFunctionType::SQUARED_DIFFERENCE:
+    case CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE:
+    default: {
+      // Squared difference: L = sum(w_i * (a_i - y_i)^2) / N
+      for (ulong i = 0; i < expected.size(); i++) {
+        T diff = predicted[i] - expected[i];
+        T weight = (!this->coreConfig.costFunctionConfig.weights.empty()) ? this->coreConfig.costFunctionConfig.weights[i] : static_cast<T>(1);
+        loss += weight * diff * diff;
+      }
+      loss /= static_cast<T>(expected.size());
+      break;
+    }
   }
 
-  return loss / static_cast<T>(expected.size());
+  return loss;
 }
 
 //===================================================================================================================//
