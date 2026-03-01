@@ -158,6 +158,7 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
         this->gpuWorkers[gpuIdx]->update(currentBatchSize);
       }
+
     }
 
     // Sync parameters from GPU so getParameters() returns current values (e.g., for checkpoint saves)
