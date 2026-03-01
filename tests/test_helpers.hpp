@@ -23,6 +23,7 @@
 extern int testsPassed;
 extern int testsFailed;
 
+// clang-format off
 #define CHECK(cond, msg) do { \
   if (!(cond)) { \
     std::cerr << "FAIL: " << msg << " (" << __FILE__ << ":" << __LINE__ << ")" << std::endl; \
@@ -39,12 +40,14 @@ extern int testsFailed;
   try { expr; } catch (...) { threw = true; } \
   CHECK(threw, msg); \
 } while(0)
+// clang-format on
 
 // Helper: create gradient-filled tensor (values from lo to hi across spatial dims)
 // This produces diverse CNN features, avoiding the uniform-input problem where
 // all ANN inputs are identical and random weight initialization can stall learning.
-template<typename T>
-CNN::Tensor3D<T> makeGradientInput(CNN::Shape3D shape, T lo = T(0.5), T hi = T(1.0)) {
+template <typename T>
+CNN::Tensor3D<T> makeGradientInput(CNN::Shape3D shape, T lo = T(0.5), T hi = T(1.0))
+{
   CNN::Tensor3D<T> t(shape);
   ulong total = shape.c * shape.h * shape.w;
   for (ulong c = 0; c < shape.c; ++c)
@@ -53,6 +56,6 @@ CNN::Tensor3D<T> makeGradientInput(CNN::Shape3D shape, T lo = T(0.5), T hi = T(1
         ulong idx = c * shape.h * shape.w + h * shape.w + w;
         t.at(c, h, w) = lo + (hi - lo) * T(idx) / T(total > 1 ? total - 1 : 1);
       }
+
   return t;
 }
-

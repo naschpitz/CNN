@@ -9,9 +9,11 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   template <typename T>
-  class CoreCPU : public Core<T> {
+  class CoreCPU : public Core<T>
+  {
     public:
       //-- Constructor --//
       CoreCPU(const CoreConfig<T>& config);
@@ -39,4 +41,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_CORECPU_HPP
-

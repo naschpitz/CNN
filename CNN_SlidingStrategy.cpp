@@ -6,7 +6,8 @@ using namespace CNN;
 
 //===================================================================================================================//
 
-SlidingStrategyType SlidingStrategy::nameToType(const std::string& name) {
+SlidingStrategyType SlidingStrategy::nameToType(const std::string& name)
+{
   auto it = slidingStrategyMap.find(name);
 
   if (it != slidingStrategyMap.end()) {
@@ -18,7 +19,8 @@ SlidingStrategyType SlidingStrategy::nameToType(const std::string& name) {
 
 //===================================================================================================================//
 
-std::string SlidingStrategy::typeToName(const SlidingStrategyType& type) {
+std::string SlidingStrategy::typeToName(const SlidingStrategyType& type)
+{
   for (const auto& pair : slidingStrategyMap) {
     if (pair.second == type) {
       return pair.first;
@@ -30,16 +32,16 @@ std::string SlidingStrategy::typeToName(const SlidingStrategyType& type) {
 
 //===================================================================================================================//
 
-ulong SlidingStrategy::computePadding(ulong kernelSize, SlidingStrategyType strategy) {
+ulong SlidingStrategy::computePadding(ulong kernelSize, SlidingStrategyType strategy)
+{
   switch (strategy) {
-    case SlidingStrategyType::VALID:
-      return 0;
-    case SlidingStrategyType::FULL:
-      return kernelSize - 1;
-    case SlidingStrategyType::SAME:
-      return kernelSize / 2;
-    default:
-      throw std::runtime_error("Cannot compute padding for unknown sliding strategy");
+  case SlidingStrategyType::VALID:
+    return 0;
+  case SlidingStrategyType::FULL:
+    return kernelSize - 1;
+  case SlidingStrategyType::SAME:
+    return kernelSize / 2;
+  default:
+    throw std::runtime_error("Cannot compute padding for unknown sliding strategy");
   }
 }
-

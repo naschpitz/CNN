@@ -6,11 +6,9 @@
 
 //===================================================================================================================//
 
-namespace CNN {
-  enum class PoolTypeEnum {
-    MAX,
-    AVG
-  };
+namespace CNN
+{
+  enum class PoolTypeEnum { MAX, AVG };
 
   const std::unordered_map<std::string, PoolTypeEnum> poolTypeMap = {
     {"max", PoolTypeEnum::MAX},
@@ -28,4 +26,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_POOLTYPE_HPP
-

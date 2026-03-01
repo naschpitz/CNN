@@ -2,7 +2,8 @@
 
 //===================================================================================================================//
 
-static void testEndToEnd() {
+static void testEndToEnd()
+{
   std::cout << "--- testEndToEnd (train + predict) ---" << std::endl;
 
   // 1x5x5 → Conv(1 filter 3x3 valid) → 1x3x3 → ReLU → Flatten(9) → Dense(1, sigmoid)
@@ -33,7 +34,7 @@ static void testEndToEnd() {
   initConv.inputC = 1;
   initConv.filterH = 3;
   initConv.filterW = 3;
-  initConv.filters.assign(9, 0.1);  // All positive → sum = 0.9 > 0
+  initConv.filters.assign(9, 0.1); // All positive → sum = 0.9 > 0
   initConv.biases.assign(1, 0.0);
   config.parameters.convParams = {initConv};
 
@@ -53,12 +54,15 @@ static void testEndToEnd() {
   CNN::Output<double> pred0, pred1;
   bool converged = false;
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
+    if (attempt > 0)
+      std::cout << "  retry #" << attempt << std::endl;
     core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
-    if (pred0[0] > pred1[0]) converged = true;
+
+    if (pred0[0] > pred1[0])
+      converged = true;
   }
 
   CHECK(core != nullptr, "core creation");
@@ -78,7 +82,8 @@ static void testEndToEnd() {
 
 //===================================================================================================================//
 
-static void testMultiConvStack() {
+static void testMultiConvStack()
+{
   std::cout << "--- testMultiConvStack (Conv→ReLU→Conv→ReLU→Flatten→Dense) ---" << std::endl;
 
   // 1x8x8 → Conv(2,3x3) → 2x6x6 → ReLU → Conv(1,3x3) → 1x4x4 → ReLU → Flatten(16) → Dense(1,sigmoid)
@@ -113,12 +118,18 @@ static void testMultiConvStack() {
 
   // Pre-init conv params to avoid dead ReLU
   CNN::ConvParameters<double> initConv1;
-  initConv1.numFilters = 2; initConv1.inputC = 1; initConv1.filterH = 3; initConv1.filterW = 3;
+  initConv1.numFilters = 2;
+  initConv1.inputC = 1;
+  initConv1.filterH = 3;
+  initConv1.filterW = 3;
   initConv1.filters.assign(2 * 1 * 3 * 3, 0.1);
   initConv1.biases.assign(2, 0.0);
 
   CNN::ConvParameters<double> initConv2;
-  initConv2.numFilters = 1; initConv2.inputC = 2; initConv2.filterH = 3; initConv2.filterW = 3;
+  initConv2.numFilters = 1;
+  initConv2.inputC = 2;
+  initConv2.filterH = 3;
+  initConv2.filterW = 3;
   initConv2.filters.assign(1 * 2 * 3 * 3, 0.1);
   initConv2.biases.assign(1, 0.0);
 
@@ -137,20 +148,23 @@ static void testMultiConvStack() {
   CNN::Output<double> pred0, pred1;
   bool converged = false;
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
+    if (attempt > 0)
+      std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
-    if (pred0[0] > pred1[0]) converged = true;
+
+    if (pred0[0] > pred1[0])
+      converged = true;
   }
 
   std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
   CHECK(converged, "multi-conv bright > dark (5 attempts)");
 }
 
-
-static void testConvPoolConv() {
+static void testConvPoolConv()
+{
   std::cout << "--- testConvPoolConv (Conv→ReLU→Pool→Conv→ReLU→Flatten→Dense) ---" << std::endl;
 
   // 1x10x10 → Conv(2,3x3) → 2x8x8 → ReLU → MaxPool(2x2,s2) → 2x4x4 → Conv(1,3x3) → 1x2x2 → ReLU → Flatten(4) → Dense(1,sigmoid)
@@ -188,12 +202,18 @@ static void testConvPoolConv() {
   config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
 
   CNN::ConvParameters<double> initConv1;
-  initConv1.numFilters = 2; initConv1.inputC = 1; initConv1.filterH = 3; initConv1.filterW = 3;
+  initConv1.numFilters = 2;
+  initConv1.inputC = 1;
+  initConv1.filterH = 3;
+  initConv1.filterW = 3;
   initConv1.filters.assign(2 * 1 * 3 * 3, 0.1);
   initConv1.biases.assign(2, 0.0);
 
   CNN::ConvParameters<double> initConv2;
-  initConv2.numFilters = 1; initConv2.inputC = 2; initConv2.filterH = 3; initConv2.filterW = 3;
+  initConv2.numFilters = 1;
+  initConv2.inputC = 2;
+  initConv2.filterH = 3;
+  initConv2.filterW = 3;
   initConv2.filters.assign(1 * 2 * 3 * 3, 0.1);
   initConv2.biases.assign(1, 0.0);
 
@@ -212,12 +232,15 @@ static void testConvPoolConv() {
   CNN::Output<double> pred0, pred1;
   bool converged = false;
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
+    if (attempt > 0)
+      std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
-    if (pred0[0] > pred1[0]) converged = true;
+
+    if (pred0[0] > pred1[0])
+      converged = true;
   }
 
   std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
@@ -226,7 +249,8 @@ static void testConvPoolConv() {
 
 //===================================================================================================================//
 
-static void testMultiChannelInput() {
+static void testMultiChannelInput()
+{
   std::cout << "--- testMultiChannelInput (3-channel RGB-like) ---" << std::endl;
 
   // 3x6x6 → Conv(2,3x3) → 2x4x4 → ReLU → Flatten(32) → Dense(1,sigmoid)
@@ -252,8 +276,11 @@ static void testMultiChannelInput() {
   config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
 
   CNN::ConvParameters<double> initConv;
-  initConv.numFilters = 2; initConv.inputC = 3; initConv.filterH = 3; initConv.filterW = 3;
-  initConv.filters.assign(2 * 3 * 3 * 3, 0.05);  // small positive values
+  initConv.numFilters = 2;
+  initConv.inputC = 3;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
+  initConv.filters.assign(2 * 3 * 3 * 3, 0.05); // small positive values
   initConv.biases.assign(2, 0.0);
   config.parameters.convParams = {initConv};
 
@@ -271,12 +298,15 @@ static void testMultiChannelInput() {
   CNN::Output<double> pred0, pred1;
   bool converged = false;
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
+    if (attempt > 0)
+      std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
-    if (pred0[0] > pred1[0]) converged = true;
+
+    if (pred0[0] > pred1[0])
+      converged = true;
   }
 
   std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
@@ -285,7 +315,8 @@ static void testMultiChannelInput() {
 
 //===================================================================================================================//
 
-static void testParameterRoundTrip() {
+static void testParameterRoundTrip()
+{
   std::cout << "--- testParameterRoundTrip ---" << std::endl;
 
   CNN::CoreConfig<double> config;
@@ -310,7 +341,10 @@ static void testParameterRoundTrip() {
   config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
 
   CNN::ConvParameters<double> initConv;
-  initConv.numFilters = 1; initConv.inputC = 1; initConv.filterH = 3; initConv.filterW = 3;
+  initConv.numFilters = 1;
+  initConv.inputC = 1;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
   initConv.filters.assign(9, 0.1);
   initConv.biases.assign(1, 0.0);
   config.parameters.convParams = {initConv};
@@ -343,6 +377,7 @@ static void testParameterRoundTrip() {
       break;
     }
   }
+
   CHECK(filtersChanged, "param roundtrip: filters changed after training");
 
   // Create a new core in PREDICT mode with trained parameters
@@ -366,7 +401,8 @@ static void testParameterRoundTrip() {
 
 //===================================================================================================================//
 
-static void testParametersDuringTraining() {
+static void testParametersDuringTraining()
+{
   std::cout << "--- testParametersDuringTraining ---" << std::endl;
 
   // Train and verify getParameters() returns populated conv AND dense params
@@ -394,7 +430,10 @@ static void testParametersDuringTraining() {
   config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
 
   CNN::ConvParameters<double> initConv;
-  initConv.numFilters = 1; initConv.inputC = 1; initConv.filterH = 3; initConv.filterW = 3;
+  initConv.numFilters = 1;
+  initConv.inputC = 1;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
   initConv.filters.assign(9, 0.1);
   initConv.biases.assign(1, 0.0);
   config.parameters.convParams = {initConv};
@@ -426,6 +465,7 @@ static void testParametersDuringTraining() {
       denseBiasesNonEmpty = !params.denseParams.biases.empty();
       paramsChecked = true;
     }
+
     lastEpoch = progress.currentEpoch;
   });
 
@@ -439,7 +479,8 @@ static void testParametersDuringTraining() {
 
 //===================================================================================================================//
 
-static void testMultipleOutputNeurons() {
+static void testMultipleOutputNeurons()
+{
   std::cout << "--- testMultipleOutputNeurons ---" << std::endl;
 
   // 1x8x8 → Conv(2,3x3) → ReLU → Flatten(72) → Dense(3, sigmoid)
@@ -465,7 +506,10 @@ static void testMultipleOutputNeurons() {
   config.layersConfig.denseLayers = {{3, ANN::ActvFuncType::SIGMOID}};
 
   CNN::ConvParameters<double> initConv;
-  initConv.numFilters = 2; initConv.inputC = 1; initConv.filterH = 3; initConv.filterW = 3;
+  initConv.numFilters = 2;
+  initConv.inputC = 1;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
   initConv.filters.assign(2 * 9, 0.1);
   initConv.biases.assign(2, 0.0);
   config.parameters.convParams = {initConv};
@@ -476,20 +520,23 @@ static void testMultipleOutputNeurons() {
 
   CNN::Samples<double> samples(2);
   samples[0].input = makeGradientInput<double>({1, 8, 8});
-  samples[0].output = {1.0, 0.0, 1.0};  // target: [1, 0, 1]
+  samples[0].output = {1.0, 0.0, 1.0}; // target: [1, 0, 1]
   samples[1].input = CNN::Tensor3D<double>({1, 8, 8}, 0.0);
-  samples[1].output = {0.0, 1.0, 0.0};  // target: [0, 1, 0]
+  samples[1].output = {0.0, 1.0, 0.0}; // target: [0, 1, 0]
 
   // Retry up to 5 times to handle random ANN weight initialization
   CNN::Output<double> pred0, pred1;
   bool converged = false;
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0) std::cout << "  retry #" << attempt << std::endl;
+    if (attempt > 0)
+      std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
     pred0 = core->predict(samples[0].input);
     pred1 = core->predict(samples[1].input);
-    if (pred0[0] > pred1[0]) converged = true;
+
+    if (pred0[0] > pred1[0])
+      converged = true;
   }
 
   CHECK(pred0.size() == 3, "multi-output size");
@@ -499,7 +546,8 @@ static void testMultipleOutputNeurons() {
 
 //===================================================================================================================//
 
-static void testCostFunctionConfigGetter() {
+static void testCostFunctionConfigGetter()
+{
   std::cout << "--- testCostFunctionConfigGetter ---" << std::endl;
 
   // Default config
@@ -542,7 +590,8 @@ static void testCostFunctionConfigGetter() {
 
 //===================================================================================================================//
 
-static void testWeightedLossTraining() {
+static void testWeightedLossTraining()
+{
   std::cout << "--- testWeightedLossTraining ---" << std::endl;
 
   // 1x5x5 → Conv(1,3x3) → ReLU → Flatten(9) → Dense(2, sigmoid)
@@ -566,7 +615,10 @@ static void testWeightedLossTraining() {
   config.layersConfig.denseLayers = {{2, ANN::ActvFuncType::SIGMOID}};
 
   CNN::ConvParameters<double> initConv;
-  initConv.numFilters = 1; initConv.inputC = 1; initConv.filterH = 3; initConv.filterW = 3;
+  initConv.numFilters = 1;
+  initConv.inputC = 1;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
   initConv.filters.assign(9, 0.1);
   initConv.biases.assign(1, 0.0);
   config.parameters.convParams = {initConv};
@@ -605,7 +657,8 @@ static void testWeightedLossTraining() {
 
 //===================================================================================================================//
 
-static void testShuffleSamplesDefault() {
+static void testShuffleSamplesDefault()
+{
   std::cout << "--- testShuffleSamplesDefault ---" << std::endl;
 
   CNN::TrainingConfig<double> tc;
@@ -614,7 +667,8 @@ static void testShuffleSamplesDefault() {
 
 //===================================================================================================================//
 
-static void testShuffleSamplesTraining() {
+static void testShuffleSamplesTraining()
+{
   std::cout << "--- testShuffleSamplesTraining ---" << std::endl;
 
   // Train with shuffle=true and shuffle=false, both should converge
@@ -669,8 +723,11 @@ static void testShuffleSamplesTraining() {
     core->train(samples.size(), CNN::makeSampleProvider(samples));
     auto p0 = core->predict(samples[0].input);
     auto p1 = core->predict(samples[1].input);
-    if (p0[0] > p1[0]) shuffleConverged = true;
+
+    if (p0[0] > p1[0])
+      shuffleConverged = true;
   }
+
   CHECK(shuffleConverged, "CNN shuffle=true converged (5 attempts)");
 
   // Shuffle disabled
@@ -680,17 +737,20 @@ static void testShuffleSamplesTraining() {
     core->train(samples.size(), CNN::makeSampleProvider(samples));
     auto p0 = core->predict(samples[0].input);
     auto p1 = core->predict(samples[1].input);
-    if (p0[0] > p1[0]) noShuffleConverged = true;
+
+    if (p0[0] > p1[0])
+      noShuffleConverged = true;
   }
+
   CHECK(noShuffleConverged, "CNN shuffle=false converged (5 attempts)");
 
-  std::cout << "  shuffle=true: " << shuffleConverged
-            << "  shuffle=false: " << noShuffleConverged << std::endl;
+  std::cout << "  shuffle=true: " << shuffleConverged << "  shuffle=false: " << noShuffleConverged << std::endl;
 }
 
 //===================================================================================================================//
 
-void runIntegrationTests() {
+void runIntegrationTests()
+{
   testEndToEnd();
   testMultiConvStack();
   testConvPoolConv();

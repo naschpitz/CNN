@@ -8,9 +8,11 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   template <typename T>
-  class Pool {
+  class Pool
+  {
     public:
       // Propagate: apply max or avg pooling
       // maxIndices: [out] for max pooling, stores index of max element per output position
@@ -25,12 +27,10 @@ namespace CNN {
       // maxIndices: the indices saved during propagation (for max pooling)
       // Returns: gradient of loss w.r.t. input [C x inputH x inputW]
       static Tensor3D<T> backpropagate(const Tensor3D<T>& dOut, const Shape3D& inputShape,
-                                       const PoolLayerConfig& config,
-                                       const std::vector<ulong>& maxIndices);
+                                       const PoolLayerConfig& config, const std::vector<ulong>& maxIndices);
   };
 }
 
 //===================================================================================================================//
 
 #endif // CNN_POOL_HPP
-

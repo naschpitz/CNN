@@ -7,8 +7,8 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> Pool<T>::predict(const Tensor3D<T>& input, const PoolLayerConfig& config,
-                             std::vector<ulong>& maxIndices) {
+Tensor3D<T> Pool<T>::predict(const Tensor3D<T>& input, const PoolLayerConfig& config, std::vector<ulong>& maxIndices)
+{
   const ulong inputC = input.shape.c;
   const ulong inputH = input.shape.h;
   const ulong inputW = input.shape.w;
@@ -79,9 +79,9 @@ Tensor3D<T> Pool<T>::predict(const Tensor3D<T>& input, const PoolLayerConfig& co
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> Pool<T>::backpropagate(const Tensor3D<T>& dOut, const Shape3D& inputShape,
-                                   const PoolLayerConfig& config,
-                                   const std::vector<ulong>& maxIndices) {
+Tensor3D<T> Pool<T>::backpropagate(const Tensor3D<T>& dOut, const Shape3D& inputShape, const PoolLayerConfig& config,
+                                   const std::vector<ulong>& maxIndices)
+{
   const ulong outC = dOut.shape.c;
   const ulong outH = dOut.shape.h;
   const ulong outW = dOut.shape.w;
@@ -129,4 +129,3 @@ Tensor3D<T> Pool<T>::backpropagate(const Tensor3D<T>& dOut, const Shape3D& input
 template class CNN::Pool<int>;
 template class CNN::Pool<double>;
 template class CNN::Pool<float>;
-

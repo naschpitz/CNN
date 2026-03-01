@@ -9,9 +9,11 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   template <typename T>
-  class CoreGPU : public Core<T> {
+  class CoreGPU : public Core<T>
+  {
     public:
       CoreGPU(const CoreConfig<T>& config);
 
@@ -36,4 +38,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_COREGPU_HPP
-

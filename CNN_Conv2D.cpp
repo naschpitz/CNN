@@ -6,8 +6,8 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> Conv2D<T>::predict(const Tensor3D<T>& input, const ConvLayerConfig& config,
-                               const ConvParameters<T>& params) {
+Tensor3D<T> Conv2D<T>::predict(const Tensor3D<T>& input, const ConvLayerConfig& config, const ConvParameters<T>& params)
+{
   const ulong inputC = input.shape.c;
   const ulong inputH = input.shape.h;
   const ulong inputW = input.shape.w;
@@ -39,13 +39,11 @@ Tensor3D<T> Conv2D<T>::predict(const Tensor3D<T>& input, const ConvLayerConfig& 
               long iw = static_cast<long>(ow * sX + kw) - static_cast<long>(padX);
 
               // Skip if outside input bounds (zero-padding)
-              if (ih < 0 || ih >= static_cast<long>(inputH) ||
-                  iw < 0 || iw >= static_cast<long>(inputW)) {
+              if (ih < 0 || ih >= static_cast<long>(inputH) || iw < 0 || iw >= static_cast<long>(inputW)) {
                 continue;
               }
 
-              sum += input.at(c, static_cast<ulong>(ih), static_cast<ulong>(iw)) *
-                     params.filterAt(f, c, kh, kw);
+              sum += input.at(c, static_cast<ulong>(ih), static_cast<ulong>(iw)) * params.filterAt(f, c, kh, kw);
             }
           }
         }
@@ -61,9 +59,9 @@ Tensor3D<T> Conv2D<T>::predict(const Tensor3D<T>& input, const ConvLayerConfig& 
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> Conv2D<T>::backpropagate(const Tensor3D<T>& dOut, const Tensor3D<T>& input,
-                                     const ConvLayerConfig& config, const ConvParameters<T>& params,
-                                     std::vector<T>& dFilters, std::vector<T>& dBiases) {
+Tensor3D<T> Conv2D<T>::backpropagate(const Tensor3D<T>& dOut, const Tensor3D<T>& input, const ConvLayerConfig& config,
+                                     const ConvParameters<T>& params, std::vector<T>& dFilters, std::vector<T>& dBiases)
+{
   const ulong inputC = input.shape.c;
   const ulong inputH = input.shape.h;
   const ulong inputW = input.shape.w;
@@ -101,8 +99,7 @@ Tensor3D<T> Conv2D<T>::backpropagate(const Tensor3D<T>& dOut, const Tensor3D<T>&
               long ih = static_cast<long>(oh * sY + kh) - static_cast<long>(padY);
               long iw = static_cast<long>(ow * sX + kw) - static_cast<long>(padX);
 
-              if (ih < 0 || ih >= static_cast<long>(inputH) ||
-                  iw < 0 || iw >= static_cast<long>(inputW)) {
+              if (ih < 0 || ih >= static_cast<long>(inputH) || iw < 0 || iw >= static_cast<long>(inputW)) {
                 continue;
               }
 
@@ -131,4 +128,3 @@ Tensor3D<T> Conv2D<T>::backpropagate(const Tensor3D<T>& dOut, const Tensor3D<T>&
 template class CNN::Conv2D<int>;
 template class CNN::Conv2D<double>;
 template class CNN::Conv2D<float>;
-

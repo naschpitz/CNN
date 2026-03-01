@@ -3,17 +3,11 @@
 
 //===================================================================================================================//
 
-namespace CNN {
-  enum class LogLevel : int {
-    QUIET   = 0,
-    ERROR   = 1,
-    WARNING = 2,
-    INFO    = 3,
-    DEBUG   = 4
-  };
+namespace CNN
+{
+  enum class LogLevel : int { QUIET = 0, ERROR = 1, WARNING = 2, INFO = 3, DEBUG = 4 };
 }
 
 //===================================================================================================================//
 
 #endif // CNN_LOGLEVEL_HPP
-

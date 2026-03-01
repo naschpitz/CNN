@@ -14,9 +14,11 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   template <typename T>
-  class Core {
+  class Core
+  {
     public:
       //-- Factory --//
       static std::unique_ptr<Core<T>> makeCore(const CoreConfig<T>& config);
@@ -30,24 +32,77 @@ namespace CNN {
       virtual ~Core() = default;
 
       //-- Getters --//
-      ModeType getModeType() const { return modeType; }
-      DeviceType getDeviceType() const { return deviceType; }
-      int getNumThreads() const { return numThreads; }
-      int getNumGPUs() const { return numGPUs; }
-      const Shape3D& getInputShape() const { return inputShape; }
-      const LayersConfig& getLayersConfig() const { return layersConfig; }
-      const TrainingConfig<T>& getTrainingConfig() const { return trainingConfig; }
-      const PredictMetadata<T>& getPredictMetadata() const { return predictMetadata; }
-      const TrainingMetadata<T>& getTrainingMetadata() const { return trainingMetadata; }
-      const Parameters<T>& getParameters() const { return parameters; }
-      const CostFunctionConfig<T>& getCostFunctionConfig() const { return coreConfig.costFunctionConfig; }
+      ModeType getModeType() const
+      {
+        return modeType;
+      }
+
+      DeviceType getDeviceType() const
+      {
+        return deviceType;
+      }
+
+      int getNumThreads() const
+      {
+        return numThreads;
+      }
+
+      int getNumGPUs() const
+      {
+        return numGPUs;
+      }
+
+      const Shape3D& getInputShape() const
+      {
+        return inputShape;
+      }
+
+      const LayersConfig& getLayersConfig() const
+      {
+        return layersConfig;
+      }
+
+      const TrainingConfig<T>& getTrainingConfig() const
+      {
+        return trainingConfig;
+      }
+
+      const PredictMetadata<T>& getPredictMetadata() const
+      {
+        return predictMetadata;
+      }
+
+      const TrainingMetadata<T>& getTrainingMetadata() const
+      {
+        return trainingMetadata;
+      }
+
+      const Parameters<T>& getParameters() const
+      {
+        return parameters;
+      }
+
+      const CostFunctionConfig<T>& getCostFunctionConfig() const
+      {
+        return coreConfig.costFunctionConfig;
+      }
 
       //-- Setters --//
-      void setTrainingCallback(TrainingCallback<T> callback) { trainingCallback = callback; }
+      void setTrainingCallback(TrainingCallback<T> callback)
+      {
+        trainingCallback = callback;
+      }
 
       //-- Log level --//
-      void setLogLevel(LogLevel level) { logLevel = level; }
-      LogLevel getLogLevel() const { return logLevel; }
+      void setLogLevel(LogLevel level)
+      {
+        logLevel = level;
+      }
+
+      LogLevel getLogLevel() const
+      {
+        return logLevel;
+      }
 
     protected:
       //-- Constructor / Validation --//
@@ -90,4 +145,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_CORE_HPP
-

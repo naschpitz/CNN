@@ -13,53 +13,52 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   // Convolution layer configuration
   struct ConvLayerConfig {
-    ulong numFilters;
-    ulong filterH;
-    ulong filterW;
-    ulong strideY;
-    ulong strideX;
-    SlidingStrategyType slidingStrategy;
+      ulong numFilters;
+      ulong filterH;
+      ulong filterW;
+      ulong strideY;
+      ulong strideX;
+      SlidingStrategyType slidingStrategy;
   };
 
   // ReLU layer configuration (no parameters)
-  struct ReLULayerConfig {};
+  struct ReLULayerConfig {
+  };
 
   // Pooling layer configuration
   struct PoolLayerConfig {
-    PoolTypeEnum poolType;
-    ulong poolH;
-    ulong poolW;
-    ulong strideY;
-    ulong strideX;
+      PoolTypeEnum poolType;
+      ulong poolH;
+      ulong poolW;
+      ulong strideY;
+      ulong strideX;
   };
 
   // Flatten layer configuration (no parameters, auto-inserted before dense)
-  struct FlattenLayerConfig {};
-
-  // A CNN layer can be any of these types
-  enum class LayerType {
-    CONV,
-    RELU,
-    POOL,
-    FLATTEN
+  struct FlattenLayerConfig {
   };
 
+  // A CNN layer can be any of these types
+  enum class LayerType { CONV, RELU, POOL, FLATTEN };
+
   struct CNNLayerConfig {
-    LayerType type;
-    std::variant<ConvLayerConfig, ReLULayerConfig, PoolLayerConfig, FlattenLayerConfig> config;
+      LayerType type;
+      std::variant<ConvLayerConfig, ReLULayerConfig, PoolLayerConfig, FlattenLayerConfig> config;
   };
 
   // Dense layer configuration (delegates to ANN)
   struct DenseLayerConfig {
-    ulong numNeurons;
-    ANN::ActvFuncType actvFuncType;
+      ulong numNeurons;
+      ANN::ActvFuncType actvFuncType;
   };
 
   // Full CNN layers configuration
-  class LayersConfig {
+  class LayersConfig
+  {
     public:
       std::vector<CNNLayerConfig> cnnLayers;
       std::vector<DenseLayerConfig> denseLayers;
@@ -73,4 +72,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_LAYERSCONFIG_HPP
-

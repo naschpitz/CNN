@@ -7,9 +7,11 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   template <typename T>
-  class Conv2D {
+  class Conv2D
+  {
     public:
       // Propagate: input -> output
       static Tensor3D<T> predict(const Tensor3D<T>& input, const ConvLayerConfig& config,
@@ -23,13 +25,12 @@ namespace CNN {
       // dFilters: [out] gradient w.r.t. filters (same shape as params.filters)
       // dBiases: [out] gradient w.r.t. biases (same shape as params.biases)
       // Returns: gradient of loss w.r.t. input [inputC x inputH x inputW]
-      static Tensor3D<T> backpropagate(const Tensor3D<T>& dOut, const Tensor3D<T>& input,
-                                       const ConvLayerConfig& config, const ConvParameters<T>& params,
-                                       std::vector<T>& dFilters, std::vector<T>& dBiases);
+      static Tensor3D<T> backpropagate(const Tensor3D<T>& dOut, const Tensor3D<T>& input, const ConvLayerConfig& config,
+                                       const ConvParameters<T>& params, std::vector<T>& dFilters,
+                                       std::vector<T>& dBiases);
   };
 }
 
 //===================================================================================================================//
 
 #endif // CNN_CONV2D_HPP
-

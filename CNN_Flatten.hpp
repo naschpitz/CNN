@@ -5,9 +5,11 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   template <typename T>
-  class Flatten {
+  class Flatten
+  {
     public:
       // Propagate: reshape 3D tensor to 1D vector
       static Tensor1D<T> predict(const Tensor3D<T>& input);
@@ -23,4 +25,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_FLATTEN_HPP
-

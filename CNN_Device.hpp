@@ -6,11 +6,9 @@
 
 //===================================================================================================================//
 
-namespace CNN {
-  enum class DeviceType {
-    CPU,
-    GPU
-  };
+namespace CNN
+{
+  enum class DeviceType { CPU, GPU };
 
   const std::unordered_map<std::string, DeviceType> deviceTypeMap = {
     {"cpu", DeviceType::CPU},
@@ -28,4 +26,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_DEVICE_HPP
-

@@ -8,15 +8,16 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   template <typename T>
-  class Worker {
+  class Worker
+  {
     public:
       virtual ~Worker() = default;
 
       //-- Conv parameter initialization (shared by CPU and GPU workers) --//
-      static void initializeConvParams(const LayersConfig& layersConfig,
-                                       const Shape3D& inputShape,
+      static void initializeConvParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
                                        Parameters<T>& parameters);
 
       //-- Loss calculation (shared by CPU and GPU workers) --//
@@ -30,4 +31,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_WORKER_HPP
-

@@ -2,15 +2,20 @@
 
 //===================================================================================================================//
 
-static void testConv2DPropagate() {
+static void testConv2DPropagate()
+{
   std::cout << "--- testConv2DPropagate ---" << std::endl;
 
   CNN::Tensor3D<double> input({1, 4, 4});
-  for (ulong i = 0; i < 16; i++) input.data[i] = static_cast<double>(i + 1);
+  for (ulong i = 0; i < 16; i++)
+    input.data[i] = static_cast<double>(i + 1);
 
   CNN::ConvLayerConfig config{1, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
   CNN::ConvParameters<double> params;
-  params.numFilters = 1; params.inputC = 1; params.filterH = 3; params.filterW = 3;
+  params.numFilters = 1;
+  params.inputC = 1;
+  params.filterH = 3;
+  params.filterW = 3;
   params.filters.assign(9, 1.0);
   params.biases.assign(1, 0.0);
 
@@ -24,15 +29,20 @@ static void testConv2DPropagate() {
 
 //===================================================================================================================//
 
-static void testConv2DBackprop() {
+static void testConv2DBackprop()
+{
   std::cout << "--- testConv2DBackprop ---" << std::endl;
 
   CNN::Tensor3D<double> input({1, 4, 4});
-  for (ulong i = 0; i < 16; i++) input.data[i] = static_cast<double>(i + 1);
+  for (ulong i = 0; i < 16; i++)
+    input.data[i] = static_cast<double>(i + 1);
 
   CNN::ConvLayerConfig config{1, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
   CNN::ConvParameters<double> params;
-  params.numFilters = 1; params.inputC = 1; params.filterH = 3; params.filterW = 3;
+  params.numFilters = 1;
+  params.inputC = 1;
+  params.filterH = 3;
+  params.filterW = 3;
   params.filters.assign(9, 1.0);
   params.biases.assign(1, 0.0);
 
@@ -48,17 +58,22 @@ static void testConv2DBackprop() {
 
 //===================================================================================================================//
 
-static void testConv2DWithBias() {
+static void testConv2DWithBias()
+{
   std::cout << "--- testConv2DWithBias ---" << std::endl;
 
   // 1x3x3 input, 1 filter 2x2, VALID, bias = 10.0
   CNN::Tensor3D<double> input({1, 3, 3});
-  for (ulong i = 0; i < 9; i++) input.data[i] = 1.0;  // all ones
+  for (ulong i = 0; i < 9; i++)
+    input.data[i] = 1.0; // all ones
 
   CNN::ConvLayerConfig config{1, 2, 2, 1, 1, CNN::SlidingStrategyType::VALID};
   CNN::ConvParameters<double> params;
-  params.numFilters = 1; params.inputC = 1; params.filterH = 2; params.filterW = 2;
-  params.filters.assign(4, 1.0);  // all ones
+  params.numFilters = 1;
+  params.inputC = 1;
+  params.filterH = 2;
+  params.filterW = 2;
+  params.filters.assign(4, 1.0); // all ones
   params.biases = {10.0};
 
   CNN::Tensor3D<double> out = CNN::Conv2D<double>::predict(input, config, params);
@@ -70,17 +85,22 @@ static void testConv2DWithBias() {
 
 //===================================================================================================================//
 
-static void testConv2DMultiFilter() {
+static void testConv2DMultiFilter()
+{
   std::cout << "--- testConv2DMultiFilter ---" << std::endl;
 
   // 1x3x3 input, 2 filters 2x2, VALID
   CNN::Tensor3D<double> input({1, 3, 3});
-  for (ulong i = 0; i < 9; i++) input.data[i] = static_cast<double>(i + 1);
+  for (ulong i = 0; i < 9; i++)
+    input.data[i] = static_cast<double>(i + 1);
   // input: [[1,2,3],[4,5,6],[7,8,9]]
 
   CNN::ConvLayerConfig config{2, 2, 2, 1, 1, CNN::SlidingStrategyType::VALID};
   CNN::ConvParameters<double> params;
-  params.numFilters = 2; params.inputC = 1; params.filterH = 2; params.filterW = 2;
+  params.numFilters = 2;
+  params.inputC = 1;
+  params.filterH = 2;
+  params.filterW = 2;
   // Filter 0: all 1s, Filter 1: all -1s
   params.filters = {1, 1, 1, 1, -1, -1, -1, -1};
   params.biases = {0.0, 0.0};
@@ -100,7 +120,8 @@ static void testConv2DMultiFilter() {
 
 //===================================================================================================================//
 
-static void testConv2DMultiChannel() {
+static void testConv2DMultiChannel()
+{
   std::cout << "--- testConv2DMultiChannel ---" << std::endl;
 
   // 2x2x2 input (2 channels), 1 filter 2x2, VALID
@@ -110,7 +131,10 @@ static void testConv2DMultiChannel() {
 
   CNN::ConvLayerConfig config{1, 2, 2, 1, 1, CNN::SlidingStrategyType::VALID};
   CNN::ConvParameters<double> params;
-  params.numFilters = 1; params.inputC = 2; params.filterH = 2; params.filterW = 2;
+  params.numFilters = 1;
+  params.inputC = 2;
+  params.filterH = 2;
+  params.filterW = 2;
   // Filter for ch0: [[1,0],[0,1]], Filter for ch1: [[0,1],[1,0]]
   params.filters = {1, 0, 0, 1, 0, 1, 1, 0};
   params.biases = {0.0};
@@ -125,7 +149,8 @@ static void testConv2DMultiChannel() {
 
 //===================================================================================================================//
 
-static void testConv2DBackpropValues() {
+static void testConv2DBackpropValues()
+{
   std::cout << "--- testConv2DBackpropValues ---" << std::endl;
 
   // 1x3x3 input, 1 filter 2x2, VALID → 1x2x2 output
@@ -134,12 +159,15 @@ static void testConv2DBackpropValues() {
 
   CNN::ConvLayerConfig config{1, 2, 2, 1, 1, CNN::SlidingStrategyType::VALID};
   CNN::ConvParameters<double> params;
-  params.numFilters = 1; params.inputC = 1; params.filterH = 2; params.filterW = 2;
+  params.numFilters = 1;
+  params.inputC = 1;
+  params.filterH = 2;
+  params.filterW = 2;
   params.filters = {1, 2, 3, 4};
   params.biases = {0.0};
 
   CNN::Tensor3D<double> dOut({1, 2, 2});
-  dOut.data = {1, 1, 1, 1};  // uniform gradient
+  dOut.data = {1, 1, 1, 1}; // uniform gradient
 
   std::vector<double> dFilters, dBiases;
   CNN::Tensor3D<double> dInput = CNN::Conv2D<double>::backpropagate(dOut, input, config, params, dFilters, dBiases);
@@ -168,16 +196,21 @@ static void testConv2DBackpropValues() {
 
 //===================================================================================================================//
 
-static void testConv2DStride() {
+static void testConv2DStride()
+{
   std::cout << "--- testConv2DStride ---" << std::endl;
 
   // 1x4x4 input, 1 filter 2x2, stride 2, VALID → 1x2x2 output
   CNN::Tensor3D<double> input({1, 4, 4});
-  for (ulong i = 0; i < 16; i++) input.data[i] = static_cast<double>(i + 1);
+  for (ulong i = 0; i < 16; i++)
+    input.data[i] = static_cast<double>(i + 1);
 
   CNN::ConvLayerConfig config{1, 2, 2, 2, 2, CNN::SlidingStrategyType::VALID};
   CNN::ConvParameters<double> params;
-  params.numFilters = 1; params.inputC = 1; params.filterH = 2; params.filterW = 2;
+  params.numFilters = 1;
+  params.inputC = 1;
+  params.filterH = 2;
+  params.filterW = 2;
   params.filters.assign(4, 1.0);
   params.biases = {0.0};
 
@@ -195,16 +228,21 @@ static void testConv2DStride() {
 
 //===================================================================================================================//
 
-static void testConv2DSamePadding() {
+static void testConv2DSamePadding()
+{
   std::cout << "--- testConv2DSamePadding ---" << std::endl;
 
   // 1x3x3 input, 1 filter 3x3, stride 1, SAME (pad=1) → 1x3x3 output
   CNN::Tensor3D<double> input({1, 3, 3});
-  for (ulong i = 0; i < 9; i++) input.data[i] = 1.0;
+  for (ulong i = 0; i < 9; i++)
+    input.data[i] = 1.0;
 
   CNN::ConvLayerConfig config{1, 3, 3, 1, 1, CNN::SlidingStrategyType::SAME};
   CNN::ConvParameters<double> params;
-  params.numFilters = 1; params.inputC = 1; params.filterH = 3; params.filterW = 3;
+  params.numFilters = 1;
+  params.inputC = 1;
+  params.filterH = 3;
+  params.filterW = 3;
   params.filters.assign(9, 1.0);
   params.biases = {0.0};
 
@@ -221,7 +259,8 @@ static void testConv2DSamePadding() {
 
 //===================================================================================================================//
 
-static void testConv2DFullPadding() {
+static void testConv2DFullPadding()
+{
   std::cout << "--- testConv2DFullPadding ---" << std::endl;
 
   // 1x2x2 input, 1 filter 2x2, stride 1, FULL (pad=1) → 1x3x3 output
@@ -230,7 +269,10 @@ static void testConv2DFullPadding() {
 
   CNN::ConvLayerConfig config{1, 2, 2, 1, 1, CNN::SlidingStrategyType::FULL};
   CNN::ConvParameters<double> params;
-  params.numFilters = 1; params.inputC = 1; params.filterH = 2; params.filterW = 2;
+  params.numFilters = 1;
+  params.inputC = 1;
+  params.filterH = 2;
+  params.filterW = 2;
   params.filters.assign(4, 1.0);
   params.biases = {0.0};
 
@@ -247,7 +289,8 @@ static void testConv2DFullPadding() {
 
 //===================================================================================================================//
 
-void runConv2DTests() {
+void runConv2DTests()
+{
   testConv2DPropagate();
   testConv2DBackprop();
   testConv2DWithBias();
@@ -258,4 +301,3 @@ void runConv2DTests() {
   testConv2DSamePadding();
   testConv2DFullPadding();
 }
-

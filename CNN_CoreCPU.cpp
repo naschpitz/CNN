@@ -19,7 +19,8 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config) {
+CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
+{
   // Initialize conv parameters if not loaded
   Worker<T>::initializeConvParams(this->layersConfig, this->inputShape, this->parameters);
 
@@ -42,14 +43,16 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config) {
 //===================================================================================================================//
 
 template <typename T>
-Output<T> CoreCPU<T>::predict(const Input<T>& input) {
+Output<T> CoreCPU<T>::predict(const Input<T>& input)
+{
   return this->stepWorker->predict(input);
 }
 
 //===================================================================================================================//
 
 template <typename T>
-void CoreCPU<T>::resetGlobalCNNAccumulators() {
+void CoreCPU<T>::resetGlobalCNNAccumulators()
+{
   for (ulong i = 0; i < this->accumDConvFilters.size(); i++) {
     std::fill(this->accumDConvFilters[i].begin(), this->accumDConvFilters[i].end(), static_cast<T>(0));
     std::fill(this->accumDConvBiases[i].begin(), this->accumDConvBiases[i].end(), static_cast<T>(0));
@@ -59,7 +62,8 @@ void CoreCPU<T>::resetGlobalCNNAccumulators() {
 //===================================================================================================================//
 
 template <typename T>
-void CoreCPU<T>::mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker) {
+void CoreCPU<T>::mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker)
+{
   const auto& wFilters = worker.getAccumConvFilters();
   const auto& wBiases = worker.getAccumConvBiases();
 
@@ -74,7 +78,8 @@ void CoreCPU<T>::mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker) {
 //===================================================================================================================//
 
 template <typename T>
-void CoreCPU<T>::updateCNNParameters(ulong numSamples) {
+void CoreCPU<T>::updateCNNParameters(ulong numSamples)
+{
   T lr = static_cast<T>(this->trainingConfig.learningRate);
   T n = static_cast<T>(numSamples);
 
@@ -92,13 +97,15 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples) {
 //===================================================================================================================//
 
 template <typename T>
-void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider) {
+void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider)
+{
   ulong numEpochs = this->trainingConfig.numEpochs;
 
   if (numSamples == 0)
     throw std::runtime_error("No training samples provided");
 
   int numThreads = this->numThreads;
+
   if (numThreads <= 0)
     numThreads = QThreadPool::globalInstance()->maxThreadCount();
 
@@ -106,8 +113,8 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   this->trainingStart(numSamples);
 
   if (this->logLevel >= CNN::LogLevel::INFO)
-    qDebug() << "CNN Training:" << numEpochs << "epochs," << numSamples << "samples,"
-             << numThreads << "threads, batch size" << batchSize;
+    qDebug() << "CNN Training:" << numEpochs << "epochs," << numSamples << "samples," << numThreads
+             << "threads, batch size" << batchSize;
 
   // Create per-thread CoreCPUWorkers (each owns its own ANN core)
   std::vector<std::unique_ptr<CoreCPUWorker<T>>> workers;
@@ -140,8 +147,8 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       // Per-worker sample counts (extras distributed to first workers)
       std::vector<ulong> workerSampleCounts(numThreads);
       for (int i = 0; i < numThreads; i++)
-        workerSampleCounts[i] = currentBatchSize / static_cast<ulong>(numThreads)
-                              + (static_cast<ulong>(i) < currentBatchSize % static_cast<ulong>(numThreads) ? 1 : 0);
+        workerSampleCounts[i] = currentBatchSize / static_cast<ulong>(numThreads) +
+                                (static_cast<ulong>(i) < currentBatchSize % static_cast<ulong>(numThreads) ? 1 : 0);
 
       // Sync worker ANN cores with main parameters and reset all accumulators
       ANN::Parameters<T> mainANNParams = this->stepWorker->getANNCore()->getParameters();
@@ -153,13 +160,15 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 
       // Each worker processes its chunk of the batch end-to-end (fully parallel)
       QVector<int> workerIndices(numThreads);
-      for (int i = 0; i < numThreads; i++) workerIndices[i] = i;
+      for (int i = 0; i < numThreads; i++)
+        workerIndices[i] = i;
 
       QtConcurrent::blockingMap(workerIndices, [&](int workerIdx) {
         CoreCPUWorker<T>& worker = *workers[workerIdx];
 
         ulong workerLocalStart = 0;
-        for (int i = 0; i < workerIdx; i++) workerLocalStart += workerSampleCounts[i];
+        for (int i = 0; i < workerIdx; i++)
+          workerLocalStart += workerSampleCounts[i];
         ulong workerLocalEnd = workerLocalStart + workerSampleCounts[workerIdx];
 
         for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
@@ -167,6 +176,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
           T sampleLoss = worker.processSample(sample.input, sample.output);
 
           ulong completed = ++completedSamples;
+
           if (this->trainingCallback) {
             QMutexLocker locker(&callbackMutex);
             TrainingProgress<T> progress;
@@ -183,7 +193,9 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 
       // Merge: update each worker's ANN, then weighted-average their parameters
       for (int i = 0; i < numThreads; i++)
-        if (workerSampleCounts[i] > 0) workers[i]->getANNCore()->update(workerSampleCounts[i]);
+
+        if (workerSampleCounts[i] > 0)
+          workers[i]->getANNCore()->update(workerSampleCounts[i]);
 
       ANN::Parameters<T> mergedParams;
       const ANN::Parameters<T>& ref = workers[0]->getANNCore()->getParameters();
@@ -193,12 +205,14 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
         for (ulong j = 0; j < ref.weights[l].size(); j++)
           mergedParams.weights[l][j].assign(ref.weights[l][j].size(), static_cast<T>(0));
       }
+
       mergedParams.biases.resize(ref.biases.size());
       for (ulong l = 0; l < ref.biases.size(); l++)
         mergedParams.biases[l].assign(ref.biases[l].size(), static_cast<T>(0));
 
       for (int i = 0; i < numThreads; i++) {
-        if (workerSampleCounts[i] == 0) continue;
+        if (workerSampleCounts[i] == 0)
+          continue;
         T w = static_cast<T>(workerSampleCounts[i]) / static_cast<T>(currentBatchSize);
         const ANN::Parameters<T>& wp = workers[i]->getANNCore()->getParameters();
         for (ulong l = 0; l < wp.weights.size(); l++)
@@ -218,6 +232,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
         this->mergeWorkerCNNAccumulators(*workers[i]);
         epochLoss += workers[i]->getAccumLoss();
       }
+
       this->updateCNNParameters(currentBatchSize);
     }
 
@@ -248,7 +263,8 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 //===================================================================================================================//
 
 template <typename T>
-TestResult<T> CoreCPU<T>::test(const Samples<T>& samples) {
+TestResult<T> CoreCPU<T>::test(const Samples<T>& samples)
+{
   TestResult<T> result;
   result.numSamples = samples.size();
   result.totalLoss = static_cast<T>(0);
@@ -259,19 +275,19 @@ TestResult<T> CoreCPU<T>::test(const Samples<T>& samples) {
     result.totalLoss += this->stepWorker->calculateLoss(predicted, samples[i].output);
 
     auto predIdx = std::distance(predicted.begin(), std::max_element(predicted.begin(), predicted.end()));
-    auto expIdx = std::distance(samples[i].output.begin(), std::max_element(samples[i].output.begin(), samples[i].output.end()));
+    auto expIdx =
+      std::distance(samples[i].output.begin(), std::max_element(samples[i].output.begin(), samples[i].output.end()));
 
     if (predIdx == expIdx)
       result.numCorrect++;
   }
 
-  result.averageLoss = (result.numSamples > 0)
-    ? result.totalLoss / static_cast<T>(result.numSamples)
-    : static_cast<T>(0);
+  result.averageLoss =
+    (result.numSamples > 0) ? result.totalLoss / static_cast<T>(result.numSamples) : static_cast<T>(0);
 
   result.accuracy = (result.numSamples > 0)
-    ? static_cast<T>(result.numCorrect) / static_cast<T>(result.numSamples) * static_cast<T>(100)
-    : static_cast<T>(0);
+                      ? static_cast<T>(result.numCorrect) / static_cast<T>(result.numSamples) * static_cast<T>(100)
+                      : static_cast<T>(0);
 
   return result;
 }

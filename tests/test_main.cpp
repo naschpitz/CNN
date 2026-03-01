@@ -8,7 +8,8 @@ void runLayerTests();
 void runIntegrationTests();
 void runGPUTests();
 
-int main() {
+int main()
+{
   std::cout << "=== CNN Unit Tests ===" << std::endl;
   runConv2DTests();
   runLayerTests();
@@ -25,4 +26,3 @@ int main() {
   std::cout << "=== Results: " << testsPassed << " passed, " << testsFailed << " failed ===" << std::endl;
   return (testsFailed > 0) ? 1 : 0;
 }
-

@@ -12,9 +12,11 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   template <typename T>
-  class CoreGPUWorker : public Worker<T> {
+  class CoreGPUWorker : public Worker<T>
+  {
     public:
       // Standalone constructor — creates its own OpenCL core
       CoreGPUWorker(const CoreConfig<T>& config);
@@ -28,8 +30,7 @@ namespace CNN {
       Output<T> predict(const Input<T>& input);
 
       //-- Training (called by CoreGPU orchestrator) --//
-      T trainSubset(const Samples<T>& batchSamples,
-                    ulong totalSamples, ulong epoch, ulong totalEpochs,
+      T trainSubset(const Samples<T>& batchSamples, ulong totalSamples, ulong epoch, ulong totalEpochs,
                     const TrainingCallback<T>& callback);
 
       //-- Testing --//
@@ -60,7 +61,10 @@ namespace CNN {
       void syncParametersFromGPU();
 
       //-- Parameter access --//
-      const Parameters<T>& getParameters() const { return parameters; }
+      const Parameters<T>& getParameters() const
+      {
+        return parameters;
+      }
 
       //-- Shared-core integration: source loading and buffer allocation --//
       void loadSources(bool skipDefines);
@@ -85,34 +89,37 @@ namespace CNN {
 
       //-- Per-layer buffer offset/size info --//
       struct LayerInfo {
-        ulong actvOffset;  // offset in cnn_actvs / cnn_grads
-        ulong actvSize;    // number of elements for this layer's output
+          ulong actvOffset; // offset in cnn_actvs / cnn_grads
+          ulong actvSize; // number of elements for this layer's output
       };
-      std::vector<LayerInfo> layerInfos;  // index 0 = input, 1..N = CNN layer outputs
+
+      std::vector<LayerInfo> layerInfos; // index 0 = input, 1..N = CNN layer outputs
       ulong totalActvSize = 0;
 
       // Conv layer offsets into flat filter/bias buffers
       struct ConvInfo {
-        ulong filterOffset;
-        ulong biasOffset;
-        ulong numFilterElems;
-        ulong numBiases;
+          ulong filterOffset;
+          ulong biasOffset;
+          ulong numFilterElems;
+          ulong numBiases;
       };
+
       std::vector<ConvInfo> convInfos;
       ulong totalFilterSize = 0;
       ulong totalBiasSize = 0;
 
       // Pool layer indices offset
       struct PoolInfo {
-        ulong indexOffset;
-        ulong indexSize;
+          ulong indexOffset;
+          ulong indexSize;
       };
+
       std::vector<PoolInfo> poolInfos;
       ulong totalPoolIndexSize = 0;
 
       //-- OpenCL state --//
-      std::unique_ptr<OpenCLWrapper::Core> ownedCore;  // Owned core (standalone mode)
-      OpenCLWrapper::Core* core = nullptr;              // Pointer to active core (owned or shared)
+      std::unique_ptr<OpenCLWrapper::Core> ownedCore; // Owned core (standalone mode)
+      OpenCLWrapper::Core* core = nullptr; // Pointer to active core (owned or shared)
 
       //-- ANN GPU worker (dense layers on shared core) --//
       std::unique_ptr<ANN::CoreGPUWorker<T>> annGPUWorker;
@@ -139,4 +146,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_COREGPUWORKER_HPP
-

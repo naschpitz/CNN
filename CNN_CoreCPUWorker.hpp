@@ -11,13 +11,13 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   template <typename T>
-  class CoreCPUWorker : public Worker<T> {
+  class CoreCPUWorker : public Worker<T>
+  {
     public:
-      CoreCPUWorker(const CoreConfig<T>& config,
-                    const LayersConfig& layersConfig,
-                    const Parameters<T>& sharedParams,
+      CoreCPUWorker(const CoreConfig<T>& config, const LayersConfig& layersConfig, const Parameters<T>& sharedParams,
                     bool allocateTraining);
 
       //-- Predict (inference only — no intermediates saved) --//
@@ -30,17 +30,42 @@ namespace CNN {
       void resetAccumulators();
 
       //-- Loss accumulator --//
-      T getAccumLoss() const { return accum_loss; }
-      void resetAccumLoss() { accum_loss = static_cast<T>(0); }
-      void addToAccumLoss(T loss) { accum_loss += loss; }
+      T getAccumLoss() const
+      {
+        return accum_loss;
+      }
+
+      void resetAccumLoss()
+      {
+        accum_loss = static_cast<T>(0);
+      }
+
+      void addToAccumLoss(T loss)
+      {
+        accum_loss += loss;
+      }
 
       //-- CNN gradient accumulator access (for merging by CoreCPU) --//
-      const std::vector<std::vector<T>>& getAccumConvFilters() const { return accumDConvFilters; }
-      const std::vector<std::vector<T>>& getAccumConvBiases() const { return accumDConvBiases; }
+      const std::vector<std::vector<T>>& getAccumConvFilters() const
+      {
+        return accumDConvFilters;
+      }
+
+      const std::vector<std::vector<T>>& getAccumConvBiases() const
+      {
+        return accumDConvBiases;
+      }
 
       //-- ANN sub-core access (for parameter sync/merge by CoreCPU) --//
-      ANN::Core<T>* getANNCore() { return annCore.get(); }
-      const ANN::Core<T>* getANNCore() const { return annCore.get(); }
+      ANN::Core<T>* getANNCore()
+      {
+        return annCore.get();
+      }
+
+      const ANN::Core<T>* getANNCore() const
+      {
+        return annCore.get();
+      }
 
     private:
       //-- Shared references (owned by CoreCPU/Core, read-only during propagate/backpropagate) --//
@@ -61,16 +86,13 @@ namespace CNN {
 
       //-- Propagate --//
       Tensor3D<T> propagateCNN(const Input<T>& input);
-      Tensor3D<T> propagateCNN(const Input<T>& input,
-                               std::vector<Tensor3D<T>>& intermediates,
+      Tensor3D<T> propagateCNN(const Input<T>& input, std::vector<Tensor3D<T>>& intermediates,
                                std::vector<std::vector<ulong>>& poolMaxIndices);
 
       //-- Backpropagate --//
-      void backpropagateCNN(const Tensor3D<T>& dCNNOut,
-                       const std::vector<Tensor3D<T>>& intermediates,
-                       const std::vector<std::vector<ulong>>& poolMaxIndices,
-                       std::vector<std::vector<T>>& dConvFilters,
-                       std::vector<std::vector<T>>& dConvBiases);
+      void backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::vector<Tensor3D<T>>& intermediates,
+                            const std::vector<std::vector<ulong>>& poolMaxIndices,
+                            std::vector<std::vector<T>>& dConvFilters, std::vector<std::vector<T>>& dConvBiases);
 
       //-- Initialization --//
       static ANN::CoreConfig<T> buildANNConfig(const CoreConfig<T>& cnnConfig, ulong flattenSize);
@@ -80,4 +102,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_CORECPUWORKER_HPP
-

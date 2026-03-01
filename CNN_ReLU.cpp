@@ -7,7 +7,8 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> ReLU<T>::predict(const Tensor3D<T>& input) {
+Tensor3D<T> ReLU<T>::predict(const Tensor3D<T>& input)
+{
   Tensor3D<T> output(input.shape);
 
   for (ulong i = 0; i < input.data.size(); i++) {
@@ -20,7 +21,8 @@ Tensor3D<T> ReLU<T>::predict(const Tensor3D<T>& input) {
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> ReLU<T>::backpropagate(const Tensor3D<T>& dOut, const Tensor3D<T>& input) {
+Tensor3D<T> ReLU<T>::backpropagate(const Tensor3D<T>& dOut, const Tensor3D<T>& input)
+{
   Tensor3D<T> dInput(input.shape);
 
   for (ulong i = 0; i < input.data.size(); i++) {
@@ -36,4 +38,3 @@ Tensor3D<T> ReLU<T>::backpropagate(const Tensor3D<T>& dOut, const Tensor3D<T>& i
 template class CNN::ReLU<int>;
 template class CNN::ReLU<double>;
 template class CNN::ReLU<float>;
-

@@ -11,9 +11,9 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-void Worker<T>::initializeConvParams(const LayersConfig& layersConfig,
-                                     const Shape3D& inputShape,
-                                     Parameters<T>& parameters) {
+void Worker<T>::initializeConvParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
+                                     Parameters<T>& parameters)
+{
   ulong convIdx = 0;
   Shape3D currentShape = inputShape;
 
@@ -33,8 +33,7 @@ void Worker<T>::initializeConvParams(const LayersConfig& layersConfig,
     const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
 
     // Check if parameters already loaded
-    if (convIdx < parameters.convParams.size() &&
-        !parameters.convParams[convIdx].filters.empty()) {
+    if (convIdx < parameters.convParams.size() && !parameters.convParams[convIdx].filters.empty()) {
       // Parameters already loaded - update shape and continue
       ulong padY = SlidingStrategy::computePadding(conv.filterH, conv.slidingStrategy);
       ulong padX = SlidingStrategy::computePadding(conv.filterW, conv.slidingStrategy);
@@ -82,33 +81,36 @@ void Worker<T>::initializeConvParams(const LayersConfig& layersConfig,
 //===================================================================================================================//
 
 template <typename T>
-T Worker<T>::calculateLoss(const Output<T>& predicted, const Output<T>& expected) const {
+T Worker<T>::calculateLoss(const Output<T>& predicted, const Output<T>& expected) const
+{
   T loss = static_cast<T>(0);
 
   switch (this->costFunctionConfig.type) {
-    case CostFunctionType::CROSS_ENTROPY: {
-      // Cross-entropy: L = -sum(w_i * y_i * log(a_i))
-      const T epsilon = static_cast<T>(1e-7);
-      for (ulong i = 0; i < expected.size(); i++) {
-        T pred = std::max(predicted[i], epsilon);
-        T weight = (!this->costFunctionConfig.weights.empty()) ? this->costFunctionConfig.weights[i] : static_cast<T>(1);
-        loss -= weight * expected[i] * std::log(pred);
-      }
-      break;
+  case CostFunctionType::CROSS_ENTROPY: {
+    // Cross-entropy: L = -sum(w_i * y_i * log(a_i))
+    const T epsilon = static_cast<T>(1e-7);
+    for (ulong i = 0; i < expected.size(); i++) {
+      T pred = std::max(predicted[i], epsilon);
+      T weight = (!this->costFunctionConfig.weights.empty()) ? this->costFunctionConfig.weights[i] : static_cast<T>(1);
+      loss -= weight * expected[i] * std::log(pred);
     }
 
-    case CostFunctionType::SQUARED_DIFFERENCE:
-    case CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE:
-    default: {
-      // Squared difference: L = sum(w_i * (a_i - y_i)^2) / N
-      for (ulong i = 0; i < expected.size(); i++) {
-        T diff = predicted[i] - expected[i];
-        T weight = (!this->costFunctionConfig.weights.empty()) ? this->costFunctionConfig.weights[i] : static_cast<T>(1);
-        loss += weight * diff * diff;
-      }
-      loss /= static_cast<T>(expected.size());
-      break;
+    break;
+  }
+
+  case CostFunctionType::SQUARED_DIFFERENCE:
+  case CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE:
+  default: {
+    // Squared difference: L = sum(w_i * (a_i - y_i)^2) / N
+    for (ulong i = 0; i < expected.size(); i++) {
+      T diff = predicted[i] - expected[i];
+      T weight = (!this->costFunctionConfig.weights.empty()) ? this->costFunctionConfig.weights[i] : static_cast<T>(1);
+      loss += weight * diff * diff;
     }
+
+    loss /= static_cast<T>(expected.size());
+    break;
+  }
   }
 
   return loss;
@@ -120,4 +122,3 @@ T Worker<T>::calculateLoss(const Output<T>& predicted, const Output<T>& expected
 template class CNN::Worker<int>;
 template class CNN::Worker<double>;
 template class CNN::Worker<float>;
-

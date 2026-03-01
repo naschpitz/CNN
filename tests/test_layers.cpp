@@ -6,7 +6,8 @@
 
 //===================================================================================================================//
 
-static void testTensor3D() {
+static void testTensor3D()
+{
   std::cout << "--- testTensor3D ---" << std::endl;
 
   CNN::Tensor3D<double> t({2, 3, 4});
@@ -23,7 +24,8 @@ static void testTensor3D() {
 
 //===================================================================================================================//
 
-static void testReLU() {
+static void testReLU()
+{
   std::cout << "--- testReLU ---" << std::endl;
 
   CNN::Tensor3D<double> input({1, 2, 3});
@@ -42,11 +44,13 @@ static void testReLU() {
 
 //===================================================================================================================//
 
-static void testMaxPool() {
+static void testMaxPool()
+{
   std::cout << "--- testMaxPool ---" << std::endl;
 
   CNN::Tensor3D<double> input({1, 4, 4});
-  for (ulong i = 0; i < 16; i++) input.data[i] = static_cast<double>(i + 1);
+  for (ulong i = 0; i < 16; i++)
+    input.data[i] = static_cast<double>(i + 1);
 
   CNN::PoolLayerConfig config{CNN::PoolTypeEnum::MAX, 2, 2, 2, 2};
   std::vector<ulong> maxIndices;
@@ -67,11 +71,13 @@ static void testMaxPool() {
 
 //===================================================================================================================//
 
-static void testAvgPool() {
+static void testAvgPool()
+{
   std::cout << "--- testAvgPool ---" << std::endl;
 
   CNN::Tensor3D<double> input({1, 4, 4});
-  for (ulong i = 0; i < 16; i++) input.data[i] = static_cast<double>(i + 1);
+  for (ulong i = 0; i < 16; i++)
+    input.data[i] = static_cast<double>(i + 1);
 
   CNN::PoolLayerConfig config{CNN::PoolTypeEnum::AVG, 2, 2, 2, 2};
   std::vector<ulong> maxIndices;
@@ -85,7 +91,7 @@ static void testAvgPool() {
   CHECK_NEAR(out.at(0, 1, 1), 13.5, 1e-9, "avgpool bottom-right");
 
   // Backprop: gradient distributed evenly
-  CNN::Tensor3D<double> dOut({1, 2, 2}, 4.0);  // gradient = 4.0
+  CNN::Tensor3D<double> dOut({1, 2, 2}, 4.0); // gradient = 4.0
   CNN::Tensor3D<double> dIn = CNN::Pool<double>::backpropagate(dOut, input.shape, config, maxIndices);
   // Each element gets 4.0 / (2*2) = 1.0
   CHECK_NEAR(dIn.at(0, 0, 0), 1.0, 1e-9, "avgpool backprop");
@@ -94,12 +100,14 @@ static void testAvgPool() {
 
 //===================================================================================================================//
 
-static void testPoolNonSquare() {
+static void testPoolNonSquare()
+{
   std::cout << "--- testPoolNonSquare ---" << std::endl;
 
   // 1x4x6 input, pool 2x3 stride 2x3 → 1x2x2
   CNN::Tensor3D<double> input({1, 4, 6});
-  for (ulong i = 0; i < 24; i++) input.data[i] = static_cast<double>(i + 1);
+  for (ulong i = 0; i < 24; i++)
+    input.data[i] = static_cast<double>(i + 1);
   // Row 0: 1  2  3  4  5  6
   // Row 1: 7  8  9  10 11 12
   // Row 2: 13 14 15 16 17 18
@@ -120,11 +128,13 @@ static void testPoolNonSquare() {
 
 //===================================================================================================================//
 
-static void testFlatten() {
+static void testFlatten()
+{
   std::cout << "--- testFlatten ---" << std::endl;
 
   CNN::Tensor3D<double> input({2, 3, 4});
-  for (ulong i = 0; i < 24; i++) input.data[i] = static_cast<double>(i);
+  for (ulong i = 0; i < 24; i++)
+    input.data[i] = static_cast<double>(i);
 
   CNN::Tensor1D<double> flat = CNN::Flatten<double>::predict(input);
   CHECK(flat.size() == 24, "flatten size");
@@ -138,8 +148,8 @@ static void testFlatten() {
 
 //===================================================================================================================//
 
-
-static void testSlidingStrategy() {
+static void testSlidingStrategy()
+{
   std::cout << "--- testSlidingStrategy ---" << std::endl;
 
   CHECK(CNN::SlidingStrategy::computePadding(3, CNN::SlidingStrategyType::VALID) == 0, "valid pad=0");
@@ -161,7 +171,8 @@ static void testSlidingStrategy() {
 
 //===================================================================================================================//
 
-static void testDeviceNameToType() {
+static void testDeviceNameToType()
+{
   std::cout << "--- testDeviceNameToType ---" << std::endl;
 
   CHECK(CNN::Device::nameToType("cpu") == CNN::DeviceType::CPU, "cpu → CPU");
@@ -176,7 +187,8 @@ static void testDeviceNameToType() {
 
 //===================================================================================================================//
 
-static void testModeNameToType() {
+static void testModeNameToType()
+{
   std::cout << "--- testModeNameToType ---" << std::endl;
 
   CHECK(CNN::Mode::nameToType("train") == CNN::ModeType::TRAIN, "train → TRAIN");
@@ -193,7 +205,8 @@ static void testModeNameToType() {
 
 //===================================================================================================================//
 
-static void testPoolTypeNameToType() {
+static void testPoolTypeNameToType()
+{
   std::cout << "--- testPoolTypeNameToType ---" << std::endl;
 
   CHECK(CNN::PoolType::nameToType("max") == CNN::PoolTypeEnum::MAX, "max → MAX");
@@ -208,22 +221,30 @@ static void testPoolTypeNameToType() {
 
 //===================================================================================================================//
 
-static void testCostFunctionNameToType() {
+static void testCostFunctionNameToType()
+{
   std::cout << "--- testCostFunctionNameToType ---" << std::endl;
 
-  CHECK(CNN::CostFunction::nameToType("squaredDifference") == CNN::CostFunctionType::SQUARED_DIFFERENCE, "squaredDifference → SQUARED_DIFFERENCE");
-  CHECK(CNN::CostFunction::nameToType("weightedSquaredDifference") == CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE, "weightedSquaredDifference → WEIGHTED_SQUARED_DIFFERENCE");
+  CHECK(CNN::CostFunction::nameToType("squaredDifference") == CNN::CostFunctionType::SQUARED_DIFFERENCE,
+        "squaredDifference → SQUARED_DIFFERENCE");
+  CHECK(CNN::CostFunction::nameToType("weightedSquaredDifference") ==
+          CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE,
+        "weightedSquaredDifference → WEIGHTED_SQUARED_DIFFERENCE");
 
   CHECK_THROWS(CNN::CostFunction::nameToType("nonexistent"), "nonexistent throws");
   CHECK_THROWS(CNN::CostFunction::nameToType(""), "empty throws");
 
-  CHECK(CNN::CostFunction::typeToName(CNN::CostFunctionType::SQUARED_DIFFERENCE) == "squaredDifference", "SQUARED_DIFFERENCE → squaredDifference");
-  CHECK(CNN::CostFunction::typeToName(CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE) == "weightedSquaredDifference", "WEIGHTED_SQUARED_DIFFERENCE → weightedSquaredDifference");
+  CHECK(CNN::CostFunction::typeToName(CNN::CostFunctionType::SQUARED_DIFFERENCE) == "squaredDifference",
+        "SQUARED_DIFFERENCE → squaredDifference");
+  CHECK(CNN::CostFunction::typeToName(CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE) ==
+          "weightedSquaredDifference",
+        "WEIGHTED_SQUARED_DIFFERENCE → weightedSquaredDifference");
 }
 
 //===================================================================================================================//
 
-static void testValidateShapes() {
+static void testValidateShapes()
+{
   std::cout << "--- testValidateShapes ---" << std::endl;
 
   CNN::LayersConfig lc;
@@ -258,13 +279,20 @@ static void testValidateShapes() {
   lc2.cnnLayers = {badConv};
 
   bool caught = false;
-  try { lc2.validateShapes({1, 3, 3}); } catch (const std::runtime_error&) { caught = true; }
+
+  try {
+    lc2.validateShapes({1, 3, 3});
+  } catch (const std::runtime_error&) {
+    caught = true;
+  }
+
   CHECK(caught, "validateShapes throws for oversized filter");
 }
 
 //===================================================================================================================//
 
-void runLayerTests() {
+void runLayerTests()
+{
   testTensor3D();
   testReLU();
   testMaxPool();

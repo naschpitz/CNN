@@ -11,13 +11,11 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-CoreCPUWorker<T>::CoreCPUWorker(const CoreConfig<T>& config,
-                                const LayersConfig& layersConfig,
-                                const Parameters<T>& sharedParams,
-                                bool allocateTraining)
-    : layersConfig(layersConfig),
-      sharedParams(sharedParams) {
-
+CoreCPUWorker<T>::CoreCPUWorker(const CoreConfig<T>& config, const LayersConfig& layersConfig,
+                                const Parameters<T>& sharedParams, bool allocateTraining)
+  : layersConfig(layersConfig),
+    sharedParams(sharedParams)
+{
   this->costFunctionConfig = config.costFunctionConfig;
 
   // Compute CNN output shape
@@ -43,20 +41,21 @@ CoreCPUWorker<T>::CoreCPUWorker(const CoreConfig<T>& config,
 //===================================================================================================================//
 
 template <typename T>
-ANN::CoreConfig<T> CoreCPUWorker<T>::buildANNConfig(const CoreConfig<T>& cnnConfig, ulong flattenSize) {
+ANN::CoreConfig<T> CoreCPUWorker<T>::buildANNConfig(const CoreConfig<T>& cnnConfig, ulong flattenSize)
+{
   ANN::CoreConfig<T> annConfig;
 
   // Map CNN mode to ANN mode
   switch (cnnConfig.modeType) {
-    case ModeType::TRAIN:
-      annConfig.modeType = ANN::ModeType::TRAIN;
-      break;
-    case ModeType::TEST:
-      annConfig.modeType = ANN::ModeType::TEST;
-      break;
-    default:
-      annConfig.modeType = ANN::ModeType::PREDICT;
-      break;
+  case ModeType::TRAIN:
+    annConfig.modeType = ANN::ModeType::TRAIN;
+    break;
+  case ModeType::TEST:
+    annConfig.modeType = ANN::ModeType::TEST;
+    break;
+  default:
+    annConfig.modeType = ANN::ModeType::PREDICT;
+    break;
   }
 
   annConfig.deviceType = ANN::DeviceType::CPU;
@@ -66,7 +65,7 @@ ANN::CoreConfig<T> CoreCPUWorker<T>::buildANNConfig(const CoreConfig<T>& cnnConf
 
   ANN::Layer inputLayer;
   inputLayer.numNeurons = flattenSize;
-  inputLayer.actvFuncType = ANN::ActvFuncType::RELU;  // Placeholder (ANN input layer activation unused)
+  inputLayer.actvFuncType = ANN::ActvFuncType::RELU; // Placeholder (ANN input layer activation unused)
   annLayers.push_back(inputLayer);
 
   for (const auto& denseConfig : cnnConfig.layersConfig.denseLayers) {
@@ -81,7 +80,7 @@ ANN::CoreConfig<T> CoreCPUWorker<T>::buildANNConfig(const CoreConfig<T>& cnnConf
   annConfig.trainingConfig.numEpochs = cnnConfig.trainingConfig.numEpochs;
   annConfig.trainingConfig.learningRate = cnnConfig.trainingConfig.learningRate;
   annConfig.trainingConfig.dropoutRate = cnnConfig.trainingConfig.dropoutRate;
-  annConfig.numThreads = 1;  // CNN manages its own threading
+  annConfig.numThreads = 1; // CNN manages its own threading
 
   annConfig.costFunctionConfig.type = static_cast<ANN::CostFunctionType>(cnnConfig.costFunctionConfig.type);
   annConfig.costFunctionConfig.weights = cnnConfig.costFunctionConfig.weights;
@@ -97,7 +96,8 @@ ANN::CoreConfig<T> CoreCPUWorker<T>::buildANNConfig(const CoreConfig<T>& cnnConf
 //===================================================================================================================//
 
 template <typename T>
-Output<T> CoreCPUWorker<T>::predict(const Input<T>& input) {
+Output<T> CoreCPUWorker<T>::predict(const Input<T>& input)
+{
   Tensor3D<T> cnnOut = this->propagateCNN(input);
   Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
 
@@ -110,7 +110,8 @@ Output<T> CoreCPUWorker<T>::predict(const Input<T>& input) {
 //===================================================================================================================//
 
 template <typename T>
-T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expected) {
+T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expected)
+{
   // CNN propagate (with intermediates for backpropagation)
   std::vector<Tensor3D<T>> intermediates;
   std::vector<std::vector<ulong>> poolMaxIndices;
@@ -152,7 +153,8 @@ T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expect
 //===================================================================================================================//
 
 template <typename T>
-void CoreCPUWorker<T>::resetAccumulators() {
+void CoreCPUWorker<T>::resetAccumulators()
+{
   for (ulong i = 0; i < this->accumDConvFilters.size(); i++) {
     std::fill(this->accumDConvFilters[i].begin(), this->accumDConvFilters[i].end(), static_cast<T>(0));
     std::fill(this->accumDConvBiases[i].begin(), this->accumDConvBiases[i].end(), static_cast<T>(0));
@@ -164,31 +166,35 @@ void CoreCPUWorker<T>::resetAccumulators() {
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input) {
+Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input)
+{
   Tensor3D<T> current = input;
   ulong convIdx = 0;
 
   for (const auto& layerConfig : this->layersConfig.cnnLayers) {
     switch (layerConfig.type) {
-      case LayerType::CONV: {
-        const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
-        current = Conv2D<T>::predict(current, conv, this->sharedParams.convParams[convIdx]);
-        convIdx++;
-        break;
-      }
-      case LayerType::RELU: {
-        current = ReLU<T>::predict(current);
-        break;
-      }
-      case LayerType::POOL: {
-        const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
-        std::vector<ulong> unused;
-        current = Pool<T>::predict(current, pool, unused);
-        break;
-      }
-      case LayerType::FLATTEN: {
-        break;
-      }
+    case LayerType::CONV: {
+      const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
+      current = Conv2D<T>::predict(current, conv, this->sharedParams.convParams[convIdx]);
+      convIdx++;
+      break;
+    }
+
+    case LayerType::RELU: {
+      current = ReLU<T>::predict(current);
+      break;
+    }
+
+    case LayerType::POOL: {
+      const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
+      std::vector<ulong> unused;
+      current = Pool<T>::predict(current, pool, unused);
+      break;
+    }
+
+    case LayerType::FLATTEN: {
+      break;
+    }
     }
   }
 
@@ -198,9 +204,9 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input) {
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input,
-                                         std::vector<Tensor3D<T>>& intermediates,
-                                         std::vector<std::vector<ulong>>& poolMaxIndices) {
+Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, std::vector<Tensor3D<T>>& intermediates,
+                                           std::vector<std::vector<ulong>>& poolMaxIndices)
+{
   intermediates.clear();
   poolMaxIndices.clear();
 
@@ -211,25 +217,28 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input,
     intermediates.push_back(current);
 
     switch (layerConfig.type) {
-      case LayerType::CONV: {
-        const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
-        current = Conv2D<T>::predict(current, conv, this->sharedParams.convParams[convIdx]);
-        convIdx++;
-        break;
-      }
-      case LayerType::RELU: {
-        current = ReLU<T>::predict(current);
-        break;
-      }
-      case LayerType::POOL: {
-        const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
-        poolMaxIndices.push_back({});
-        current = Pool<T>::predict(current, pool, poolMaxIndices.back());
-        break;
-      }
-      case LayerType::FLATTEN: {
-        break;
-      }
+    case LayerType::CONV: {
+      const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
+      current = Conv2D<T>::predict(current, conv, this->sharedParams.convParams[convIdx]);
+      convIdx++;
+      break;
+    }
+
+    case LayerType::RELU: {
+      current = ReLU<T>::predict(current);
+      break;
+    }
+
+    case LayerType::POOL: {
+      const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
+      poolMaxIndices.push_back({});
+      current = Pool<T>::predict(current, pool, poolMaxIndices.back());
+      break;
+    }
+
+    case LayerType::FLATTEN: {
+      break;
+    }
     }
   }
 
@@ -239,11 +248,11 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input,
 //===================================================================================================================//
 
 template <typename T>
-void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut,
-                                   const std::vector<Tensor3D<T>>& intermediates,
-                                   const std::vector<std::vector<ulong>>& poolMaxIndices,
-                                   std::vector<std::vector<T>>& dConvFilters,
-                                   std::vector<std::vector<T>>& dConvBiases) {
+void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::vector<Tensor3D<T>>& intermediates,
+                                        const std::vector<std::vector<ulong>>& poolMaxIndices,
+                                        std::vector<std::vector<T>>& dConvFilters,
+                                        std::vector<std::vector<T>>& dConvBiases)
+{
   ulong numCNNLayers = this->layersConfig.cnnLayers.size();
   ulong numConvLayers = this->sharedParams.convParams.size();
 
@@ -260,27 +269,29 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut,
     const Tensor3D<T>& layerInput = intermediates[static_cast<ulong>(i)];
 
     switch (layerConfig.type) {
-      case LayerType::CONV: {
-        convIdx--;
-        const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
-        dCurrent = Conv2D<T>::backpropagate(dCurrent, layerInput, conv,
-                                            this->sharedParams.convParams[convIdx],
-                                            dConvFilters[convIdx], dConvBiases[convIdx]);
-        break;
-      }
-      case LayerType::RELU: {
-        dCurrent = ReLU<T>::backpropagate(dCurrent, layerInput);
-        break;
-      }
-      case LayerType::POOL: {
-        poolIdx--;
-        const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
-        dCurrent = Pool<T>::backpropagate(dCurrent, layerInput.shape, pool, poolMaxIndices[poolIdx]);
-        break;
-      }
-      case LayerType::FLATTEN: {
-        break;
-      }
+    case LayerType::CONV: {
+      convIdx--;
+      const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
+      dCurrent = Conv2D<T>::backpropagate(dCurrent, layerInput, conv, this->sharedParams.convParams[convIdx],
+                                          dConvFilters[convIdx], dConvBiases[convIdx]);
+      break;
+    }
+
+    case LayerType::RELU: {
+      dCurrent = ReLU<T>::backpropagate(dCurrent, layerInput);
+      break;
+    }
+
+    case LayerType::POOL: {
+      poolIdx--;
+      const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
+      dCurrent = Pool<T>::backpropagate(dCurrent, layerInput.shape, pool, poolMaxIndices[poolIdx]);
+      break;
+    }
+
+    case LayerType::FLATTEN: {
+      break;
+    }
     }
   }
 }
@@ -291,4 +302,3 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut,
 template class CNN::CoreCPUWorker<int>;
 template class CNN::CoreCPUWorker<double>;
 template class CNN::CoreCPUWorker<float>;
-

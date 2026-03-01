@@ -6,11 +6,12 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   enum class SlidingStrategyType {
-    VALID,   // No padding
-    FULL,    // Filter allowed outside input (pad = kernel - 1)
-    SAME     // Output size equals input size when stride=1 (pad = floor(kernel/2))
+    VALID, // No padding
+    FULL, // Filter allowed outside input (pad = kernel - 1)
+    SAME // Output size equals input size when stride=1 (pad = floor(kernel/2))
   };
 
   const std::unordered_map<std::string, SlidingStrategyType> slidingStrategyMap = {
@@ -33,4 +34,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_SLIDINGSTRATEGY_HPP
-

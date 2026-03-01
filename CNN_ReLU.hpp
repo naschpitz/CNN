@@ -5,9 +5,11 @@
 
 //===================================================================================================================//
 
-namespace CNN {
+namespace CNN
+{
   template <typename T>
-  class ReLU {
+  class ReLU
+  {
     public:
       // Propagate: element-wise max(0, x)
       static Tensor3D<T> predict(const Tensor3D<T>& input);
@@ -23,4 +25,3 @@ namespace CNN {
 //===================================================================================================================//
 
 #endif // CNN_RELU_HPP
-

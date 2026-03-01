@@ -6,7 +6,8 @@ using namespace CNN;
 
 //===================================================================================================================//
 
-PoolTypeEnum PoolType::nameToType(const std::string& name) {
+PoolTypeEnum PoolType::nameToType(const std::string& name)
+{
   auto it = poolTypeMap.find(name);
 
   if (it != poolTypeMap.end()) {
@@ -18,7 +19,8 @@ PoolTypeEnum PoolType::nameToType(const std::string& name) {
 
 //===================================================================================================================//
 
-std::string PoolType::typeToName(const PoolTypeEnum& type) {
+std::string PoolType::typeToName(const PoolTypeEnum& type)
+{
   for (const auto& pair : poolTypeMap) {
     if (pair.second == type) {
       return pair.first;
@@ -27,4 +29,3 @@ std::string PoolType::typeToName(const PoolTypeEnum& type) {
 
   throw std::runtime_error("Unknown pool type enum value");
 }
-
