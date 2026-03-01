@@ -115,6 +115,7 @@ namespace CNN {
       bool predictKernelsSetup = false;
       bool trainingKernelsSetup = false;
       bool updateKernelsSetup = false;
+      std::vector<std::vector<OpenCLWrapper::Kernel>> savedTrainingKernels;
 
       //-- Initialization --//
       void computeLayerOffsets();

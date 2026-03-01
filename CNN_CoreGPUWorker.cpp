@@ -755,7 +755,7 @@ void CoreGPUWorker<T>::setupTrainingKernels() {
   this->trainingKernelsSetup = true;
 
   // Save training kernels so they can be restored after update without re-setup
-  this->core->saveKernels();
+  this->savedTrainingKernels = this->core->saveKernels();
 }
 
 //===================================================================================================================//
@@ -1010,7 +1010,7 @@ void CoreGPUWorker<T>::update(ulong numSamples) {
 
   // Restore the saved training kernels instead of invalidating all flags.
   // This avoids the expensive re-setup of training kernels (~250ms) every batch.
-  this->core->restoreKernels();
+  this->core->restoreKernels(this->savedTrainingKernels);
   this->trainingKernelsSetup = true;
   this->updateKernelsSetup = false;
   this->predictKernelsSetup = false;
