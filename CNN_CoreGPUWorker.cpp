@@ -8,8 +8,6 @@
 #include <ANN_CoreGPUWorker.hpp>
 #include <OCLW_Core.hpp>
 
-#include <QDebug>
-
 #include <algorithm>
 #include <cmath>
 #include <iostream>
