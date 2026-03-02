@@ -30,7 +30,11 @@ add_library(CNN STATIC
   CNN_CoreGPUWorker.hpp CNN_CoreGPUWorker.cpp
   CNN_GPUBufferManager.hpp CNN_GPUBufferManager.cpp
   CNN_GPUKernelBuilder.hpp CNN_GPUKernelBuilder.cpp
-  opencl/CNN_Defines.hpp.cl opencl/CNN_Kernels.cpp.cl
+  opencl/CNN_Defines.hpp.cl
+  opencl/CNN_Propagate.cpp.cl
+  opencl/CNN_Backpropagate.cpp.cl
+  opencl/CNN_Update.cpp.cl
+  opencl/CNN_Bridge.cpp.cl
   CNN_Types.hpp
   CNN_Device.hpp CNN_Device.cpp
   CNN_Mode.hpp CNN_Mode.cpp

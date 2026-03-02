@@ -125,7 +125,10 @@ void GPUBufferManager<T>::loadSources(bool skipDefines)
     this->core->addSourceFile(srcDir + "opencl/CNN_Defines.hpp.cl");
   }
 
-  this->core->addSourceFile(srcDir + "opencl/CNN_Kernels.cpp.cl");
+  this->core->addSourceFile(srcDir + "opencl/CNN_Propagate.cpp.cl");
+  this->core->addSourceFile(srcDir + "opencl/CNN_Backpropagate.cpp.cl");
+  this->core->addSourceFile(srcDir + "opencl/CNN_Update.cpp.cl");
+  this->core->addSourceFile(srcDir + "opencl/CNN_Bridge.cpp.cl");
 
   if (this->logLevel >= CNN::LogLevel::INFO)
     std::cout << "CNN OpenCL kernels loaded.\n";

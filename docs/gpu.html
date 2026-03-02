@@ -135,8 +135,20 @@
       <td>Type definition: <code>#define TYPE float</code> (configurable for double, int, etc.)</td>
     </tr>
     <tr>
-      <td><code>opencl/CNN_Kernels.cpp.cl</code></td>
-      <td>All propagation, backpropagation, and utility kernels (conv2d, relu, maxpool, accumulate, update, etc.)</td>
+      <td><code>opencl/CNN_Propagate.cpp.cl</code></td>
+      <td>Forward propagation kernels (conv2d, relu, maxpool)</td>
+    </tr>
+    <tr>
+      <td><code>opencl/CNN_Backpropagate.cpp.cl</code></td>
+      <td>Backpropagation kernels (gradient computation for all layer types)</td>
+    </tr>
+    <tr>
+      <td><code>opencl/CNN_Update.cpp.cl</code></td>
+      <td>Accumulate, update, and utility kernels (SGD, Adam, zero_buffer)</td>
+    </tr>
+    <tr>
+      <td><code>opencl/CNN_Bridge.cpp.cl</code></td>
+      <td>Bridge kernels for copying data between CNN and ANN buffers</td>
     </tr>
   </tbody>
 </table>
