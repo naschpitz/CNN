@@ -7,6 +7,7 @@ static void testConv2DPropagate()
   std::cout << "--- testConv2DPropagate ---" << std::endl;
 
   CNN::Tensor3D<double> input({1, 4, 4});
+
   for (ulong i = 0; i < 16; i++)
     input.data[i] = static_cast<double>(i + 1);
 
@@ -34,6 +35,7 @@ static void testConv2DBackprop()
   std::cout << "--- testConv2DBackprop ---" << std::endl;
 
   CNN::Tensor3D<double> input({1, 4, 4});
+
   for (ulong i = 0; i < 16; i++)
     input.data[i] = static_cast<double>(i + 1);
 
@@ -64,6 +66,7 @@ static void testConv2DWithBias()
 
   // 1x3x3 input, 1 filter 2x2, VALID, bias = 10.0
   CNN::Tensor3D<double> input({1, 3, 3});
+
   for (ulong i = 0; i < 9; i++)
     input.data[i] = 1.0; // all ones
 
@@ -91,6 +94,7 @@ static void testConv2DMultiFilter()
 
   // 1x3x3 input, 2 filters 2x2, VALID
   CNN::Tensor3D<double> input({1, 3, 3});
+
   for (ulong i = 0; i < 9; i++)
     input.data[i] = static_cast<double>(i + 1);
   // input: [[1,2,3],[4,5,6],[7,8,9]]
@@ -202,6 +206,7 @@ static void testConv2DStride()
 
   // 1x4x4 input, 1 filter 2x2, stride 2, VALID → 1x2x2 output
   CNN::Tensor3D<double> input({1, 4, 4});
+
   for (ulong i = 0; i < 16; i++)
     input.data[i] = static_cast<double>(i + 1);
 
@@ -234,6 +239,7 @@ static void testConv2DSamePadding()
 
   // 1x3x3 input, 1 filter 3x3, stride 1, SAME (pad=1) → 1x3x3 output
   CNN::Tensor3D<double> input({1, 3, 3});
+
   for (ulong i = 0; i < 9; i++)
     input.data[i] = 1.0;
 

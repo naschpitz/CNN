@@ -36,6 +36,7 @@ namespace CNN
 
       Samples<T> batch;
       batch.reserve(end - start);
+
       for (ulong i = start; i < end; i++) {
         batch.push_back(samples[sampleIndices[i]]);
       }

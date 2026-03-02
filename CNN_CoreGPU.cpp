@@ -100,6 +100,7 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 
     // Process samples in mini-batches
     ulong batchIndex = 0;
+
     for (ulong batchStart = 0; batchStart < numSamples; batchStart += batchSize, batchIndex++) {
       ulong batchEnd = std::min(batchStart + batchSize, numSamples);
       ulong currentBatchSize = batchEnd - batchStart;
@@ -171,6 +172,7 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       // Update weights after each mini-batch (parallel across GPUs)
       {
         QVector<size_t> gpuIndices;
+
         for (size_t i = 0; i < this->numGPUs; i++)
           gpuIndices.append(i);
         QtConcurrent::blockingMap(
@@ -180,6 +182,7 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       // Restore training kernels after update to avoid expensive re-setup next batch
       if (kernelsSaved) {
         QVector<size_t> gpuIndices;
+
         for (size_t i = 0; i < this->numGPUs; i++)
           gpuIndices.append(i);
         QtConcurrent::blockingMap(gpuIndices, [this, &savedKernels](size_t gpuIdx) {
@@ -294,6 +297,7 @@ void CoreGPU<T>::mergeCNNGradients()
   std::vector<std::vector<T>> allBiases(this->numGPUs);
 
   QVector<size_t> gpuIndices;
+
   for (size_t i = 0; i < this->numGPUs; i++)
     gpuIndices.append(i);
 
@@ -304,9 +308,11 @@ void CoreGPU<T>::mergeCNNGradients()
   // Sum on CPU
   std::vector<T>& totalFilters = allFilters[0];
   std::vector<T>& totalBiases = allBiases[0];
+
   for (size_t g = 1; g < this->numGPUs; g++) {
     for (size_t i = 0; i < totalFilters.size(); i++)
       totalFilters[i] += allFilters[g][i];
+
     for (size_t i = 0; i < totalBiases.size(); i++)
       totalBiases[i] += allBiases[g][i];
   }
@@ -332,6 +338,7 @@ void CoreGPU<T>::mergeANNGradients()
   std::vector<ANN::Tensor1D<T>> allBiases(this->numGPUs);
 
   QVector<size_t> gpuIndices;
+
   for (size_t i = 0; i < this->numGPUs; i++)
     gpuIndices.append(i);
 
@@ -342,9 +349,11 @@ void CoreGPU<T>::mergeANNGradients()
   // Sum on CPU
   ANN::Tensor1D<T>& totalWeights = allWeights[0];
   ANN::Tensor1D<T>& totalBiases = allBiases[0];
+
   for (size_t g = 1; g < this->numGPUs; g++) {
     for (size_t i = 0; i < totalWeights.size(); i++)
       totalWeights[i] += allWeights[g][i];
+
     for (size_t i = 0; i < totalBiases.size(); i++)
       totalBiases[i] += allBiases[g][i];
   }

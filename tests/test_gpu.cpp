@@ -55,6 +55,7 @@ static void testGPUEndToEnd()
   std::unique_ptr<CNN::Core<float>> core;
   CNN::Output<float> pred0, pred1;
   bool converged = false;
+
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0)
       std::cout << "  retry #" << attempt << std::endl;
@@ -230,6 +231,7 @@ static void testGPUWithPoolLayer()
   // Retry up to 5 times to handle random ANN weight initialization
   CNN::Output<float> pred0, pred1;
   bool converged = false;
+
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0)
       std::cout << "  retry #" << attempt << std::endl;
@@ -312,6 +314,7 @@ static void testGPUMultiConvStack()
   // Retry up to 5 times to handle random ANN weight initialization
   CNN::Output<float> pred0, pred1;
   bool converged = false;
+
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0)
       std::cout << "  retry #" << attempt << std::endl;
@@ -381,6 +384,7 @@ static void testGPUShuffleSamples()
   samples[1].output = {0.0f};
 
   bool shuffleConverged = false;
+
   for (int attempt = 0; attempt < 5 && !shuffleConverged; ++attempt) {
     if (attempt > 0)
       std::cout << "  retry #" << attempt << std::endl;
@@ -396,6 +400,7 @@ static void testGPUShuffleSamples()
   CHECK(shuffleConverged, "GPU CNN shuffle=true converged (5 attempts)");
 
   bool noShuffleConverged = false;
+
   for (int attempt = 0; attempt < 5 && !noShuffleConverged; ++attempt) {
     if (attempt > 0)
       std::cout << "  retry #" << attempt << std::endl;

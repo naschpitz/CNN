@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Ensure blank lines before and after if/else/try/catch blocks in C++ files.
+Ensure blank lines before and after if/else/try/catch/for/while blocks in C++ files.
 
 Rules:
-  - Insert a blank line BEFORE an if/try line, unless:
+  - Insert a blank line BEFORE an if/try/for/while line, unless:
     - It is the first non-blank line of a block (i.e., preceded by '{' only)
     - It is already preceded by a blank line
     - It is preceded by a comment line
     - It is preceded by another closing brace '}'
-  - Insert a blank line AFTER the closing '}' of an if/else if/else/try/catch
+  - Insert a blank line AFTER the closing '}' of an if/else if/else/try/catch/for/while
     chain, unless:
     - The next non-blank line is '}' (end of enclosing block)
     - The next non-blank line is 'else' or 'catch' (continuation of the chain)
@@ -20,7 +20,7 @@ import re
 import sys
 
 # Patterns that START a block chain
-BLOCK_START_RE = re.compile(r'^\s*(if\s*\(|try\s*\{|try\s*$)')
+BLOCK_START_RE = re.compile(r'^\s*(if\s*\(|try\s*\{|try\s*$|for\s*\(|while\s*\()')
 
 # Patterns that CONTINUE a chain (must not insert blank line before these)
 CHAIN_CONTINUE_RE = re.compile(r'^\s*(else\s|else\s*\{|catch\s*\()')

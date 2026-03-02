@@ -49,6 +49,7 @@ static void testMaxPool()
   std::cout << "--- testMaxPool ---" << std::endl;
 
   CNN::Tensor3D<double> input({1, 4, 4});
+
   for (ulong i = 0; i < 16; i++)
     input.data[i] = static_cast<double>(i + 1);
 
@@ -76,6 +77,7 @@ static void testAvgPool()
   std::cout << "--- testAvgPool ---" << std::endl;
 
   CNN::Tensor3D<double> input({1, 4, 4});
+
   for (ulong i = 0; i < 16; i++)
     input.data[i] = static_cast<double>(i + 1);
 
@@ -106,6 +108,7 @@ static void testPoolNonSquare()
 
   // 1x4x6 input, pool 2x3 stride 2x3 → 1x2x2
   CNN::Tensor3D<double> input({1, 4, 6});
+
   for (ulong i = 0; i < 24; i++)
     input.data[i] = static_cast<double>(i + 1);
   // Row 0: 1  2  3  4  5  6
@@ -133,6 +136,7 @@ static void testFlatten()
   std::cout << "--- testFlatten ---" << std::endl;
 
   CNN::Tensor3D<double> input({2, 3, 4});
+
   for (ulong i = 0; i < 24; i++)
     input.data[i] = static_cast<double>(i);
 

@@ -145,6 +145,7 @@ T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expect
   for (ulong i = 0; i < dConvFilters.size(); i++) {
     for (ulong j = 0; j < dConvFilters[i].size(); j++)
       this->accumDConvFilters[i][j] += dConvFilters[i][j];
+
     for (ulong j = 0; j < dConvBiases[i].size(); j++)
       this->accumDConvBiases[i][j] += dConvBiases[i][j];
   }

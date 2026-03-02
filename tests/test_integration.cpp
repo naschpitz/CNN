@@ -53,6 +53,7 @@ static void testEndToEnd()
   std::unique_ptr<CNN::Core<double>> core;
   CNN::Output<double> pred0, pred1;
   bool converged = false;
+
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0)
       std::cout << "  retry #" << attempt << std::endl;
@@ -147,6 +148,7 @@ static void testMultiConvStack()
   // Retry up to 5 times to handle random ANN weight initialization
   CNN::Output<double> pred0, pred1;
   bool converged = false;
+
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0)
       std::cout << "  retry #" << attempt << std::endl;
@@ -231,6 +233,7 @@ static void testConvPoolConv()
   // Retry up to 5 times to handle random ANN weight initialization
   CNN::Output<double> pred0, pred1;
   bool converged = false;
+
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0)
       std::cout << "  retry #" << attempt << std::endl;
@@ -297,6 +300,7 @@ static void testMultiChannelInput()
   // Retry up to 5 times to handle random ANN weight initialization
   CNN::Output<double> pred0, pred1;
   bool converged = false;
+
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0)
       std::cout << "  retry #" << attempt << std::endl;
@@ -371,6 +375,7 @@ static void testParameterRoundTrip()
 
   // Parameters should have changed from initial values after training
   bool filtersChanged = false;
+
   for (ulong i = 0; i < 9; i++) {
     if (std::fabs(params.convParams[0].filters[i] - 0.1) > 1e-6) {
       filtersChanged = true;
@@ -527,6 +532,7 @@ static void testMultipleOutputNeurons()
   // Retry up to 5 times to handle random ANN weight initialization
   CNN::Output<double> pred0, pred1;
   bool converged = false;
+
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0)
       std::cout << "  retry #" << attempt << std::endl;
@@ -718,6 +724,7 @@ static void testShuffleSamplesTraining()
 
   // Shuffle enabled
   bool shuffleConverged = false;
+
   for (int attempt = 0; attempt < 5 && !shuffleConverged; ++attempt) {
     auto core = CNN::Core<double>::makeCore(makeConfig(true));
     core->train(samples.size(), CNN::makeSampleProvider(samples));
@@ -732,6 +739,7 @@ static void testShuffleSamplesTraining()
 
   // Shuffle disabled
   bool noShuffleConverged = false;
+
   for (int attempt = 0; attempt < 5 && !noShuffleConverged; ++attempt) {
     auto core = CNN::Core<double>::makeCore(makeConfig(false));
     core->train(samples.size(), CNN::makeSampleProvider(samples));

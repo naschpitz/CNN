@@ -89,6 +89,7 @@ T Worker<T>::calculateLoss(const Output<T>& predicted, const Output<T>& expected
   case CostFunctionType::CROSS_ENTROPY: {
     // Cross-entropy: L = -sum(w_i * y_i * log(a_i))
     const T epsilon = static_cast<T>(1e-7);
+
     for (ulong i = 0; i < expected.size(); i++) {
       T pred = std::max(predicted[i], epsilon);
       T weight = (!this->costFunctionConfig.weights.empty()) ? this->costFunctionConfig.weights[i] : static_cast<T>(1);

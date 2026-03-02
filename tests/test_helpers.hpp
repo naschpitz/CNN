@@ -50,8 +50,11 @@ CNN::Tensor3D<T> makeGradientInput(CNN::Shape3D shape, T lo = T(0.5), T hi = T(1
 {
   CNN::Tensor3D<T> t(shape);
   ulong total = shape.c * shape.h * shape.w;
+
   for (ulong c = 0; c < shape.c; ++c)
+
     for (ulong h = 0; h < shape.h; ++h)
+
       for (ulong w = 0; w < shape.w; ++w) {
         ulong idx = c * shape.h * shape.w + h * shape.w + w;
         t.at(c, h, w) = lo + (hi - lo) * T(idx) / T(total > 1 ? total - 1 : 1);

@@ -74,6 +74,7 @@ void CoreCPU<T>::mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker)
   for (ulong i = 0; i < wFilters.size(); i++) {
     for (ulong j = 0; j < wFilters[i].size(); j++)
       this->accumDConvFilters[i][j] += wFilters[i][j];
+
     for (ulong j = 0; j < wBiases[i].size(); j++)
       this->accumDConvBiases[i][j] += wBiases[i][j];
   }
@@ -177,6 +178,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 
   // Create per-thread CoreCPUWorkers (each owns its own ANN core)
   std::vector<std::unique_ptr<CoreCPUWorker<T>>> workers;
+
   for (int i = 0; i < numThreads; i++) {
     workers.push_back(std::make_unique<CoreCPUWorker<T>>(this->coreConfig, this->layersConfig, this->parameters, true));
   }
@@ -197,6 +199,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
     }
 
     ulong batchIndex = 0;
+
     for (ulong batchStart = 0; batchStart < numSamples; batchStart += batchSize, batchIndex++) {
       ulong batchEnd = std::min(batchStart + batchSize, numSamples);
       ulong currentBatchSize = batchEnd - batchStart;
@@ -205,12 +208,14 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 
       // Per-worker sample counts (extras distributed to first workers)
       std::vector<ulong> workerSampleCounts(numThreads);
+
       for (int i = 0; i < numThreads; i++)
         workerSampleCounts[i] = currentBatchSize / static_cast<ulong>(numThreads) +
                                 (static_cast<ulong>(i) < currentBatchSize % static_cast<ulong>(numThreads) ? 1 : 0);
 
       // Sync worker ANN cores with main parameters and reset all accumulators
       ANN::Parameters<T> mainANNParams = this->stepWorker->getANNCore()->getParameters();
+
       for (int i = 0; i < numThreads; i++) {
         workers[i]->getANNCore()->setParameters(mainANNParams);
         workers[i]->resetAccumulators();
@@ -219,6 +224,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 
       // Each worker processes its chunk of the batch end-to-end (fully parallel)
       QVector<int> workerIndices(numThreads);
+
       for (int i = 0; i < numThreads; i++)
         workerIndices[i] = i;
 
@@ -226,6 +232,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
         CoreCPUWorker<T>& worker = *workers[workerIdx];
 
         ulong workerLocalStart = 0;
+
         for (int i = 0; i < workerIdx; i++)
           workerLocalStart += workerSampleCounts[i];
         ulong workerLocalEnd = workerLocalStart + workerSampleCounts[workerIdx];
@@ -259,13 +266,16 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       ANN::Parameters<T> mergedParams;
       const ANN::Parameters<T>& ref = workers[0]->getANNCore()->getParameters();
       mergedParams.weights.resize(ref.weights.size());
+
       for (ulong l = 0; l < ref.weights.size(); l++) {
         mergedParams.weights[l].resize(ref.weights[l].size());
+
         for (ulong j = 0; j < ref.weights[l].size(); j++)
           mergedParams.weights[l][j].assign(ref.weights[l][j].size(), static_cast<T>(0));
       }
 
       mergedParams.biases.resize(ref.biases.size());
+
       for (ulong l = 0; l < ref.biases.size(); l++)
         mergedParams.biases[l].assign(ref.biases[l].size(), static_cast<T>(0));
 
@@ -274,11 +284,16 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
           continue;
         T w = static_cast<T>(workerSampleCounts[i]) / static_cast<T>(currentBatchSize);
         const ANN::Parameters<T>& wp = workers[i]->getANNCore()->getParameters();
+
         for (ulong l = 0; l < wp.weights.size(); l++)
+
           for (ulong j = 0; j < wp.weights[l].size(); j++)
+
             for (ulong k = 0; k < wp.weights[l][j].size(); k++)
               mergedParams.weights[l][j][k] += wp.weights[l][j][k] * w;
+
         for (ulong l = 0; l < wp.biases.size(); l++)
+
           for (ulong j = 0; j < wp.biases[l].size(); j++)
             mergedParams.biases[l][j] += wp.biases[l][j] * w;
       }
@@ -287,6 +302,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 
       // Merge worker CNN accumulators and update CNN parameters
       this->resetGlobalCNNAccumulators();
+
       for (int i = 0; i < numThreads; i++) {
         this->mergeWorkerCNNAccumulators(*workers[i]);
         epochLoss += workers[i]->getAccumLoss();
