@@ -37,6 +37,10 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
       this->accumDConvFilters[i].resize(this->parameters.convParams[i].filters.size(), static_cast<T>(0));
       this->accumDConvBiases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
     }
+
+    if (this->trainingConfig.optimizer.type == OptimizerType::ADAM) {
+      this->allocateAdamState();
+    }
   }
 }
 
@@ -78,18 +82,73 @@ void CoreCPU<T>::mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker)
 //===================================================================================================================//
 
 template <typename T>
+void CoreCPU<T>::allocateAdamState()
+{
+  ulong numConvLayers = this->parameters.convParams.size();
+
+  this->adam_m_filters.resize(numConvLayers);
+  this->adam_v_filters.resize(numConvLayers);
+  this->adam_m_biases.resize(numConvLayers);
+  this->adam_v_biases.resize(numConvLayers);
+
+  for (ulong i = 0; i < numConvLayers; i++) {
+    this->adam_m_filters[i].resize(this->parameters.convParams[i].filters.size(), static_cast<T>(0));
+    this->adam_v_filters[i].resize(this->parameters.convParams[i].filters.size(), static_cast<T>(0));
+    this->adam_m_biases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
+    this->adam_v_biases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
+  }
+
+  this->adam_t = 0;
+}
+
+//===================================================================================================================//
+
+template <typename T>
 void CoreCPU<T>::updateCNNParameters(ulong numSamples)
 {
   T lr = static_cast<T>(this->trainingConfig.learningRate);
   T n = static_cast<T>(numSamples);
 
-  for (ulong i = 0; i < this->parameters.convParams.size(); i++) {
-    for (ulong j = 0; j < this->parameters.convParams[i].filters.size(); j++) {
-      this->parameters.convParams[i].filters[j] -= lr * (this->accumDConvFilters[i][j] / n);
-    }
+  if (this->trainingConfig.optimizer.type == OptimizerType::ADAM) {
+    const auto& opt = this->trainingConfig.optimizer;
+    T beta1 = opt.beta1;
+    T beta2 = opt.beta2;
+    T epsilon = opt.epsilon;
 
-    for (ulong j = 0; j < this->parameters.convParams[i].biases.size(); j++) {
-      this->parameters.convParams[i].biases[j] -= lr * (this->accumDConvBiases[i][j] / n);
+    this->adam_t++;
+
+    T bc1 = static_cast<T>(1) - std::pow(beta1, static_cast<T>(this->adam_t));
+    T bc2 = static_cast<T>(1) - std::pow(beta2, static_cast<T>(this->adam_t));
+
+    for (ulong i = 0; i < this->parameters.convParams.size(); i++) {
+      for (ulong j = 0; j < this->parameters.convParams[i].filters.size(); j++) {
+        T g = this->accumDConvFilters[i][j] / n;
+        this->adam_m_filters[i][j] = beta1 * this->adam_m_filters[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_filters[i][j] = beta2 * this->adam_v_filters[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        T m_hat = this->adam_m_filters[i][j] / bc1;
+        T v_hat = this->adam_v_filters[i][j] / bc2;
+        this->parameters.convParams[i].filters[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
+      }
+
+      for (ulong j = 0; j < this->parameters.convParams[i].biases.size(); j++) {
+        T g = this->accumDConvBiases[i][j] / n;
+        this->adam_m_biases[i][j] = beta1 * this->adam_m_biases[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_biases[i][j] = beta2 * this->adam_v_biases[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        T m_hat = this->adam_m_biases[i][j] / bc1;
+        T v_hat = this->adam_v_biases[i][j] / bc2;
+        this->parameters.convParams[i].biases[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
+      }
+    }
+  } else {
+    // SGD
+    for (ulong i = 0; i < this->parameters.convParams.size(); i++) {
+      for (ulong j = 0; j < this->parameters.convParams[i].filters.size(); j++) {
+        this->parameters.convParams[i].filters[j] -= lr * (this->accumDConvFilters[i][j] / n);
+      }
+
+      for (ulong j = 0; j < this->parameters.convParams[i].biases.size(); j++) {
+        this->parameters.convParams[i].biases[j] -= lr * (this->accumDConvBiases[i][j] / n);
+      }
     }
   }
 }

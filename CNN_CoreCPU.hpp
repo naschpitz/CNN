@@ -31,10 +31,18 @@ namespace CNN
       std::vector<std::vector<T>> accumDConvFilters;
       std::vector<std::vector<T>> accumDConvBiases;
 
+      //-- Adam optimizer state for CNN conv parameters --//
+      std::vector<std::vector<T>> adam_m_filters;
+      std::vector<std::vector<T>> adam_v_filters;
+      std::vector<std::vector<T>> adam_m_biases;
+      std::vector<std::vector<T>> adam_v_biases;
+      ulong adam_t = 0;
+
       //-- Training helpers --//
       void resetGlobalCNNAccumulators();
       void mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker);
       void updateCNNParameters(ulong numSamples);
+      void allocateAdamState();
   };
 }
 

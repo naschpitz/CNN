@@ -451,6 +451,35 @@ kernel void update_parameters(
 }
 
 //===================================================================================================================//
+
+// Adam optimizer update for CNN parameters
+kernel void update_parameters_adam(
+    global TYPE* params,
+    global TYPE* accum,
+    global TYPE* m,
+    global TYPE* v,
+    ulong offset,
+    ulong size,
+    ulong numSamples,
+    float learningRate,
+    float beta1,
+    float beta2,
+    float epsilon,
+    float bc1,
+    float bc2
+  ) {
+  size_t gid = get_global_id(0);
+  if (gid >= size) return;
+
+  TYPE g = accum[offset + gid] / (TYPE)numSamples;
+  m[offset + gid] = beta1 * m[offset + gid] + (1.0f - beta1) * g;
+  v[offset + gid] = beta2 * v[offset + gid] + (1.0f - beta2) * g * g;
+  TYPE m_hat = m[offset + gid] / bc1;
+  TYPE v_hat = v[offset + gid] / bc2;
+  params[offset + gid] -= learningRate * m_hat / (sqrt(v_hat) + epsilon);
+}
+
+//===================================================================================================================//
 // Bridge kernels: copy data between CNN and ANN buffers on the same OpenCL core.
 // copy_cnn_to_ann: copies the last CNN activation (flatten output) into ANN's actvs buffer (layer 0).
 // copy_ann_grad_to_cnn: copies ANN's input gradients (dCost_dActvs, layer 0) into CNN's gradient buffer.

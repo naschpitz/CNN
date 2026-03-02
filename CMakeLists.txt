@@ -28,6 +28,8 @@ add_library(CNN STATIC
   CNN_CoreCPUWorker.hpp CNN_CoreCPUWorker.cpp
   CNN_CoreGPU.hpp CNN_CoreGPU.cpp
   CNN_CoreGPUWorker.hpp CNN_CoreGPUWorker.cpp
+  CNN_GPUBufferManager.hpp CNN_GPUBufferManager.cpp
+  CNN_GPUKernelBuilder.hpp CNN_GPUKernelBuilder.cpp
   opencl/CNN_Defines.hpp.cl opencl/CNN_Kernels.cpp.cl
   CNN_Types.hpp
   CNN_Device.hpp CNN_Device.cpp
@@ -36,6 +38,7 @@ add_library(CNN STATIC
   CNN_PoolType.hpp CNN_PoolType.cpp
   CNN_LayersConfig.hpp CNN_LayersConfig.cpp
   CNN_CoreConfig.hpp
+  CNN_Optimizer.hpp CNN_Optimizer.cpp
   CNN_TrainingConfig.hpp
   CNN_Parameters.hpp
   CNN_Sample.hpp

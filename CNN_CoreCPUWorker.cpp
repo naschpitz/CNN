@@ -80,6 +80,10 @@ ANN::CoreConfig<T> CoreCPUWorker<T>::buildANNConfig(const CoreConfig<T>& cnnConf
   annConfig.trainingConfig.numEpochs = cnnConfig.trainingConfig.numEpochs;
   annConfig.trainingConfig.learningRate = cnnConfig.trainingConfig.learningRate;
   annConfig.trainingConfig.dropoutRate = cnnConfig.trainingConfig.dropoutRate;
+  annConfig.trainingConfig.optimizer.type = static_cast<ANN::OptimizerType>(cnnConfig.trainingConfig.optimizer.type);
+  annConfig.trainingConfig.optimizer.beta1 = cnnConfig.trainingConfig.optimizer.beta1;
+  annConfig.trainingConfig.optimizer.beta2 = cnnConfig.trainingConfig.optimizer.beta2;
+  annConfig.trainingConfig.optimizer.epsilon = cnnConfig.trainingConfig.optimizer.epsilon;
   annConfig.numThreads = 1; // CNN manages its own threading
 
   annConfig.costFunctionConfig.type = static_cast<ANN::CostFunctionType>(cnnConfig.costFunctionConfig.type);

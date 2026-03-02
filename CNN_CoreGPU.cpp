@@ -190,7 +190,7 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
     }
 
     // Sync parameters from GPU so getParameters() returns current values (e.g., for checkpoint saves)
-    this->gpuWorkers[0]->syncParametersFromGPU();
+    this->gpuWorkers[0]->bufferManager->syncParametersFromGPU();
     this->parameters = this->gpuWorkers[0]->getParameters();
 
     T avgEpochLoss = epochLoss / static_cast<T>(numSamples);
@@ -298,7 +298,7 @@ void CoreGPU<T>::mergeCNNGradients()
     gpuIndices.append(i);
 
   QtConcurrent::blockingMap(gpuIndices, [this, &allFilters, &allBiases](size_t gpuIdx) {
-    this->gpuWorkers[gpuIdx]->readAccumulatedGradients(allFilters[gpuIdx], allBiases[gpuIdx]);
+    this->gpuWorkers[gpuIdx]->bufferManager->readAccumulatedGradients(allFilters[gpuIdx], allBiases[gpuIdx]);
   });
 
   // Sum on CPU
@@ -313,7 +313,7 @@ void CoreGPU<T>::mergeCNNGradients()
 
   // Write merged gradients back to all workers in parallel
   QtConcurrent::blockingMap(gpuIndices, [this, &totalFilters, &totalBiases](size_t gpuIdx) {
-    this->gpuWorkers[gpuIdx]->setAccumulators(totalFilters, totalBiases);
+    this->gpuWorkers[gpuIdx]->bufferManager->setAccumulators(totalFilters, totalBiases);
   });
 }
 
@@ -336,7 +336,7 @@ void CoreGPU<T>::mergeANNGradients()
     gpuIndices.append(i);
 
   QtConcurrent::blockingMap(gpuIndices, [this, &allWeights, &allBiases](size_t gpuIdx) {
-    this->gpuWorkers[gpuIdx]->readANNAccumulatedGradients(allWeights[gpuIdx], allBiases[gpuIdx]);
+    this->gpuWorkers[gpuIdx]->bufferManager->readANNAccumulatedGradients(allWeights[gpuIdx], allBiases[gpuIdx]);
   });
 
   // Sum on CPU
@@ -351,7 +351,7 @@ void CoreGPU<T>::mergeANNGradients()
 
   // Write merged gradients back to all workers in parallel
   QtConcurrent::blockingMap(gpuIndices, [this, &totalWeights, &totalBiases](size_t gpuIdx) {
-    this->gpuWorkers[gpuIdx]->setANNAccumulators(totalWeights, totalBiases);
+    this->gpuWorkers[gpuIdx]->bufferManager->setANNAccumulators(totalWeights, totalBiases);
   });
 }
 

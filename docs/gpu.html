@@ -192,6 +192,14 @@
   <p>Size: sum of all max-pool output sizes.</p>
 </div>
 
+<div class="info-box">
+  <strong>Why buffer allocation lives in CoreGPUWorker, not CoreGPU:</strong>
+  Each <code>CoreGPUWorker</code> owns its own <code>OpenCLWrapper::Core</code>, which is bound to a specific GPU device.
+  GPU buffers are device-local — they must be allocated on the device that will use them.
+  This differs from the CPU path, where <code>CoreCPU</code> allocates shared host memory that all CPU workers can reference directly.
+  Since <code>CoreGPU</code> does not own any GPU device context, it cannot allocate device buffers; only the workers can.
+</div>
+
 <h2 id="propagate-kernels">Propagation Kernels</h2>
 
 <h3>calculate_conv2d</h3>

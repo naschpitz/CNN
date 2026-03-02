@@ -3,6 +3,8 @@
 
 #include "CNN_Core.hpp"
 #include "CNN_Worker.hpp"
+#include "CNN_GPUBufferManager.hpp"
+#include "CNN_GPUKernelBuilder.hpp"
 
 #include <ANN_CoreGPUWorker.hpp>
 #include <OCLW_Core.hpp>
@@ -39,15 +41,6 @@ namespace CNN
       //-- Step-by-step training methods (for external orchestration) --//
       void backpropagateSample(const Input<T>& input, const Output<T>& expected);
       void accumulate();
-      void resetAccumulators();
-
-      //-- CNN gradient access (for multi-GPU merging) --//
-      void readAccumulatedGradients(std::vector<T>& accumFilters, std::vector<T>& accumBiases);
-      void setAccumulators(const std::vector<T>& accumFilters, const std::vector<T>& accumBiases);
-
-      //-- ANN gradient access (for multi-GPU merging) --//
-      void readANNAccumulatedGradients(ANN::Tensor1D<T>& accumWeights, ANN::Tensor1D<T>& accumBiases);
-      void setANNAccumulators(const ANN::Tensor1D<T>& accumWeights, const ANN::Tensor1D<T>& accumBiases);
 
       //-- Weight update --//
       void update(ulong numSamples);
@@ -57,25 +50,15 @@ namespace CNN
       void restoreKernels(const std::vector<std::vector<OpenCLWrapper::Kernel>>& kernels);
       void setTrainingKernelsReady(bool ready);
 
-      //-- Parameter synchronization --//
-      void syncParametersFromGPU();
-
       //-- Parameter access --//
       const Parameters<T>& getParameters() const
       {
         return parameters;
       }
 
-      //-- Shared-core integration: source loading and buffer allocation --//
-      void loadSources(bool skipDefines);
-      void allocateBuffers();
-
-      //-- Shared-core integration: kernel building blocks --//
-      void addPropagateKernels();
-      void addCopyBridgeKernels();
-      void addBackpropagateKernels();
-      void addCNNAccumulateKernels();
-      void addCNNUpdateKernels(ulong numSamples);
+      //-- Components (public for direct access by CoreGPU) --//
+      std::unique_ptr<GPUBufferManager<T>> bufferManager;
+      std::unique_ptr<GPUKernelBuilder<T>> kernelBuilder;
 
     private:
       //-- Configuration --//
@@ -83,63 +66,9 @@ namespace CNN
       Parameters<T> parameters;
       LogLevel logLevel = LogLevel::ERROR;
 
-      //-- CNN shape info --//
-      Shape3D cnnOutputShape;
-      ulong flattenSize;
-
-      //-- Per-layer buffer offset/size info --//
-      struct LayerInfo {
-          ulong actvOffset; // offset in cnn_actvs / cnn_grads
-          ulong actvSize; // number of elements for this layer's output
-      };
-
-      std::vector<LayerInfo> layerInfos; // index 0 = input, 1..N = CNN layer outputs
-      ulong totalActvSize = 0;
-
-      // Conv layer offsets into flat filter/bias buffers
-      struct ConvInfo {
-          ulong filterOffset;
-          ulong biasOffset;
-          ulong numFilterElems;
-          ulong numBiases;
-      };
-
-      std::vector<ConvInfo> convInfos;
-      ulong totalFilterSize = 0;
-      ulong totalBiasSize = 0;
-
-      // Pool layer indices offset
-      struct PoolInfo {
-          ulong indexOffset;
-          ulong indexSize;
-      };
-
-      std::vector<PoolInfo> poolInfos;
-      ulong totalPoolIndexSize = 0;
-
       //-- OpenCL state --//
       std::unique_ptr<OpenCLWrapper::Core> ownedCore; // Owned core (standalone mode)
-      OpenCLWrapper::Core* core = nullptr; // Pointer to active core (owned or shared)
-
-      //-- ANN GPU worker (dense layers on shared core) --//
-      std::unique_ptr<ANN::CoreGPUWorker<T>> annGPUWorker;
-
-      //-- Kernel setup flags --//
-      bool predictKernelsSetup = false;
-      bool trainingKernelsSetup = false;
-      bool updateKernelsSetup = false;
-
-      //-- Initialization --//
-      void computeLayerOffsets();
-      void buildANNWorker();
-
-      //-- Kernel setup (standalone mode) --//
-      void setupPredictKernels();
-      void setupTrainingKernels();
-      void setupUpdateKernels(ulong numSamples);
-
-      //-- Helpers --//
-      void invalidateAllKernelFlags();
+      OpenCLWrapper::Core* core = nullptr; // Pointer to active core (owned or shared);
   };
 }
 
