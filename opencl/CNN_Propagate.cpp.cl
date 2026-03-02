@@ -8,34 +8,23 @@
 // Computes z = input ⊛ filter + bias (forward pass)
 // One work-item per output element (f, oh, ow)
 // nElements = numFilters * outH * outW
-kernel void calculate_conv2d(
-    global TYPE* actvs,
-    global TYPE* filters,
-    global TYPE* biases,
-    ulong actv_in_offset,    // offset of input tensor in actvs buffer
-    ulong actv_out_offset,   // offset of output tensor in actvs buffer
-    ulong filter_offset,     // offset of this layer's filters
-    ulong bias_offset,       // offset of this layer's biases
-    ulong inputC,
-    ulong inputH,
-    ulong inputW,
-    ulong numFilters,
-    ulong filterH,
-    ulong filterW,
-    ulong strideY,
-    ulong strideX,
-    ulong padY,
-    ulong padX,
-    ulong outH,
-    ulong outW
-  ) {
+kernel void calculate_conv2d(global TYPE* actvs, global TYPE* filters, global TYPE* biases,
+                             ulong actv_in_offset, // offset of input tensor in actvs buffer
+                             ulong actv_out_offset, // offset of output tensor in actvs buffer
+                             ulong filter_offset, // offset of this layer's filters
+                             ulong bias_offset, // offset of this layer's biases
+                             ulong inputC, ulong inputH, ulong inputW, ulong numFilters, ulong filterH, ulong filterW,
+                             ulong strideY, ulong strideX, ulong padY, ulong padX, ulong outH, ulong outW)
+{
   size_t gid = get_global_id(0);
 
   ulong totalOut = numFilters * outH * outW;
-  if (gid >= totalOut) return;
+
+  if (gid >= totalOut)
+    return;
 
   // Decompose gid into (f, oh, ow)
-  ulong f  = gid / (outH * outW);
+  ulong f = gid / (outH * outW);
   ulong rem = gid % (outH * outW);
   ulong oh = rem / outW;
   ulong ow = rem % outW;
@@ -50,14 +39,18 @@ kernel void calculate_conv2d(
 
     for (ulong kh = 0; kh < filterH; kh++) {
       long ih = (long)(oh * strideY + kh) - (long)padY;
-      if (ih < 0 || ih >= (long)inputH) continue;
+
+      if (ih < 0 || ih >= (long)inputH)
+        continue;
 
       ulong actvRowBase = actvCBase + (ulong)ih * inputW;
       ulong filterRowBase = filterCBase + kh * filterW;
 
       for (ulong kw = 0; kw < filterW; kw++) {
         long iw = (long)(ow * strideX + kw) - (long)padX;
-        if (iw < 0 || iw >= (long)inputW) continue;
+
+        if (iw < 0 || iw >= (long)inputW)
+          continue;
 
         sum += actvs[actvRowBase + (ulong)iw] * filters[filterRowBase + kw];
       }
@@ -71,14 +64,12 @@ kernel void calculate_conv2d(
 
 // Computes a = max(0, z) (forward pass)
 // One work-item per element, nElements = layer tensor size
-kernel void calculate_relu(
-    global TYPE* actvs,
-    ulong in_offset,
-    ulong out_offset,
-    ulong size
-  ) {
+kernel void calculate_relu(global TYPE* actvs, ulong in_offset, ulong out_offset, ulong size)
+{
   size_t gid = get_global_id(0);
-  if (gid >= size) return;
+
+  if (gid >= size)
+    return;
 
   TYPE val = actvs[in_offset + gid];
   actvs[out_offset + gid] = (val > (TYPE)0) ? val : (TYPE)0;
@@ -89,28 +80,18 @@ kernel void calculate_relu(
 // Computes a = max(region) and records max indices (forward pass)
 // One work-item per output element (c, oh, ow)
 // nElements = C * outH * outW
-kernel void calculate_maxpool(
-    global TYPE* actvs,
-    global ulong* pool_indices,
-    ulong actv_in_offset,
-    ulong actv_out_offset,
-    ulong pool_idx_offset,
-    ulong channels,
-    ulong inputH,
-    ulong inputW,
-    ulong poolH,
-    ulong poolW,
-    ulong strideY,
-    ulong strideX,
-    ulong outH,
-    ulong outW
-  ) {
+kernel void calculate_maxpool(global TYPE* actvs, global ulong* pool_indices, ulong actv_in_offset,
+                              ulong actv_out_offset, ulong pool_idx_offset, ulong channels, ulong inputH, ulong inputW,
+                              ulong poolH, ulong poolW, ulong strideY, ulong strideX, ulong outH, ulong outW)
+{
   size_t gid = get_global_id(0);
 
   ulong totalOut = channels * outH * outW;
-  if (gid >= totalOut) return;
 
-  ulong c  = gid / (outH * outW);
+  if (gid >= totalOut)
+    return;
+
+  ulong c = gid / (outH * outW);
   ulong rem = gid % (outH * outW);
   ulong oh = rem / outW;
   ulong ow = rem % outW;
@@ -140,4 +121,3 @@ kernel void calculate_maxpool(
 //===================================================================================================================//
 
 #endif // CNN_PROPAGATE_CPP_CL
-

@@ -6,13 +6,12 @@
 //===================================================================================================================//
 
 // Zero a region of a buffer
-kernel void zero_buffer(
-    global TYPE* buf,
-    ulong offset,
-    ulong size
-  ) {
+kernel void zero_buffer(global TYPE* buf, ulong offset, ulong size)
+{
   size_t gid = get_global_id(0);
-  if (gid >= size) return;
+
+  if (gid >= size)
+    return;
 
   buf[offset + gid] = (TYPE)0;
 }
@@ -20,14 +19,12 @@ kernel void zero_buffer(
 //===================================================================================================================//
 
 // Accumulates per-sample gradients: accum[gid] += grad[gid]
-kernel void accumulate_gradients(
-    global TYPE* accum,
-    global TYPE* grad,
-    ulong offset,
-    ulong size
-  ) {
+kernel void accumulate_gradients(global TYPE* accum, global TYPE* grad, ulong offset, ulong size)
+{
   size_t gid = get_global_id(0);
-  if (gid >= size) return;
+
+  if (gid >= size)
+    return;
 
   accum[offset + gid] += grad[offset + gid];
 }
@@ -35,16 +32,13 @@ kernel void accumulate_gradients(
 //===================================================================================================================//
 
 // Updates parameters: params[gid] -= lr · (accum[gid] / numSamples)
-kernel void update_parameters(
-    global TYPE* params,
-    global TYPE* accum,
-    ulong offset,
-    ulong size,
-    ulong numSamples,
-    float learningRate
-  ) {
+kernel void update_parameters(global TYPE* params, global TYPE* accum, ulong offset, ulong size, ulong numSamples,
+                              float learningRate)
+{
   size_t gid = get_global_id(0);
-  if (gid >= size) return;
+
+  if (gid >= size)
+    return;
 
   params[offset + gid] -= learningRate * (accum[offset + gid] / (TYPE)numSamples);
 }
@@ -52,23 +46,14 @@ kernel void update_parameters(
 //===================================================================================================================//
 
 // Adam optimizer update for CNN parameters
-kernel void update_parameters_adam(
-    global TYPE* params,
-    global TYPE* accum,
-    global TYPE* m,
-    global TYPE* v,
-    ulong offset,
-    ulong size,
-    ulong numSamples,
-    float learningRate,
-    float beta1,
-    float beta2,
-    float epsilon,
-    float bc1,
-    float bc2
-  ) {
+kernel void update_parameters_adam(global TYPE* params, global TYPE* accum, global TYPE* m, global TYPE* v,
+                                   ulong offset, ulong size, ulong numSamples, float learningRate, float beta1,
+                                   float beta2, float epsilon, float bc1, float bc2)
+{
   size_t gid = get_global_id(0);
-  if (gid >= size) return;
+
+  if (gid >= size)
+    return;
 
   TYPE g = accum[offset + gid] / (TYPE)numSamples;
   m[offset + gid] = beta1 * m[offset + gid] + (1.0f - beta1) * g;
@@ -81,4 +66,3 @@ kernel void update_parameters_adam(
 //===================================================================================================================//
 
 #endif // CNN_UPDATE_CPP_CL
-
