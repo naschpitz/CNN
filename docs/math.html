@@ -43,6 +43,7 @@
     <li><a href="#relu-backprop">ReLU Backpropagation</a></li>
     <li><a href="#he-init">He Initialization</a></li>
     <li><a href="#sgd">SGD Update Rule</a></li>
+    <li><a href="#adam">Adam Optimizer</a></li>
     <li><a href="#gradient-flow">End-to-End Gradient Flow</a></li>
   </ol>
 </div>
@@ -247,7 +248,7 @@ W \sim \mathcal{N}\left(0, \sqrt{\frac{2}{\text{fan\_in}}}\right)
 </ul>
 
 <div class="tip-box">
-<strong>Code:</strong> <code>CoreCPU&lt;T&gt;::initializeConvParams()</code> in <code>CNN_CoreCPU.cpp</code> computes <code>stddev = sqrt(2.0 / fanIn)</code> where <code>fanIn = inputC × filterH × filterW</code>, then samples from <code>std::normal_distribution</code>. Biases are initialised to <strong>zero</strong>.
+<strong>Code:</strong> <code>Worker&lt;T&gt;::initializeConvParams()</code> in <code>CNN_Worker.cpp</code> computes <code>stddev = sqrt(2.0 / fanIn)</code> where <code>fanIn = inputC × filterH × filterW</code>, then samples from <code>std::normal_distribution</code>. Biases are initialised to <strong>zero</strong>.
 </div>
 
 <div class="info-box">
@@ -281,11 +282,39 @@ W^{(t+1)} = W^{(t)} - \eta \cdot \frac{1}{N} \sum_{n=1}^{N} \nabla_W L_n
 
 <div class="tip-box">
 <strong>Code:</strong> <code>CoreCPU&lt;T&gt;::accumulateCNNGradients(dConvFilters, dConvBiases)</code> sums per-sample gradients into epoch accumulators. <code>CoreCPU&lt;T&gt;::updateCNNParameters(numSamples)</code> divides by the sample count and applies the learning rate: <code>params -= lr * (accum / N)</code>.
-On GPU: <code>accumulate_gradients</code> and <code>update_parameters</code> kernels in <code>opencl/CNN_Kernels.cpp.cl</code>.
+On GPU: <code>accumulate_gradients</code> and <code>update_parameters</code> kernels in <code>opencl/CNN_Update.cpp.cl</code>.
+</div>
+
+<!-- ========== ADAM ========== -->
+<h2 id="adam">Adam Optimizer</h2>
+<p>Adam (Adaptive Moment Estimation) extends SGD by adapting the learning rate <strong>per parameter</strong> using running averages of the gradient's first and second moments. Proposed by <em>Kingma &amp; Ba, 2015</em>.</p>
+
+<p>For each parameter \( \theta \) with averaged gradient \( g_t = \frac{1}{N} \sum_{n=1}^{N} \nabla_\theta L_n \) at step \( t \):</p>
+
+<div class="math-block">
+\[
+  m_t = \beta_1 \cdot m_{t-1} + (1 - \beta_1) \cdot g_t
+  \qquad
+  v_t = \beta_2 \cdot v_{t-1} + (1 - \beta_2) \cdot g_t^2
+\]
+\[
+  \hat{m}_t = \frac{m_t}{1 - \beta_1^t}
+  \qquad
+  \hat{v}_t = \frac{v_t}{1 - \beta_2^t}
+\]
+\[
+  \theta \leftarrow \theta - \alpha \cdot \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon}
+\]
+</div>
+
+<p>where \( \alpha \) is the base learning rate, \( \beta_1 = 0.9 \), \( \beta_2 = 0.999 \), and \( \epsilon = 10^{-8} \) by default. The effective step size per parameter is \( \alpha / (\sqrt{\hat{v}_t} + \epsilon) \) — parameters with large, consistent gradients get smaller steps, while parameters with small or noisy gradients get larger steps. The base learning rate \( \alpha \) remains <strong>fixed</strong> throughout training.</p>
+
+<div class="tip-box">
+<strong>Code:</strong> In <code>CoreCPU&lt;T&gt;::updateCNNParameters(numSamples)</code>, when <code>optimizer.type == ADAM</code>, per-parameter moment vectors are updated and bias-corrected before applying the update. The dense layer update follows the same logic in the underlying ANN core. On GPU: <code>update_parameters_adam</code> kernel in <code>opencl/CNN_Update.cpp.cl</code>.
 </div>
 
 <div class="info-box">
-Modern variants like Adam and RMSprop build on SGD by adaptively scaling the learning rate per parameter, but the core principle of averaging gradients over batches remains.
+<strong>Configuration:</strong> Set via <code>TrainingConfig::optimizer</code> with fields <code>type</code> (<code>SGD</code> or <code>ADAM</code>), <code>beta1</code>, <code>beta2</code>, and <code>epsilon</code>. See <a href="api.html">API Reference</a>.
 </div>
 
 <h2 id="gradient-flow">End-to-End Gradient Flow</h2>

@@ -122,8 +122,17 @@
   <tr><th>Value</th><th>String</th><th>Description</th></tr>
   <tr><td><code>SQUARED_DIFFERENCE</code></td><td><code>"squaredDifference"</code></td><td>Standard squared error: Σ(predicted − expected)²</td></tr>
   <tr><td><code>WEIGHTED_SQUARED_DIFFERENCE</code></td><td><code>"weightedSquaredDifference"</code></td><td>Weighted squared error: Σ wᵢ·(predicted − expected)²</td></tr>
+  <tr><td><code>CROSS_ENTROPY</code></td><td><code>"crossEntropy"</code></td><td>Cross-entropy loss: −Σ yᵢ·log(ŷᵢ)</td></tr>
 </table>
 <p>Helpers: <code>CostFunction::nameToType(str)</code>, <code>CostFunction::typeToName(type)</code></p>
+
+<h3>OptimizerType <span class="badge badge-blue">CNN_Optimizer.hpp</span></h3>
+<table>
+  <tr><th>Value</th><th>Int</th><th>Description</th></tr>
+  <tr><td><code>SGD</code></td><td>0</td><td>Stochastic Gradient Descent (default)</td></tr>
+  <tr><td><code>ADAM</code></td><td>1</td><td>Adaptive Moment Estimation</td></tr>
+</table>
+<p>Helpers: <code>Optimizer::nameToType(str)</code>, <code>Optimizer::typeToName(type)</code></p>
 
 <h3>LogLevel <span class="badge badge-blue">CNN_LogLevel.hpp</span></h3>
 <table>
@@ -158,10 +167,20 @@
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
   <tr><td><code>numEpochs</code></td><td><code>ulong</code></td><td>Total training epochs (default 0)</td></tr>
-  <tr><td><code>learningRate</code></td><td><code>float</code></td><td>SGD learning rate (default 0.01)</td></tr>
+  <tr><td><code>learningRate</code></td><td><code>float</code></td><td>Learning rate (default 0.01). Used as the base learning rate α for both SGD and Adam.</td></tr>
   <tr><td><code>batchSize</code></td><td><code>ulong</code></td><td>Mini-batch size (default 64)</td></tr>
   <tr><td><code>shuffleSamples</code></td><td><code>bool</code></td><td>Shuffle sample order each epoch (default true)</td></tr>
   <tr><td><code>dropoutRate</code></td><td><code>float</code></td><td>Dropout probability for dense hidden layers during training (default 0.0 = disabled). Uses inverted dropout: activations are scaled by 1/(1−p) during training so no adjustment is needed at inference. Applied only to the dense (fully-connected) layers, not convolutional layers.</td></tr>
+  <tr><td><code>optimizer</code></td><td><code>Optimizer&lt;T&gt;</code></td><td>Optimizer configuration (default: SGD)</td></tr>
+</table>
+
+<h3>Optimizer&lt;T&gt; <span class="badge badge-blue">CNN_Optimizer.hpp</span></h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>type</code></td><td><code>OptimizerType</code></td><td>Optimizer algorithm: <code>SGD</code> (default) or <code>ADAM</code></td></tr>
+  <tr><td><code>beta1</code></td><td><code>T</code></td><td>Exponential decay rate for first moment estimate (default 0.9). Only used by Adam.</td></tr>
+  <tr><td><code>beta2</code></td><td><code>T</code></td><td>Exponential decay rate for second moment estimate (default 0.999). Only used by Adam.</td></tr>
+  <tr><td><code>epsilon</code></td><td><code>T</code></td><td>Small constant for numerical stability (default 10⁻⁸). Only used by Adam.</td></tr>
 </table>
 
 <h3>CostFunctionConfig&lt;T&gt; <span class="badge badge-blue">CNN_CostFunctionConfig.hpp</span></h3>
