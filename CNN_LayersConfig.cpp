@@ -97,6 +97,11 @@ Shape3D LayersConfig::validateShapes(const Shape3D& inputShape) const
       // Flatten converts 3D to 1D - shape check is deferred
       break;
     }
+
+    case LayerType::BATCHNORM: {
+      // Batch normalization does not change shape
+      break;
+    }
     }
   }
 

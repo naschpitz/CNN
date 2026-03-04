@@ -178,7 +178,7 @@ core-&gt;train(samples.size(), CNN::makeSampleProvider(samples));  <span class="
   <p><strong>Implementation:</strong> <code>CoreCPU&lt;T&gt;</code> contains a <code>std::unique_ptr&lt;ANN::Core&lt;T&gt;&gt; annCore</code> member. After CNN propagation and flatten, the flattened vector is passed to ANN for dense layer processing.</p>
   <pre><code><span class="comment">// In CoreCPU::predict()</span>
 Tensor3D&lt;<span class="type">T</span>&gt; cnnOut = propagateCNN(input);
-Tensor1D&lt;<span class="type">T</span>&gt; flatInput = Flatten&lt;<span class="type">T</span>&gt;::predict(cnnOut);
+Tensor1D&lt;<span class="type">T</span>&gt; flatInput = Flatten&lt;<span class="type">T</span>&gt;::propagate(cnnOut);
 ANN::Input&lt;<span class="type">T</span>&gt; annInput(flatInput.begin(), flatInput.end());
 ANN::Output&lt;<span class="type">T</span>&gt; annOutput = annCore-&gt;predict(annInput);</code></pre>
   <p><strong>Benefit:</strong> Avoids code duplication, leverages ANN's optimized dense layer implementation.</p>
@@ -188,7 +188,7 @@ ANN::Output&lt;<span class="type">T</span>&gt; annOutput = annCore-&gt;predict(a
   <h3>📦 Stateless Layer Pattern</h3>
   <p><strong>Purpose:</strong> Layer operations are pure functions with no mutable state.</p>
   <p><strong>Implementation:</strong> All layer classes (Conv2D, ReLU, Pool, Flatten) contain only static methods. Parameters are passed as arguments, not stored in instance variables.</p>
-  <pre><code><span class="keyword">static</span> Tensor3D&lt;<span class="type">T</span>&gt; Conv2D&lt;<span class="type">T</span>&gt;::predict(
+  <pre><code><span class="keyword">static</span> Tensor3D&lt;<span class="type">T</span>&gt; Conv2D&lt;<span class="type">T</span>&gt;::propagate(
   <span class="keyword">const</span> Tensor3D&lt;<span class="type">T</span>&gt;&amp; input,
   <span class="keyword">const</span> ConvLayerConfig&amp; config,
   <span class="keyword">const</span> ConvParameters&lt;<span class="type">T</span>&gt;&amp; params);</code></pre>
@@ -203,8 +203,8 @@ ANN::Output&lt;<span class="type">T</span>&gt; annOutput = annCore-&gt;predict(a
 <span class="keyword">class</span> Conv2D { ... };
 
 <span class="comment">// Instantiate for different types</span>
-Conv2D&lt;<span class="type">float</span>&gt;::predict(...);
-Conv2D&lt;<span class="type">double</span>&gt;::predict(...);</code></pre>
+Conv2D&lt;<span class="type">float</span>&gt;::propagate(...);
+Conv2D&lt;<span class="type">double</span>&gt;::propagate(...);</code></pre>
   <p><strong>Benefit:</strong> Type safety, compile-time specialization, no runtime type checking overhead.</p>
 </div>
 
@@ -296,10 +296,10 @@ Conv2D&lt;<span class="type">double</span>&gt;::predict(...);</code></pre>
     resetCNNAccumulators()
     <span class="keyword">for</span> sample <span class="keyword">in</span> batch:
       <span class="comment">// 1. Propagate through CNN (store intermediates)</span>
-      cnnOut = propagateCNN(sample.input, intermediates, poolMaxIndices)
-      
+      cnnOut = propagateCNN(sample.input, <span class="keyword">true</span>, &amp;intermediates, &amp;poolMaxIndices)
+
       <span class="comment">// 2. Flatten and propagate through ANN</span>
-      flatInput = Flatten::predict(cnnOut)
+      flatInput = Flatten::propagate(cnnOut)
       annOutput = annCore-&gt;predict(flatInput)
       
       <span class="comment">// 3. Compute loss (MSE)</span>
@@ -329,11 +329,11 @@ Conv2D&lt;<span class="type">double</span>&gt;::predict(...);</code></pre>
   <span class="keyword">switch</span> (layerConfig.type) {
     <span class="keyword">case</span> LayerType::CONV:
       intermediates.push_back(current);
-      current = Conv2D&lt;<span class="type">T</span>&gt;::predict(current, config, params);
+      current = Conv2D&lt;<span class="type">T</span>&gt;::propagate(current, config, params);
       <span class="keyword">break</span>;
     <span class="keyword">case</span> LayerType::RELU:
       intermediates.push_back(current);
-      current = ReLU&lt;<span class="type">T</span>&gt;::predict(current);
+      current = ReLU&lt;<span class="type">T</span>&gt;::propagate(current);
       <span class="keyword">break</span>;
     <span class="comment">// ... Pool, Flatten</span>
   }
@@ -343,7 +343,7 @@ Conv2D&lt;<span class="type">double</span>&gt;::predict(...);</code></pre>
 <div class="card">
   <h4>2. Propagation (ANN)</h4>
   <p>Flattened CNN output becomes input to ANN dense layers. ANN handles its own propagation and gradient computation.</p>
-  <pre><code>Tensor1D&lt;<span class="type">T</span>&gt; flatInput = Flatten&lt;<span class="type">T</span>&gt;::predict(cnnOut);
+  <pre><code>Tensor1D&lt;<span class="type">T</span>&gt; flatInput = Flatten&lt;<span class="type">T</span>&gt;::propagate(cnnOut);
 ANN::Input&lt;<span class="type">T</span>&gt; annInput(flatInput.begin(), flatInput.end());
 ANN::Output&lt;<span class="type">T</span>&gt; annOutput = annCore-&gt;predict(annInput);</code></pre>
 </div>

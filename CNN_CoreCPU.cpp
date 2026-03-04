@@ -24,6 +24,9 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
   // Initialize conv parameters if not loaded
   Worker<T>::initializeConvParams(this->layersConfig, this->inputShape, this->parameters);
 
+  // Initialize batch norm parameters if not loaded
+  Worker<T>::initializeBatchNormParams(this->layersConfig, this->inputShape, this->parameters);
+
   // Create the step worker (used for predict and single-threaded paths)
   bool allocateTraining = (this->modeType == ModeType::TRAIN);
   this->stepWorker = std::make_unique<CoreCPUWorker<T>>(config, this->layersConfig, this->parameters, allocateTraining);
@@ -36,6 +39,18 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
     for (ulong i = 0; i < this->parameters.convParams.size(); i++) {
       this->accumDConvFilters[i].resize(this->parameters.convParams[i].filters.size(), static_cast<T>(0));
       this->accumDConvBiases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
+    }
+
+    this->accumDBNGamma.resize(this->parameters.bnParams.size());
+    this->accumDBNBeta.resize(this->parameters.bnParams.size());
+    this->accumBNMean.resize(this->parameters.bnParams.size());
+    this->accumBNVar.resize(this->parameters.bnParams.size());
+
+    for (ulong i = 0; i < this->parameters.bnParams.size(); i++) {
+      this->accumDBNGamma[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
+      this->accumDBNBeta[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
+      this->accumBNMean[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
+      this->accumBNVar[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
     }
 
     if (this->trainingConfig.optimizer.type == OptimizerType::ADAM) {
@@ -61,6 +76,13 @@ void CoreCPU<T>::resetGlobalCNNAccumulators()
     std::fill(this->accumDConvFilters[i].begin(), this->accumDConvFilters[i].end(), static_cast<T>(0));
     std::fill(this->accumDConvBiases[i].begin(), this->accumDConvBiases[i].end(), static_cast<T>(0));
   }
+
+  for (ulong i = 0; i < this->accumDBNGamma.size(); i++) {
+    std::fill(this->accumDBNGamma[i].begin(), this->accumDBNGamma[i].end(), static_cast<T>(0));
+    std::fill(this->accumDBNBeta[i].begin(), this->accumDBNBeta[i].end(), static_cast<T>(0));
+    std::fill(this->accumBNMean[i].begin(), this->accumBNMean[i].end(), static_cast<T>(0));
+    std::fill(this->accumBNVar[i].begin(), this->accumBNVar[i].end(), static_cast<T>(0));
+  }
 }
 
 //===================================================================================================================//
@@ -77,6 +99,58 @@ void CoreCPU<T>::mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker)
 
     for (ulong j = 0; j < wBiases[i].size(); j++)
       this->accumDConvBiases[i][j] += wBiases[i][j];
+  }
+
+  const auto& wBNGamma = worker.getAccumBNGamma();
+  const auto& wBNBeta = worker.getAccumBNBeta();
+
+  for (ulong i = 0; i < wBNGamma.size(); i++) {
+    for (ulong j = 0; j < wBNGamma[i].size(); j++)
+      this->accumDBNGamma[i][j] += wBNGamma[i][j];
+
+    for (ulong j = 0; j < wBNBeta[i].size(); j++)
+      this->accumDBNBeta[i][j] += wBNBeta[i][j];
+  }
+
+  const auto& wBNMean = worker.getAccumBNMean();
+  const auto& wBNVar = worker.getAccumBNVar();
+
+  for (ulong i = 0; i < wBNMean.size(); i++) {
+    for (ulong j = 0; j < wBNMean[i].size(); j++)
+      this->accumBNMean[i][j] += wBNMean[i][j];
+
+    for (ulong j = 0; j < wBNVar[i].size(); j++)
+      this->accumBNVar[i][j] += wBNVar[i][j];
+  }
+}
+
+//===================================================================================================================//
+
+template <typename T>
+void CoreCPU<T>::updateBNRunningStats(ulong numSamples)
+{
+  T momentum = static_cast<T>(0.1); // Default momentum
+
+  // Get momentum from the first BN layer config
+  for (const auto& layerConfig : this->layersConfig.cnnLayers) {
+    if (layerConfig.type == LayerType::BATCHNORM) {
+      const auto& bn = std::get<BatchNormLayerConfig>(layerConfig.config);
+      momentum = static_cast<T>(bn.momentum);
+      break;
+    }
+  }
+
+  T n = static_cast<T>(numSamples);
+
+  for (ulong i = 0; i < this->parameters.bnParams.size(); i++) {
+    for (ulong j = 0; j < this->parameters.bnParams[i].numChannels; j++) {
+      T avgMean = this->accumBNMean[i][j] / n;
+      T avgVar = this->accumBNVar[i][j] / n;
+      this->parameters.bnParams[i].runningMean[j] =
+        (static_cast<T>(1) - momentum) * this->parameters.bnParams[i].runningMean[j] + momentum * avgMean;
+      this->parameters.bnParams[i].runningVar[j] =
+        (static_cast<T>(1) - momentum) * this->parameters.bnParams[i].runningVar[j] + momentum * avgVar;
+    }
   }
 }
 
@@ -97,6 +171,20 @@ void CoreCPU<T>::allocateAdamState()
     this->adam_v_filters[i].resize(this->parameters.convParams[i].filters.size(), static_cast<T>(0));
     this->adam_m_biases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
     this->adam_v_biases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
+  }
+
+  ulong numBNLayers = this->parameters.bnParams.size();
+
+  this->adam_m_bn_gamma.resize(numBNLayers);
+  this->adam_v_bn_gamma.resize(numBNLayers);
+  this->adam_m_bn_beta.resize(numBNLayers);
+  this->adam_v_bn_beta.resize(numBNLayers);
+
+  for (ulong i = 0; i < numBNLayers; i++) {
+    this->adam_m_bn_gamma[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
+    this->adam_v_bn_gamma[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
+    this->adam_m_bn_beta[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
+    this->adam_v_bn_beta[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
   }
 
   this->adam_t = 0;
@@ -140,6 +228,26 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples)
         this->parameters.convParams[i].biases[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
       }
     }
+
+    for (ulong i = 0; i < this->parameters.bnParams.size(); i++) {
+      for (ulong j = 0; j < this->parameters.bnParams[i].numChannels; j++) {
+        T g = this->accumDBNGamma[i][j] / n;
+        this->adam_m_bn_gamma[i][j] = beta1 * this->adam_m_bn_gamma[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_bn_gamma[i][j] = beta2 * this->adam_v_bn_gamma[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        T m_hat = this->adam_m_bn_gamma[i][j] / bc1;
+        T v_hat = this->adam_v_bn_gamma[i][j] / bc2;
+        this->parameters.bnParams[i].gamma[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
+      }
+
+      for (ulong j = 0; j < this->parameters.bnParams[i].numChannels; j++) {
+        T g = this->accumDBNBeta[i][j] / n;
+        this->adam_m_bn_beta[i][j] = beta1 * this->adam_m_bn_beta[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_bn_beta[i][j] = beta2 * this->adam_v_bn_beta[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        T m_hat = this->adam_m_bn_beta[i][j] / bc1;
+        T v_hat = this->adam_v_bn_beta[i][j] / bc2;
+        this->parameters.bnParams[i].beta[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
+      }
+    }
   } else {
     // SGD
     for (ulong i = 0; i < this->parameters.convParams.size(); i++) {
@@ -149,6 +257,16 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples)
 
       for (ulong j = 0; j < this->parameters.convParams[i].biases.size(); j++) {
         this->parameters.convParams[i].biases[j] -= lr * (this->accumDConvBiases[i][j] / n);
+      }
+    }
+
+    for (ulong i = 0; i < this->parameters.bnParams.size(); i++) {
+      for (ulong j = 0; j < this->parameters.bnParams[i].numChannels; j++) {
+        this->parameters.bnParams[i].gamma[j] -= lr * (this->accumDBNGamma[i][j] / n);
+      }
+
+      for (ulong j = 0; j < this->parameters.bnParams[i].numChannels; j++) {
+        this->parameters.bnParams[i].beta[j] -= lr * (this->accumDBNBeta[i][j] / n);
       }
     }
   }
@@ -309,6 +427,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       }
 
       this->updateCNNParameters(currentBatchSize);
+      this->updateBNRunningStats(currentBatchSize);
     }
 
     // Sync ANN parameters for checkpoint saves

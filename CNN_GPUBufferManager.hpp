@@ -38,6 +38,8 @@ namespace CNN
       void resetAccumulators();
       void readAccumulatedGradients(std::vector<T>& accumFilters, std::vector<T>& accumBiases);
       void setAccumulators(const std::vector<T>& accumFilters, const std::vector<T>& accumBiases);
+      void readBNAccumulatedGradients(std::vector<T>& accumGamma, std::vector<T>& accumBeta);
+      void setBNAccumulators(const std::vector<T>& accumGamma, const std::vector<T>& accumBeta);
       void readANNAccumulatedGradients(ANN::Tensor1D<T>& accumWeights, ANN::Tensor1D<T>& accumBiases);
       void setANNAccumulators(const ANN::Tensor1D<T>& accumWeights, const ANN::Tensor1D<T>& accumBiases);
 
@@ -59,6 +61,11 @@ namespace CNN
           ulong indexSize;
       };
 
+      struct BatchNormInfo {
+          ulong paramOffset; // Offset into flat bn_gamma/bn_beta/bn_running_mean/bn_running_var buffers
+          ulong numChannels;
+      };
+
       //-- Public data (accessed by CoreGPUWorker and GPUKernelBuilder) --//
       std::vector<LayerInfo> layerInfos;
       ulong totalActvSize = 0;
@@ -69,6 +76,9 @@ namespace CNN
 
       std::vector<PoolInfo> poolInfos;
       ulong totalPoolIndexSize = 0;
+
+      std::vector<BatchNormInfo> bnInfos;
+      ulong totalBNParamSize = 0;
 
       Shape3D cnnOutputShape;
       ulong flattenSize = 0;

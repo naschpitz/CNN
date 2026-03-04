@@ -81,6 +81,66 @@ void Worker<T>::initializeConvParams(const LayersConfig& layersConfig, const Sha
 //===================================================================================================================//
 
 template <typename T>
+void Worker<T>::initializeBatchNormParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
+                                          Parameters<T>& parameters)
+{
+  ulong bnIdx = 0;
+  Shape3D currentShape = inputShape;
+
+  for (const auto& layerConfig : layersConfig.cnnLayers) {
+    switch (layerConfig.type) {
+    case LayerType::CONV: {
+      const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
+      ulong padY = SlidingStrategy::computePadding(conv.filterH, conv.slidingStrategy);
+      ulong padX = SlidingStrategy::computePadding(conv.filterW, conv.slidingStrategy);
+      ulong outH = (currentShape.h + 2 * padY - conv.filterH) / conv.strideY + 1;
+      ulong outW = (currentShape.w + 2 * padX - conv.filterW) / conv.strideX + 1;
+      currentShape = {conv.numFilters, outH, outW};
+      break;
+    }
+
+    case LayerType::POOL: {
+      const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
+      ulong outH = (currentShape.h - pool.poolH) / pool.strideY + 1;
+      ulong outW = (currentShape.w - pool.poolW) / pool.strideX + 1;
+      currentShape = {currentShape.c, outH, outW};
+      break;
+    }
+
+    case LayerType::BATCHNORM: {
+      ulong numChannels = currentShape.c;
+
+      // Check if parameters already loaded
+      if (bnIdx < parameters.bnParams.size() && !parameters.bnParams[bnIdx].gamma.empty()) {
+        bnIdx++;
+        break;
+      }
+
+      // Ensure bnParams vector is large enough
+      if (bnIdx >= parameters.bnParams.size()) {
+        parameters.bnParams.resize(bnIdx + 1);
+      }
+
+      BatchNormParameters<T>& bp = parameters.bnParams[bnIdx];
+      bp.numChannels = numChannels;
+      bp.gamma.assign(numChannels, static_cast<T>(1)); // Initialize scale to 1
+      bp.beta.assign(numChannels, static_cast<T>(0)); // Initialize shift to 0
+      bp.runningMean.assign(numChannels, static_cast<T>(0));
+      bp.runningVar.assign(numChannels, static_cast<T>(1));
+      bnIdx++;
+      break;
+    }
+
+    case LayerType::RELU:
+    case LayerType::FLATTEN:
+      break;
+    }
+  }
+}
+
+//===================================================================================================================//
+
+template <typename T>
 T Worker<T>::calculateLoss(const Output<T>& predicted, const Output<T>& expected) const
 {
   T loss = static_cast<T>(0);

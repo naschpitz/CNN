@@ -6,7 +6,8 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> Conv2D<T>::predict(const Tensor3D<T>& input, const ConvLayerConfig& config, const ConvParameters<T>& params)
+Tensor3D<T> Conv2D<T>::propagate(const Tensor3D<T>& input, const ConvLayerConfig& config,
+                                 const ConvParameters<T>& params)
 {
   const ulong inputC = input.shape.c;
   const ulong inputH = input.shape.h;

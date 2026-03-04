@@ -44,7 +44,7 @@ void GPUKernelBuilder<T>::setupTrainingKernels()
   this->invalidateAllKernelFlags();
 
   // Propagate pipeline: CNN propagate → copy → ANN propagate
-  this->addPropagateKernels();
+  this->addPropagateKernels(true);
   this->addCopyBridgeKernels();
   this->bufferManager.annGPUWorker->kernelBuilder->addPropagateKernels();
 
@@ -111,12 +111,13 @@ void GPUKernelBuilder<T>::invalidateAllKernelFlags()
 //===================================================================================================================//
 
 template <typename T>
-void GPUKernelBuilder<T>::addPropagateKernels()
+void GPUKernelBuilder<T>::addPropagateKernels(bool training)
 {
   const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
   Shape3D currentShape = this->coreConfig.inputShape;
   ulong convIdx = 0;
   ulong poolIdx = 0;
+  ulong bnIdx = 0;
 
   for (ulong i = 0; i < cnnLayers.size(); i++) {
     const auto& layerConfig = cnnLayers[i];
@@ -200,6 +201,63 @@ void GPUKernelBuilder<T>::addPropagateKernels()
       break;
     }
 
+    case LayerType::BATCHNORM: {
+      const auto& bn = std::get<BatchNormLayerConfig>(layerConfig.config);
+      ulong size = currentShape.size();
+      ulong bnParamOffset = this->bufferManager.bnInfos[bnIdx].paramOffset;
+
+      if (training) {
+        // Compute batch mean and variance before normalizing
+        ulong localWS = 256;
+        ulong meanGlobalWS = currentShape.c * localWS;
+
+        std::string meanId = "calculate_batchnorm_mean_layer" + layerStr;
+        this->core->addKernel(meanId, "calculate_batchnorm_mean", meanGlobalWS, 0, localWS);
+        this->core->template addArgument<T>(meanId, "cnn_actvs");
+        this->core->template addArgument<T>(meanId, "cnn_bn_batch_mean");
+        this->core->template addArgument<ulong>(meanId, inOffset);
+        this->core->template addArgument<ulong>(meanId, bnParamOffset);
+        this->core->template addArgument<ulong>(meanId, currentShape.c);
+        this->core->template addArgument<ulong>(meanId, currentShape.h);
+        this->core->template addArgument<ulong>(meanId, currentShape.w);
+
+        std::string varId = "calculate_batchnorm_var_layer" + layerStr;
+        this->core->addKernel(varId, "calculate_batchnorm_var", meanGlobalWS, 0, localWS);
+        this->core->template addArgument<T>(varId, "cnn_actvs");
+        this->core->template addArgument<T>(varId, "cnn_bn_batch_mean");
+        this->core->template addArgument<T>(varId, "cnn_bn_batch_var");
+        this->core->template addArgument<ulong>(varId, inOffset);
+        this->core->template addArgument<ulong>(varId, bnParamOffset);
+        this->core->template addArgument<ulong>(varId, currentShape.c);
+        this->core->template addArgument<ulong>(varId, currentShape.h);
+        this->core->template addArgument<ulong>(varId, currentShape.w);
+      }
+
+      // Same normalize kernel for both paths — only the mean/var source differs
+      std::string meanBuf = training ? "cnn_bn_batch_mean" : "cnn_bn_running_mean";
+      std::string varBuf = training ? "cnn_bn_batch_var" : "cnn_bn_running_var";
+
+      std::string normId = "calculate_batchnorm_normalize_layer" + layerStr;
+      this->core->addKernel(normId, "calculate_batchnorm_normalize", size, 0);
+      this->core->template addArgument<T>(normId, "cnn_actvs");
+      this->core->template addArgument<T>(normId, "cnn_bn_xnorm");
+      this->core->template addArgument<T>(normId, "cnn_bn_gamma");
+      this->core->template addArgument<T>(normId, "cnn_bn_beta");
+      this->core->template addArgument<T>(normId, meanBuf);
+      this->core->template addArgument<T>(normId, varBuf);
+      this->core->template addArgument<ulong>(normId, inOffset);
+      this->core->template addArgument<ulong>(normId, outOffset);
+      this->core->template addArgument<ulong>(normId, inOffset); // xnorm offset
+      this->core->template addArgument<ulong>(normId, bnParamOffset);
+      this->core->template addArgument<ulong>(normId, currentShape.c);
+      this->core->template addArgument<ulong>(normId, currentShape.h);
+      this->core->template addArgument<ulong>(normId, currentShape.w);
+      this->core->template addArgument<float>(normId, bn.epsilon);
+
+      bnIdx++;
+      break;
+    }
+
     case LayerType::FLATTEN: {
       break;
     }
@@ -246,6 +304,9 @@ void GPUKernelBuilder<T>::addBackpropagateKernels()
       break;
     }
 
+    case LayerType::BATCHNORM:
+      shapes[i + 1] = inShape;
+      break;
     case LayerType::FLATTEN:
       shapes[i + 1] = inShape;
       break;
@@ -255,6 +316,7 @@ void GPUKernelBuilder<T>::addBackpropagateKernels()
   // Iterate through layers in reverse
   ulong convIdx = this->bufferManager.convInfos.size();
   ulong poolIdx = this->bufferManager.poolInfos.size();
+  ulong bnIdx = this->bufferManager.bnInfos.size();
 
   for (long i = static_cast<long>(numLayers) - 1; i >= 0; i--) {
     const auto& layerConfig = cnnLayers[static_cast<ulong>(i)];
@@ -375,6 +437,48 @@ void GPUKernelBuilder<T>::addBackpropagateKernels()
       break;
     }
 
+    case LayerType::BATCHNORM: {
+      bnIdx--;
+      const auto& bn = std::get<BatchNormLayerConfig>(layerConfig.config);
+      ulong size = inShape.size();
+      ulong bnParamOffset = this->bufferManager.bnInfos[bnIdx].paramOffset;
+
+      // dGamma and dBeta
+      ulong localWS = 256;
+      ulong dgGlobalWS = inShape.c * localWS;
+      std::string dgId = "calculate_batchnorm_dGammaBeta_layer" + layerStr;
+      this->core->addKernel(dgId, "calculate_batchnorm_dGammaBeta", dgGlobalWS, 0, localWS);
+      this->core->template addArgument<T>(dgId, "cnn_grads");
+      this->core->template addArgument<T>(dgId, "cnn_bn_xnorm");
+      this->core->template addArgument<T>(dgId, "cnn_bn_dGamma");
+      this->core->template addArgument<T>(dgId, "cnn_bn_dBeta");
+      this->core->template addArgument<ulong>(dgId, gradOutOffset);
+      this->core->template addArgument<ulong>(dgId, actvInOffset); // xnorm stored at input offset
+      this->core->template addArgument<ulong>(dgId, bnParamOffset);
+      this->core->template addArgument<ulong>(dgId, inShape.c);
+      this->core->template addArgument<ulong>(dgId, inShape.h);
+      this->core->template addArgument<ulong>(dgId, inShape.w);
+
+      // dInput
+      std::string diId = "calculate_batchnorm_dInput_layer" + layerStr;
+      this->core->addKernel(diId, "calculate_batchnorm_dInput", size, 0);
+      this->core->template addArgument<T>(diId, "cnn_grads");
+      this->core->template addArgument<T>(diId, "cnn_bn_xnorm");
+      this->core->template addArgument<T>(diId, "cnn_bn_gamma");
+      this->core->template addArgument<T>(diId, "cnn_bn_dGamma");
+      this->core->template addArgument<T>(diId, "cnn_bn_dBeta");
+      this->core->template addArgument<T>(diId, "cnn_bn_batch_var");
+      this->core->template addArgument<ulong>(diId, gradInOffset);
+      this->core->template addArgument<ulong>(diId, gradOutOffset);
+      this->core->template addArgument<ulong>(diId, actvInOffset); // xnorm stored at input offset
+      this->core->template addArgument<ulong>(diId, bnParamOffset);
+      this->core->template addArgument<ulong>(diId, inShape.c);
+      this->core->template addArgument<ulong>(diId, inShape.h);
+      this->core->template addArgument<ulong>(diId, inShape.w);
+      this->core->template addArgument<float>(diId, bn.epsilon);
+      break;
+    }
+
     case LayerType::FLATTEN: {
       break;
     }
@@ -421,6 +525,22 @@ void GPUKernelBuilder<T>::addCNNAccumulateKernels()
     this->core->template addArgument<T>("accumulate_gradients_biases", "cnn_dBiases");
     this->core->template addArgument<ulong>("accumulate_gradients_biases", static_cast<ulong>(0));
     this->core->template addArgument<ulong>("accumulate_gradients_biases", this->bufferManager.totalBiasSize);
+  }
+
+  if (this->bufferManager.totalBNParamSize > 0) {
+    this->core->addKernel("accumulate_gradients_bn_gamma", "accumulate_gradients", this->bufferManager.totalBNParamSize,
+                          0);
+    this->core->template addArgument<T>("accumulate_gradients_bn_gamma", "cnn_accum_bn_dGamma");
+    this->core->template addArgument<T>("accumulate_gradients_bn_gamma", "cnn_bn_dGamma");
+    this->core->template addArgument<ulong>("accumulate_gradients_bn_gamma", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("accumulate_gradients_bn_gamma", this->bufferManager.totalBNParamSize);
+
+    this->core->addKernel("accumulate_gradients_bn_beta", "accumulate_gradients", this->bufferManager.totalBNParamSize,
+                          0);
+    this->core->template addArgument<T>("accumulate_gradients_bn_beta", "cnn_accum_bn_dBeta");
+    this->core->template addArgument<T>("accumulate_gradients_bn_beta", "cnn_bn_dBeta");
+    this->core->template addArgument<ulong>("accumulate_gradients_bn_beta", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("accumulate_gradients_bn_beta", this->bufferManager.totalBNParamSize);
   }
 }
 
@@ -474,6 +594,42 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples)
       this->core->template addArgument<float>("update_parameters_biases", bc1);
       this->core->template addArgument<float>("update_parameters_biases", bc2);
     }
+
+    if (this->bufferManager.totalBNParamSize > 0) {
+      this->core->addKernel("update_parameters_bn_gamma", "update_parameters_adam",
+                            this->bufferManager.totalBNParamSize, 0);
+      this->core->template addArgument<T>("update_parameters_bn_gamma", "cnn_bn_gamma");
+      this->core->template addArgument<T>("update_parameters_bn_gamma", "cnn_accum_bn_dGamma");
+      this->core->template addArgument<T>("update_parameters_bn_gamma", "cnn_adam_m_bn_gamma");
+      this->core->template addArgument<T>("update_parameters_bn_gamma", "cnn_adam_v_bn_gamma");
+      this->core->template addArgument<ulong>("update_parameters_bn_gamma", static_cast<ulong>(0));
+      this->core->template addArgument<ulong>("update_parameters_bn_gamma", this->bufferManager.totalBNParamSize);
+      this->core->template addArgument<ulong>("update_parameters_bn_gamma", numSamples);
+      this->core->template addArgument<float>("update_parameters_bn_gamma",
+                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+      this->core->template addArgument<float>("update_parameters_bn_gamma", static_cast<float>(opt.beta1));
+      this->core->template addArgument<float>("update_parameters_bn_gamma", static_cast<float>(opt.beta2));
+      this->core->template addArgument<float>("update_parameters_bn_gamma", static_cast<float>(opt.epsilon));
+      this->core->template addArgument<float>("update_parameters_bn_gamma", bc1);
+      this->core->template addArgument<float>("update_parameters_bn_gamma", bc2);
+
+      this->core->addKernel("update_parameters_bn_beta", "update_parameters_adam", this->bufferManager.totalBNParamSize,
+                            0);
+      this->core->template addArgument<T>("update_parameters_bn_beta", "cnn_bn_beta");
+      this->core->template addArgument<T>("update_parameters_bn_beta", "cnn_accum_bn_dBeta");
+      this->core->template addArgument<T>("update_parameters_bn_beta", "cnn_adam_m_bn_beta");
+      this->core->template addArgument<T>("update_parameters_bn_beta", "cnn_adam_v_bn_beta");
+      this->core->template addArgument<ulong>("update_parameters_bn_beta", static_cast<ulong>(0));
+      this->core->template addArgument<ulong>("update_parameters_bn_beta", this->bufferManager.totalBNParamSize);
+      this->core->template addArgument<ulong>("update_parameters_bn_beta", numSamples);
+      this->core->template addArgument<float>("update_parameters_bn_beta",
+                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+      this->core->template addArgument<float>("update_parameters_bn_beta", static_cast<float>(opt.beta1));
+      this->core->template addArgument<float>("update_parameters_bn_beta", static_cast<float>(opt.beta2));
+      this->core->template addArgument<float>("update_parameters_bn_beta", static_cast<float>(opt.epsilon));
+      this->core->template addArgument<float>("update_parameters_bn_beta", bc1);
+      this->core->template addArgument<float>("update_parameters_bn_beta", bc2);
+    }
   } else {
     // SGD
     if (this->bufferManager.totalFilterSize > 0) {
@@ -496,6 +652,54 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples)
       this->core->template addArgument<ulong>("update_parameters_biases", numSamples);
       this->core->template addArgument<float>("update_parameters_biases",
                                               static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+    }
+
+    if (this->bufferManager.totalBNParamSize > 0) {
+      this->core->addKernel("update_parameters_bn_gamma", "update_parameters", this->bufferManager.totalBNParamSize, 0);
+      this->core->template addArgument<T>("update_parameters_bn_gamma", "cnn_bn_gamma");
+      this->core->template addArgument<T>("update_parameters_bn_gamma", "cnn_accum_bn_dGamma");
+      this->core->template addArgument<ulong>("update_parameters_bn_gamma", static_cast<ulong>(0));
+      this->core->template addArgument<ulong>("update_parameters_bn_gamma", this->bufferManager.totalBNParamSize);
+      this->core->template addArgument<ulong>("update_parameters_bn_gamma", numSamples);
+      this->core->template addArgument<float>("update_parameters_bn_gamma",
+                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+
+      this->core->addKernel("update_parameters_bn_beta", "update_parameters", this->bufferManager.totalBNParamSize, 0);
+      this->core->template addArgument<T>("update_parameters_bn_beta", "cnn_bn_beta");
+      this->core->template addArgument<T>("update_parameters_bn_beta", "cnn_accum_bn_dBeta");
+      this->core->template addArgument<ulong>("update_parameters_bn_beta", static_cast<ulong>(0));
+      this->core->template addArgument<ulong>("update_parameters_bn_beta", this->bufferManager.totalBNParamSize);
+      this->core->template addArgument<ulong>("update_parameters_bn_beta", numSamples);
+      this->core->template addArgument<float>("update_parameters_bn_beta",
+                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+    }
+  }
+
+  // Running stats update (same for both Adam and SGD)
+  if (this->bufferManager.totalBNParamSize > 0) {
+    // Get momentum from first BN layer config
+    float momentum = 0.1f;
+
+    for (const auto& layerConfig : this->coreConfig.layersConfig.cnnLayers) {
+      if (layerConfig.type == LayerType::BATCHNORM) {
+        const auto& bn = std::get<BatchNormLayerConfig>(layerConfig.config);
+        momentum = bn.momentum;
+        break;
+      }
+    }
+
+    for (ulong b = 0; b < this->bufferManager.bnInfos.size(); b++) {
+      ulong bnParamOffset = this->bufferManager.bnInfos[b].paramOffset;
+      ulong numChannels = this->bufferManager.bnInfos[b].numChannels;
+      std::string kernelId = "update_batchnorm_running_stats_" + std::to_string(b);
+      this->core->addKernel(kernelId, "update_batchnorm_running_stats", numChannels, 0);
+      this->core->template addArgument<T>(kernelId, "cnn_bn_running_mean");
+      this->core->template addArgument<T>(kernelId, "cnn_bn_running_var");
+      this->core->template addArgument<T>(kernelId, "cnn_bn_batch_mean");
+      this->core->template addArgument<T>(kernelId, "cnn_bn_batch_var");
+      this->core->template addArgument<ulong>(kernelId, bnParamOffset);
+      this->core->template addArgument<ulong>(kernelId, numChannels);
+      this->core->template addArgument<float>(kernelId, momentum);
     }
   }
 }

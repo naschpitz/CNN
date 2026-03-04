@@ -7,7 +7,7 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> ReLU<T>::predict(const Tensor3D<T>& input)
+Tensor3D<T> ReLU<T>::propagate(const Tensor3D<T>& input)
 {
   Tensor3D<T> output(input.shape);
 

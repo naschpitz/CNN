@@ -27,7 +27,7 @@ namespace CNN
       void setupUpdateKernels(ulong numSamples);
 
       //-- Kernel building blocks (public for external orchestration) --//
-      void addPropagateKernels();
+      void addPropagateKernels(bool training = false);
       void addCopyBridgeKernels();
       void addBackpropagateKernels();
       void addCNNAccumulateKernels();

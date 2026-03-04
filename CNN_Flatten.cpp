@@ -5,7 +5,7 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-Tensor1D<T> Flatten<T>::predict(const Tensor3D<T>& input)
+Tensor1D<T> Flatten<T>::propagate(const Tensor3D<T>& input)
 {
   // Simply return the flat data - already stored in NCHW order
   return input.data;

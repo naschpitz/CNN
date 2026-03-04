@@ -7,7 +7,7 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> Pool<T>::predict(const Tensor3D<T>& input, const PoolLayerConfig& config, std::vector<ulong>& maxIndices)
+Tensor3D<T> Pool<T>::propagate(const Tensor3D<T>& input, const PoolLayerConfig& config, std::vector<ulong>& maxIndices)
 {
   const ulong inputC = input.shape.c;
   const ulong inputH = input.shape.h;

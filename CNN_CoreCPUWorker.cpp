@@ -3,6 +3,7 @@
 #include "CNN_ReLU.hpp"
 #include "CNN_Pool.hpp"
 #include "CNN_Flatten.hpp"
+#include "CNN_BatchNorm.hpp"
 
 #include <ANN_Core.hpp>
 
@@ -35,6 +36,20 @@ CoreCPUWorker<T>::CoreCPUWorker(const CoreConfig<T>& config, const LayersConfig&
       this->accumDConvFilters[i].resize(sharedParams.convParams[i].filters.size(), static_cast<T>(0));
       this->accumDConvBiases[i].resize(sharedParams.convParams[i].biases.size(), static_cast<T>(0));
     }
+
+    this->accumDBNGamma.resize(sharedParams.bnParams.size());
+    this->accumDBNBeta.resize(sharedParams.bnParams.size());
+    this->accumBNMean.resize(sharedParams.bnParams.size());
+    this->accumBNVar.resize(sharedParams.bnParams.size());
+
+    for (ulong i = 0; i < sharedParams.bnParams.size(); i++) {
+      this->accumDBNGamma[i].resize(sharedParams.bnParams[i].numChannels, static_cast<T>(0));
+      this->accumDBNBeta[i].resize(sharedParams.bnParams[i].numChannels, static_cast<T>(0));
+      this->accumBNMean[i].resize(sharedParams.bnParams[i].numChannels, static_cast<T>(0));
+      this->accumBNVar[i].resize(sharedParams.bnParams[i].numChannels, static_cast<T>(0));
+    }
+
+    this->bnSampleCount = 0;
   }
 }
 
@@ -103,7 +118,7 @@ template <typename T>
 Output<T> CoreCPUWorker<T>::predict(const Input<T>& input)
 {
   Tensor3D<T> cnnOut = this->propagateCNN(input);
-  Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
+  Tensor1D<T> flatInput = Flatten<T>::propagate(cnnOut);
 
   ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
   ANN::Output<T> annOutput = this->annCore->predict(annInput);
@@ -119,8 +134,8 @@ T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expect
   // CNN propagate (with intermediates for backpropagation)
   std::vector<Tensor3D<T>> intermediates;
   std::vector<std::vector<ulong>> poolMaxIndices;
-  Tensor3D<T> cnnOut = this->propagateCNN(input, intermediates, poolMaxIndices);
-  Tensor1D<T> flatInput = Flatten<T>::predict(cnnOut);
+  Tensor3D<T> cnnOut = this->propagateCNN(input, true, &intermediates, &poolMaxIndices);
+  Tensor1D<T> flatInput = Flatten<T>::propagate(cnnOut);
 
   // ANN propagate
   ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
@@ -139,7 +154,8 @@ T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expect
   Tensor1D<T> dFlat(dFlatInput.begin(), dFlatInput.end());
   Tensor3D<T> dCNNOut = Flatten<T>::backpropagate(dFlat, this->cnnOutputShape);
   std::vector<std::vector<T>> dConvFilters, dConvBiases;
-  this->backpropagateCNN(dCNNOut, intermediates, poolMaxIndices, dConvFilters, dConvBiases);
+  std::vector<std::vector<T>> dBNGamma, dBNBeta;
+  this->backpropagateCNN(dCNNOut, intermediates, poolMaxIndices, dConvFilters, dConvBiases, dBNGamma, dBNBeta);
 
   // Accumulate CNN gradients
   for (ulong i = 0; i < dConvFilters.size(); i++) {
@@ -150,6 +166,22 @@ T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expect
       this->accumDConvBiases[i][j] += dConvBiases[i][j];
   }
 
+  // Accumulate batch norm gradients and running stats
+  for (ulong i = 0; i < dBNGamma.size(); i++) {
+    for (ulong j = 0; j < dBNGamma[i].size(); j++)
+      this->accumDBNGamma[i][j] += dBNGamma[i][j];
+
+    for (ulong j = 0; j < dBNBeta[i].size(); j++)
+      this->accumDBNBeta[i][j] += dBNBeta[i][j];
+
+    for (ulong j = 0; j < this->bnBatchMeans[i].size(); j++)
+      this->accumBNMean[i][j] += this->bnBatchMeans[i][j];
+
+    for (ulong j = 0; j < this->bnBatchVars[i].size(); j++)
+      this->accumBNVar[i][j] += this->bnBatchVars[i][j];
+  }
+
+  this->bnSampleCount++;
   this->accum_loss += sampleLoss;
 
   return sampleLoss;
@@ -165,79 +197,82 @@ void CoreCPUWorker<T>::resetAccumulators()
     std::fill(this->accumDConvBiases[i].begin(), this->accumDConvBiases[i].end(), static_cast<T>(0));
   }
 
+  for (ulong i = 0; i < this->accumDBNGamma.size(); i++) {
+    std::fill(this->accumDBNGamma[i].begin(), this->accumDBNGamma[i].end(), static_cast<T>(0));
+    std::fill(this->accumDBNBeta[i].begin(), this->accumDBNBeta[i].end(), static_cast<T>(0));
+    std::fill(this->accumBNMean[i].begin(), this->accumBNMean[i].end(), static_cast<T>(0));
+    std::fill(this->accumBNVar[i].begin(), this->accumBNVar[i].end(), static_cast<T>(0));
+  }
+
+  this->bnSampleCount = 0;
   this->annCore->resetAccumulators();
 }
 
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input)
+Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
+                                           std::vector<Tensor3D<T>>* intermediates,
+                                           std::vector<std::vector<ulong>>* poolMaxIndices)
 {
-  Tensor3D<T> current = input;
-  ulong convIdx = 0;
-
-  for (const auto& layerConfig : this->layersConfig.cnnLayers) {
-    switch (layerConfig.type) {
-    case LayerType::CONV: {
-      const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
-      current = Conv2D<T>::predict(current, conv, this->sharedParams.convParams[convIdx]);
-      convIdx++;
-      break;
-    }
-
-    case LayerType::RELU: {
-      current = ReLU<T>::predict(current);
-      break;
-    }
-
-    case LayerType::POOL: {
-      const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
-      std::vector<ulong> unused;
-      current = Pool<T>::predict(current, pool, unused);
-      break;
-    }
-
-    case LayerType::FLATTEN: {
-      break;
-    }
-    }
+  if (training) {
+    intermediates->clear();
+    poolMaxIndices->clear();
+    this->bnBatchMeans.clear();
+    this->bnBatchVars.clear();
+    this->bnXNormalized.clear();
   }
 
-  return current;
-}
-
-//===================================================================================================================//
-
-template <typename T>
-Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, std::vector<Tensor3D<T>>& intermediates,
-                                           std::vector<std::vector<ulong>>& poolMaxIndices)
-{
-  intermediates.clear();
-  poolMaxIndices.clear();
-
   Tensor3D<T> current = input;
   ulong convIdx = 0;
+  ulong bnIdx = 0;
 
   for (const auto& layerConfig : this->layersConfig.cnnLayers) {
-    intermediates.push_back(current);
+    if (training)
+      intermediates->push_back(current);
 
     switch (layerConfig.type) {
     case LayerType::CONV: {
       const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
-      current = Conv2D<T>::predict(current, conv, this->sharedParams.convParams[convIdx]);
+      current = Conv2D<T>::propagate(current, conv, this->sharedParams.convParams[convIdx]);
       convIdx++;
       break;
     }
 
     case LayerType::RELU: {
-      current = ReLU<T>::predict(current);
+      current = ReLU<T>::propagate(current);
       break;
     }
 
     case LayerType::POOL: {
       const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
-      poolMaxIndices.push_back({});
-      current = Pool<T>::predict(current, pool, poolMaxIndices.back());
+
+      if (training) {
+        poolMaxIndices->push_back({});
+        current = Pool<T>::propagate(current, pool, poolMaxIndices->back());
+      } else {
+        std::vector<ulong> unused;
+        current = Pool<T>::propagate(current, pool, unused);
+      }
+
+      break;
+    }
+
+    case LayerType::BATCHNORM: {
+      const auto& bn = std::get<BatchNormLayerConfig>(layerConfig.config);
+      BatchNormParameters<T> bnParams = this->sharedParams.bnParams[bnIdx];
+
+      if (training) {
+        this->bnBatchMeans.push_back({});
+        this->bnBatchVars.push_back({});
+        this->bnXNormalized.push_back({});
+        current = BatchNorm<T>::propagate(current, current.shape, bnParams, bn, true, &this->bnBatchMeans.back(),
+                                          &this->bnBatchVars.back(), &this->bnXNormalized.back());
+      } else {
+        current = BatchNorm<T>::propagate(current, current.shape, bnParams, bn);
+      }
+
+      bnIdx++;
       break;
     }
 
@@ -256,18 +291,23 @@ template <typename T>
 void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::vector<Tensor3D<T>>& intermediates,
                                         const std::vector<std::vector<ulong>>& poolMaxIndices,
                                         std::vector<std::vector<T>>& dConvFilters,
-                                        std::vector<std::vector<T>>& dConvBiases)
+                                        std::vector<std::vector<T>>& dConvBiases, std::vector<std::vector<T>>& dBNGamma,
+                                        std::vector<std::vector<T>>& dBNBeta)
 {
   ulong numCNNLayers = this->layersConfig.cnnLayers.size();
   ulong numConvLayers = this->sharedParams.convParams.size();
+  ulong numBNLayers = this->sharedParams.bnParams.size();
 
   dConvFilters.resize(numConvLayers);
   dConvBiases.resize(numConvLayers);
+  dBNGamma.resize(numBNLayers);
+  dBNBeta.resize(numBNLayers);
 
   Tensor3D<T> dCurrent = dCNNOut;
 
   ulong convIdx = numConvLayers;
   ulong poolIdx = poolMaxIndices.size();
+  ulong bnIdx = numBNLayers;
 
   for (long i = static_cast<long>(numCNNLayers) - 1; i >= 0; i--) {
     const CNNLayerConfig& layerConfig = this->layersConfig.cnnLayers[static_cast<ulong>(i)];
@@ -291,6 +331,15 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::v
       poolIdx--;
       const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
       dCurrent = Pool<T>::backpropagate(dCurrent, layerInput.shape, pool, poolMaxIndices[poolIdx]);
+      break;
+    }
+
+    case LayerType::BATCHNORM: {
+      bnIdx--;
+      const auto& bn = std::get<BatchNormLayerConfig>(layerConfig.config);
+      dCurrent = BatchNorm<T>::backpropagate(dCurrent, layerInput.shape, this->sharedParams.bnParams[bnIdx], bn,
+                                             this->bnBatchMeans[bnIdx], this->bnBatchVars[bnIdx],
+                                             this->bnXNormalized[bnIdx], dBNGamma[bnIdx], dBNBeta[bnIdx]);
       break;
     }
 

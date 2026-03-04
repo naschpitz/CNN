@@ -56,6 +56,31 @@ namespace CNN
         return accumDConvBiases;
       }
 
+      const std::vector<std::vector<T>>& getAccumBNGamma() const
+      {
+        return accumDBNGamma;
+      }
+
+      const std::vector<std::vector<T>>& getAccumBNBeta() const
+      {
+        return accumDBNBeta;
+      }
+
+      const std::vector<std::vector<T>>& getAccumBNMean() const
+      {
+        return accumBNMean;
+      }
+
+      const std::vector<std::vector<T>>& getAccumBNVar() const
+      {
+        return accumBNVar;
+      }
+
+      ulong getBNSampleCount() const
+      {
+        return bnSampleCount;
+      }
+
       //-- ANN sub-core access (for parameter sync/merge by CoreCPU) --//
       ANN::Core<T>* getANNCore()
       {
@@ -82,17 +107,28 @@ namespace CNN
       //-- Per-worker CNN gradient accumulators --//
       std::vector<std::vector<T>> accumDConvFilters;
       std::vector<std::vector<T>> accumDConvBiases;
+      std::vector<std::vector<T>> accumDBNGamma;
+      std::vector<std::vector<T>> accumDBNBeta;
+      std::vector<std::vector<T>> accumBNMean;
+      std::vector<std::vector<T>> accumBNVar;
+      ulong bnSampleCount = 0;
       T accum_loss = static_cast<T>(0);
 
+      //-- Per-worker batch norm training intermediates --//
+      std::vector<std::vector<T>> bnBatchMeans;
+      std::vector<std::vector<T>> bnBatchVars;
+      std::vector<Tensor3D<T>> bnXNormalized;
+
       //-- Propagate --//
-      Tensor3D<T> propagateCNN(const Input<T>& input);
-      Tensor3D<T> propagateCNN(const Input<T>& input, std::vector<Tensor3D<T>>& intermediates,
-                               std::vector<std::vector<ulong>>& poolMaxIndices);
+      Tensor3D<T> propagateCNN(const Input<T>& input, bool training = false,
+                               std::vector<Tensor3D<T>>* intermediates = nullptr,
+                               std::vector<std::vector<ulong>>* poolMaxIndices = nullptr);
 
       //-- Backpropagate --//
       void backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::vector<Tensor3D<T>>& intermediates,
                             const std::vector<std::vector<ulong>>& poolMaxIndices,
-                            std::vector<std::vector<T>>& dConvFilters, std::vector<std::vector<T>>& dConvBiases);
+                            std::vector<std::vector<T>>& dConvFilters, std::vector<std::vector<T>>& dConvBiases,
+                            std::vector<std::vector<T>>& dBNGamma, std::vector<std::vector<T>>& dBNBeta);
 
       //-- Initialization --//
       static ANN::CoreConfig<T> buildANNConfig(const CoreConfig<T>& cnnConfig, ulong flattenSize);

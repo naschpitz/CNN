@@ -309,19 +309,24 @@ void CoreGPU<T>::mergeCNNGradients()
   // Read gradients from all GPUs in parallel
   std::vector<std::vector<T>> allFilters(this->numGPUs);
   std::vector<std::vector<T>> allBiases(this->numGPUs);
+  std::vector<std::vector<T>> allBNGamma(this->numGPUs);
+  std::vector<std::vector<T>> allBNBeta(this->numGPUs);
 
   QVector<size_t> gpuIndices;
 
   for (size_t i = 0; i < this->numGPUs; i++)
     gpuIndices.append(i);
 
-  QtConcurrent::blockingMap(gpuIndices, [this, &allFilters, &allBiases](size_t gpuIdx) {
+  QtConcurrent::blockingMap(gpuIndices, [this, &allFilters, &allBiases, &allBNGamma, &allBNBeta](size_t gpuIdx) {
     this->gpuWorkers[gpuIdx]->bufferManager->readAccumulatedGradients(allFilters[gpuIdx], allBiases[gpuIdx]);
+    this->gpuWorkers[gpuIdx]->bufferManager->readBNAccumulatedGradients(allBNGamma[gpuIdx], allBNBeta[gpuIdx]);
   });
 
   // Sum on CPU
   std::vector<T>& totalFilters = allFilters[0];
   std::vector<T>& totalBiases = allBiases[0];
+  std::vector<T>& totalBNGamma = allBNGamma[0];
+  std::vector<T>& totalBNBeta = allBNBeta[0];
 
   for (size_t g = 1; g < this->numGPUs; g++) {
     for (size_t i = 0; i < totalFilters.size(); i++)
@@ -329,12 +334,20 @@ void CoreGPU<T>::mergeCNNGradients()
 
     for (size_t i = 0; i < totalBiases.size(); i++)
       totalBiases[i] += allBiases[g][i];
+
+    for (size_t i = 0; i < totalBNGamma.size(); i++)
+      totalBNGamma[i] += allBNGamma[g][i];
+
+    for (size_t i = 0; i < totalBNBeta.size(); i++)
+      totalBNBeta[i] += allBNBeta[g][i];
   }
 
   // Write merged gradients back to all workers in parallel
-  QtConcurrent::blockingMap(gpuIndices, [this, &totalFilters, &totalBiases](size_t gpuIdx) {
-    this->gpuWorkers[gpuIdx]->bufferManager->setAccumulators(totalFilters, totalBiases);
-  });
+  QtConcurrent::blockingMap(gpuIndices,
+                            [this, &totalFilters, &totalBiases, &totalBNGamma, &totalBNBeta](size_t gpuIdx) {
+                              this->gpuWorkers[gpuIdx]->bufferManager->setAccumulators(totalFilters, totalBiases);
+                              this->gpuWorkers[gpuIdx]->bufferManager->setBNAccumulators(totalBNGamma, totalBNBeta);
+                            });
 }
 
 //===================================================================================================================//

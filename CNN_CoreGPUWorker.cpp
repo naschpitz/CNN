@@ -36,6 +36,9 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
   // Initialize conv parameters (He initialization if not loaded)
   Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
 
+  // Initialize batch norm parameters if not loaded
+  Worker<T>::initializeBatchNormParams(config.layersConfig, config.inputShape, this->parameters);
+
   // Create buffer manager
   this->bufferManager =
     std::make_unique<GPUBufferManager<T>>(this->core, this->coreConfig, this->parameters, this->logLevel);
@@ -70,6 +73,9 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config, OpenCLWrapper::Core
 
   // Initialize conv parameters (He initialization if not loaded)
   Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
+
+  // Initialize batch norm parameters if not loaded
+  Worker<T>::initializeBatchNormParams(config.layersConfig, config.inputShape, this->parameters);
 
   // Create buffer manager
   this->bufferManager =

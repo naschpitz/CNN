@@ -20,7 +20,7 @@ static void testConv2DPropagate()
   params.filters.assign(9, 1.0);
   params.biases.assign(1, 0.0);
 
-  CNN::Tensor3D<double> out = CNN::Conv2D<double>::predict(input, config, params);
+  CNN::Tensor3D<double> out = CNN::Conv2D<double>::propagate(input, config, params);
   CHECK(out.shape.c == 1 && out.shape.h == 2 && out.shape.w == 2, "conv2d output shape");
   CHECK_NEAR(out.at(0, 0, 0), 54.0, 1e-9, "conv2d top-left");
   CHECK_NEAR(out.at(0, 0, 1), 63.0, 1e-9, "conv2d top-right");
@@ -79,7 +79,7 @@ static void testConv2DWithBias()
   params.filters.assign(4, 1.0); // all ones
   params.biases = {10.0};
 
-  CNN::Tensor3D<double> out = CNN::Conv2D<double>::predict(input, config, params);
+  CNN::Tensor3D<double> out = CNN::Conv2D<double>::propagate(input, config, params);
   // Each output = sum(1*1 for 4 elements) + 10 = 4 + 10 = 14
   CHECK(out.shape.c == 1 && out.shape.h == 2 && out.shape.w == 2, "bias output shape");
   CHECK_NEAR(out.at(0, 0, 0), 14.0, 1e-9, "bias top-left");
@@ -109,7 +109,7 @@ static void testConv2DMultiFilter()
   params.filters = {1, 1, 1, 1, -1, -1, -1, -1};
   params.biases = {0.0, 0.0};
 
-  CNN::Tensor3D<double> out = CNN::Conv2D<double>::predict(input, config, params);
+  CNN::Tensor3D<double> out = CNN::Conv2D<double>::propagate(input, config, params);
   CHECK(out.shape.c == 2, "multifilter output channels");
   CHECK(out.shape.h == 2, "multifilter output height");
 
@@ -143,7 +143,7 @@ static void testConv2DMultiChannel()
   params.filters = {1, 0, 0, 1, 0, 1, 1, 0};
   params.biases = {0.0};
 
-  CNN::Tensor3D<double> out = CNN::Conv2D<double>::predict(input, config, params);
+  CNN::Tensor3D<double> out = CNN::Conv2D<double>::propagate(input, config, params);
   CHECK(out.shape.c == 1 && out.shape.h == 1 && out.shape.w == 1, "multichannel output shape");
   // ch0 contribution: 1*1 + 2*0 + 3*0 + 4*1 = 5
   // ch1 contribution: 5*0 + 6*1 + 7*1 + 8*0 = 13
@@ -219,7 +219,7 @@ static void testConv2DStride()
   params.filters.assign(4, 1.0);
   params.biases = {0.0};
 
-  CNN::Tensor3D<double> out = CNN::Conv2D<double>::predict(input, config, params);
+  CNN::Tensor3D<double> out = CNN::Conv2D<double>::propagate(input, config, params);
   CHECK(out.shape.h == 2 && out.shape.w == 2, "stride output shape");
   // (oh=0,ow=0): sum of input[0:2,0:2] = 1+2+5+6 = 14
   CHECK_NEAR(out.at(0, 0, 0), 14.0, 1e-9, "stride top-left");
@@ -252,7 +252,7 @@ static void testConv2DSamePadding()
   params.filters.assign(9, 1.0);
   params.biases = {0.0};
 
-  CNN::Tensor3D<double> out = CNN::Conv2D<double>::predict(input, config, params);
+  CNN::Tensor3D<double> out = CNN::Conv2D<double>::propagate(input, config, params);
   // SAME with 3x3 kernel → pad = 3/2 = 1. outH = (3+2-3)/1+1 = 3
   CHECK(out.shape.c == 1 && out.shape.h == 3 && out.shape.w == 3, "same padding output shape");
   // Center (1,1): all 9 neighbors visible → sum = 9
@@ -282,7 +282,7 @@ static void testConv2DFullPadding()
   params.filters.assign(4, 1.0);
   params.biases = {0.0};
 
-  CNN::Tensor3D<double> out = CNN::Conv2D<double>::predict(input, config, params);
+  CNN::Tensor3D<double> out = CNN::Conv2D<double>::propagate(input, config, params);
   // FULL: pad = 2-1 = 1. outH = (2+2-2)/1+1 = 3
   CHECK(out.shape.c == 1 && out.shape.h == 3 && out.shape.w == 3, "full padding output shape");
   // Corner (0,0): only input[0,0] visible → 1

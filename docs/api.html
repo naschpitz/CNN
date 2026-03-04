@@ -99,6 +99,7 @@
   <tr><td><code>CONV</code></td><td>2D convolution layer</td></tr>
   <tr><td><code>RELU</code></td><td>ReLU activation layer</td></tr>
   <tr><td><code>POOL</code></td><td>Pooling layer (max or average)</td></tr>
+  <tr><td><code>BATCHNORM</code></td><td>Batch normalization layer</td></tr>
   <tr><td><code>FLATTEN</code></td><td>3D → 1D reshape layer</td></tr>
 </table>
 
@@ -226,10 +227,17 @@
   <tr><td><code>strideX</code></td><td><code>ulong</code></td><td>Horizontal stride</td></tr>
 </table>
 
+<h3>BatchNormLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>epsilon</code></td><td><code>float</code></td><td>1e-5</td><td>Small constant added to variance for numerical stability</td></tr>
+  <tr><td><code>momentum</code></td><td><code>float</code></td><td>0.1</td><td>Exponential moving average factor for running statistics</td></tr>
+</table>
+
 <h3>CNNLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-  <tr><td><code>type</code></td><td><code>LayerType</code></td><td>CONV, RELU, POOL, or FLATTEN</td></tr>
+  <tr><td><code>type</code></td><td><code>LayerType</code></td><td>CONV, RELU, POOL, BATCHNORM, or FLATTEN</td></tr>
   <tr><td><code>config</code></td><td><code>std::variant&lt;...&gt;</code></td><td>Layer-specific configuration</td></tr>
 </table>
 
@@ -240,12 +248,22 @@
   <tr><td><code>actvFuncType</code></td><td><code>ANN::ActvFuncType</code></td><td>Activation function (RELU, SIGMOID, TANH)</td></tr>
 </table>
 
-<h3>ConvParameters&lt;T&gt; <span class="badge badge-blue">CNN_Parameters.hpp</span></h3>
+<h3>ConvParameters&lt;T&gt; <span class="badge badge-blue">CNN_Conv2DParameters.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
   <tr><td><code>filters</code></td><td><code>vector&lt;T&gt;</code></td><td>Flat: numFilters × inputC × filterH × filterW</td></tr>
   <tr><td><code>biases</code></td><td><code>vector&lt;T&gt;</code></td><td>One bias per filter</td></tr>
   <tr><td><code>filterAt(f,c,h,w)</code></td><td><code>T&amp;</code></td><td>Access filter weight at [f][c][h][w]</td></tr>
+</table>
+
+<h3>BatchNormParameters&lt;T&gt; <span class="badge badge-blue">CNN_BatchNormParameters.hpp</span></h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>numChannels</code></td><td><code>ulong</code></td><td>Number of channels (one γ, β, μ, σ² per channel)</td></tr>
+  <tr><td><code>gamma</code></td><td><code>vector&lt;T&gt;</code></td><td>Learnable scale parameter (initialized to 1)</td></tr>
+  <tr><td><code>beta</code></td><td><code>vector&lt;T&gt;</code></td><td>Learnable shift parameter (initialized to 0)</td></tr>
+  <tr><td><code>runningMean</code></td><td><code>vector&lt;T&gt;</code></td><td>Exponential moving average of channel means</td></tr>
+  <tr><td><code>runningVar</code></td><td><code>vector&lt;T&gt;</code></td><td>Exponential moving average of channel variances</td></tr>
 </table>
 
 <h2 id="core">4. Core&lt;T&gt; — Abstract Base Class</h2>
@@ -268,8 +286,7 @@
 
 <table>
   <tr><th>Internal Method</th><th>Description</th></tr>
-  <tr><td><code>propagateCNN(input)</code></td><td>Run input through all CNN layers</td></tr>
-  <tr><td><code>propagateCNN(input, intermediates, poolMaxIndices)</code></td><td>Propagation storing all intermediate activations (for training)</td></tr>
+  <tr><td><code>propagateCNN(input, training, intermediates, poolMaxIndices)</code></td><td>Run input through all CNN layers. When <code>training=true</code>, stores intermediate activations for backpropagation</td></tr>
   <tr><td><code>backpropagateCNN(dCNNOut, intermediates, poolMaxIndices, dFilters, dBiases)</code></td><td>Backpropagate through CNN layers</td></tr>
   <tr><td><code>initializeConvParams()</code></td><td>He initialisation for conv filters</td></tr>
   <tr><td><code>resetCNNAccumulators()</code></td><td>Zero gradient accumulators</td></tr>
@@ -305,28 +322,35 @@
 <h3>Conv2D&lt;T&gt;</h3>
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-  <tr><td><code>predict(input, config, params)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Convolution with padding</td></tr>
+  <tr><td><code>propagate(input, config, params)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Convolution with padding</td></tr>
   <tr><td><code>backpropagate(dOut, input, config, params, dFilters, dBiases)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Compute gradients for filters, biases, and input</td></tr>
 </table>
 
 <h3>ReLU&lt;T&gt;</h3>
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-  <tr><td><code>predict(input)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Element-wise max(0, x)</td></tr>
+  <tr><td><code>propagate(input)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Element-wise max(0, x)</td></tr>
   <tr><td><code>backpropagate(dOut, input)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Pass gradient where input &gt; 0</td></tr>
 </table>
 
 <h3>Pool&lt;T&gt;</h3>
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-  <tr><td><code>predict(input, config, maxIndices)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Max or average pooling; stores max indices</td></tr>
+  <tr><td><code>propagate(input, config, maxIndices)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Max or average pooling; stores max indices</td></tr>
   <tr><td><code>backpropagate(dOut, inputShape, config, maxIndices)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Route/distribute gradient back through pool</td></tr>
+</table>
+
+<h3>BatchNorm&lt;T&gt;</h3>
+<table>
+  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+  <tr><td><code>propagate(input, inputShape, params, config, training, batchMean*, batchVar*, xNormalized*)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Normalize per channel; inference uses running stats, training computes batch stats and updates running stats</td></tr>
+  <tr><td><code>backpropagate(dOut, inputShape, params, config, batchMean, batchVar, xNormalized, dGamma, dBeta)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Compute gradients for γ, β, and input</td></tr>
 </table>
 
 <h3>Flatten&lt;T&gt;</h3>
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-  <tr><td><code>predict(input)</code></td><td><code>Tensor1D&lt;T&gt;</code></td><td>Reshape 3D → 1D (zero-copy)</td></tr>
+  <tr><td><code>propagate(input)</code></td><td><code>Tensor1D&lt;T&gt;</code></td><td>Reshape 3D → 1D (zero-copy)</td></tr>
   <tr><td><code>backpropagate(dOut, inputShape)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Reshape 1D → 3D</td></tr>
 </table>
 
