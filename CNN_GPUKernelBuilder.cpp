@@ -46,7 +46,7 @@ void GPUKernelBuilder<T>::setupTrainingKernels()
   // Propagate pipeline: CNN propagate → copy → ANN propagate
   this->addPropagateKernels(true);
   this->addCopyBridgeKernels();
-  this->bufferManager.annGPUWorker->kernelBuilder->addPropagateKernels();
+  this->bufferManager.annGPUWorker->kernelBuilder->addPropagateKernels(true);
 
   // Backpropagate pipeline: ANN backpropagate (with input gradients) → reverse bridge → CNN backpropagate
   this->bufferManager.annGPUWorker->kernelBuilder->addBackpropagateKernels(true);
