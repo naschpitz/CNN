@@ -338,31 +338,44 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 //===================================================================================================================//
 
 template <typename T>
-TestResult<T> CoreCPU<T>::test(const Samples<T>& samples)
+TestResult<T> CoreCPU<T>::test(ulong numSamples, const SampleProvider<T>& sampleProvider)
 {
-  TestResult<T> result;
-  result.numSamples = samples.size();
-  result.totalLoss = static_cast<T>(0);
-  result.numCorrect = 0;
+  // Sequential index array (no shuffling for test)
+  std::vector<ulong> sampleIndices(numSamples);
 
-  for (ulong i = 0; i < samples.size(); i++) {
-    Output<T> predicted = this->stepWorker->predict(samples[i].input);
-    result.totalLoss += this->stepWorker->calculateLoss(predicted, samples[i].output);
-
-    auto predIdx = std::distance(predicted.begin(), std::max_element(predicted.begin(), predicted.end()));
-    auto expIdx =
-      std::distance(samples[i].output.begin(), std::max_element(samples[i].output.begin(), samples[i].output.end()));
-
-    if (predIdx == expIdx)
-      result.numCorrect++;
+  for (ulong i = 0; i < numSamples; i++) {
+    sampleIndices[i] = i;
   }
 
-  result.averageLoss =
-    (result.numSamples > 0) ? result.totalLoss / static_cast<T>(result.numSamples) : static_cast<T>(0);
+  ulong batchSize = this->testConfig.batchSize;
+  ulong numBatches = (numSamples + batchSize - 1) / batchSize;
 
-  result.accuracy = (result.numSamples > 0)
-                      ? static_cast<T>(result.numCorrect) / static_cast<T>(result.numSamples) * static_cast<T>(100)
-                      : static_cast<T>(0);
+  T totalLoss = static_cast<T>(0);
+  ulong totalCorrect = 0;
+
+  for (ulong b = 0; b < numBatches; b++) {
+    Samples<T> batch = sampleProvider(sampleIndices, batchSize, b);
+
+    for (ulong i = 0; i < batch.size(); i++) {
+      Output<T> predicted = this->stepWorker->predict(batch[i].input);
+      totalLoss += this->stepWorker->calculateLoss(predicted, batch[i].output);
+
+      auto predIdx = std::distance(predicted.begin(), std::max_element(predicted.begin(), predicted.end()));
+      auto expIdx =
+        std::distance(batch[i].output.begin(), std::max_element(batch[i].output.begin(), batch[i].output.end()));
+
+      if (predIdx == expIdx)
+        totalCorrect++;
+    }
+  }
+
+  TestResult<T> result;
+  result.numSamples = numSamples;
+  result.totalLoss = totalLoss;
+  result.numCorrect = totalCorrect;
+  result.averageLoss = (numSamples > 0) ? totalLoss / static_cast<T>(numSamples) : static_cast<T>(0);
+  result.accuracy = (numSamples > 0) ? static_cast<T>(totalCorrect) / static_cast<T>(numSamples) * static_cast<T>(100)
+                                     : static_cast<T>(0);
 
   return result;
 }

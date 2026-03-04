@@ -26,7 +26,7 @@ namespace CNN
       //-- Core interface --//
       virtual Output<T> predict(const Input<T>& input) = 0;
       virtual void train(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
-      virtual TestResult<T> test(const Samples<T>& samples) = 0;
+      virtual TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
 
       //-- Destructor --//
       virtual ~Core() = default;
@@ -126,6 +126,7 @@ namespace CNN
       Shape3D inputShape;
       LayersConfig layersConfig;
       TrainingConfig<T> trainingConfig;
+      TestConfig testConfig;
       TrainingMetadata<T> trainingMetadata;
       PredictMetadata<T> predictMetadata;
       Parameters<T> parameters;

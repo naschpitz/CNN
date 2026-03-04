@@ -37,6 +37,7 @@ Core<T>::Core(const CoreConfig<T>& coreConfig) : coreConfig(coreConfig)
   this->inputShape = coreConfig.inputShape;
   this->layersConfig = coreConfig.layersConfig;
   this->trainingConfig = coreConfig.trainingConfig;
+  this->testConfig = coreConfig.testConfig;
   this->parameters = coreConfig.parameters;
   this->progressReports = coreConfig.progressReports;
   this->logLevel = coreConfig.logLevel;

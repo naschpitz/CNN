@@ -75,7 +75,7 @@ static void testGPUEndToEnd()
   CHECK(converged, "GPU bright > 0.7 & dark < 0.3 after training (5 attempts)");
 
   // Test method
-  CNN::TestResult<float> result = core->test(samples);
+  CNN::TestResult<float> result = core->test(samples.size(), CNN::makeSampleProvider(samples));
   CHECK(result.numSamples == 2, "GPU test numSamples");
   CHECK(result.averageLoss >= 0.0f, "GPU test avgLoss non-negative");
   CHECK(result.averageLoss < 0.1f, "GPU test avgLoss reasonably small");

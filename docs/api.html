@@ -158,6 +158,7 @@
   <tr><td><code>layersConfig</code></td><td><code>LayersConfig</code></td><td>CNN + dense layer architecture</td></tr>
   <tr><td><code>costFunctionConfig</code></td><td><code>CostFunctionConfig&lt;T&gt;</code></td><td>Cost function type and optional weights</td></tr>
   <tr><td><code>trainingConfig</code></td><td><code>TrainingConfig&lt;T&gt;</code></td><td>Training hyperparameters (epochs, learning rate, batch size)</td></tr>
+  <tr><td><code>testConfig</code></td><td><code>TestConfig</code></td><td>Test evaluation settings (batch size)</td></tr>
   <tr><td><code>parameters</code></td><td><code>Parameters&lt;T&gt;</code></td><td>Pre-trained parameters (optional)</td></tr>
   <tr><td><code>progressReports</code></td><td><code>ulong</code></td><td>Progress callback frequency for all modes (default 1000)</td></tr>
   <tr><td><code>logLevel</code></td><td><code>LogLevel</code></td><td>Log verbosity level (default ERROR)</td></tr>
@@ -172,6 +173,13 @@
   <tr><td><code>shuffleSamples</code></td><td><code>bool</code></td><td>Shuffle sample order each epoch (default true)</td></tr>
   <tr><td><code>dropoutRate</code></td><td><code>float</code></td><td>Dropout probability for dense hidden layers during training (default 0.0 = disabled). Uses inverted dropout: activations are scaled by 1/(1−p) during training so no adjustment is needed at inference. Applied only to the dense (fully-connected) layers, not convolutional layers.</td></tr>
   <tr><td><code>optimizer</code></td><td><code>Optimizer&lt;T&gt;</code></td><td>Optimizer configuration (default: SGD)</td></tr>
+</table>
+
+<h3>TestConfig <span class="badge badge-blue">CNN_TestConfig.hpp</span></h3>
+<p>Configuration for test evaluation. Separate from <code>TrainingConfig</code> to allow independent batch sizing.</p>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>batchSize</code></td><td><code>ulong</code></td><td>Mini-batch size for test evaluation (default 64). Controls how many samples are loaded into memory at once during testing.</td></tr>
 </table>
 
 <h3>Optimizer&lt;T&gt; <span class="badge badge-blue">CNN_Optimizer.hpp</span></h3>
@@ -248,7 +256,7 @@
   <tr><td><code>makeCore(config)</code></td><td><code>unique_ptr&lt;Core&lt;T&gt;&gt;</code></td><td><strong>Factory:</strong> creates CoreCPU or CoreGPU</td></tr>
   <tr><td><code>predict(input)</code></td><td><code>Output&lt;T&gt;</code></td><td>Propagation — CNN → Flatten → ANN</td></tr>
   <tr><td><code>train(numSamples, sampleProvider)</code></td><td><code>void</code></td><td>Full training loop with SGD</td></tr>
-  <tr><td><code>test(samples)</code></td><td><code>TestResult&lt;T&gt;</code></td><td>Evaluate loss on a test set</td></tr>
+  <tr><td><code>test(numSamples, sampleProvider)</code></td><td><code>TestResult&lt;T&gt;</code></td><td>Evaluate loss on a test set using on-demand sample loading</td></tr>
   <tr><td><code>setTrainingCallback(cb)</code></td><td><code>void</code></td><td>Attach progress callback</td></tr>
   <tr><td><code>getParameters()</code></td><td><code>const Parameters&lt;T&gt;&amp;</code></td><td>Get current conv + dense parameters</td></tr>
   <tr><td><code>getTrainingMetadata()</code></td><td><code>TrainingMetadata&lt;T&gt;</code></td><td>Timing and loss from last train()</td></tr>

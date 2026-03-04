@@ -221,48 +221,62 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 //===================================================================================================================//
 
 template <typename T>
-TestResult<T> CoreGPU<T>::test(const Samples<T>& samples)
+TestResult<T> CoreGPU<T>::test(ulong numSamples, const SampleProvider<T>& sampleProvider)
 {
-  ulong numSamples = samples.size();
+  // Sequential index array (no shuffling for test)
+  std::vector<ulong> sampleIndices(numSamples);
 
-  ulong samplesPerGPU = numSamples / this->numGPUs;
-  ulong remainder = numSamples % this->numGPUs;
-
-  struct GPUWorkItem {
-      size_t gpuIdx;
-      ulong startIdx;
-      ulong endIdx;
-  };
-
-  QVector<GPUWorkItem> workItems;
-
-  for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-    ulong startIdx = gpuIdx * samplesPerGPU + std::min(gpuIdx, remainder);
-    ulong endIdx = startIdx + samplesPerGPU + (gpuIdx < remainder ? 1 : 0);
-    workItems.append({gpuIdx, startIdx, endIdx});
+  for (ulong i = 0; i < numSamples; i++) {
+    sampleIndices[i] = i;
   }
 
-  std::vector<std::pair<T, ulong>> gpuResults(this->numGPUs, {0, 0});
-
-  QtConcurrent::blockingMap(workItems, [this, &samples, &gpuResults](const GPUWorkItem& item) {
-    gpuResults[item.gpuIdx] = this->gpuWorkers[item.gpuIdx]->testSubset(samples, item.startIdx, item.endIdx);
-  });
+  ulong batchSize = this->testConfig.batchSize;
+  ulong numBatches = (numSamples + batchSize - 1) / batchSize;
 
   T totalLoss = static_cast<T>(0);
   ulong totalCorrect = 0;
 
-  for (size_t i = 0; i < this->numGPUs; i++) {
-    totalLoss += gpuResults[i].first;
-    totalCorrect += gpuResults[i].second;
+  for (ulong b = 0; b < numBatches; b++) {
+    Samples<T> batch = sampleProvider(sampleIndices, batchSize, b);
+
+    // Distribute batch across GPUs
+    ulong batchLen = batch.size();
+    ulong samplesPerGPU = batchLen / this->numGPUs;
+    ulong remainder = batchLen % this->numGPUs;
+
+    struct GPUWorkItem {
+        size_t gpuIdx;
+        ulong startIdx;
+        ulong endIdx;
+    };
+
+    QVector<GPUWorkItem> workItems;
+
+    for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
+      ulong startIdx = gpuIdx * samplesPerGPU + std::min(gpuIdx, remainder);
+      ulong endIdx = startIdx + samplesPerGPU + (gpuIdx < remainder ? 1 : 0);
+
+      if (startIdx < endIdx)
+        workItems.append({gpuIdx, startIdx, endIdx});
+    }
+
+    std::vector<std::pair<T, ulong>> gpuResults(this->numGPUs, {0, 0});
+
+    QtConcurrent::blockingMap(workItems, [this, &batch, &gpuResults](const GPUWorkItem& item) {
+      gpuResults[item.gpuIdx] = this->gpuWorkers[item.gpuIdx]->testSubset(batch, item.startIdx, item.endIdx);
+    });
+
+    for (size_t i = 0; i < this->numGPUs; i++) {
+      totalLoss += gpuResults[i].first;
+      totalCorrect += gpuResults[i].second;
+    }
   }
 
   TestResult<T> result;
   result.numSamples = numSamples;
   result.totalLoss = totalLoss;
   result.numCorrect = totalCorrect;
-
-  result.averageLoss = (numSamples > 0) ? result.totalLoss / static_cast<T>(numSamples) : static_cast<T>(0);
-
+  result.averageLoss = (numSamples > 0) ? totalLoss / static_cast<T>(numSamples) : static_cast<T>(0);
   result.accuracy = (numSamples > 0) ? static_cast<T>(totalCorrect) / static_cast<T>(numSamples) * static_cast<T>(100)
                                      : static_cast<T>(0);
 

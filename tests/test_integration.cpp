@@ -73,7 +73,7 @@ static void testEndToEnd()
   CHECK(converged, "bright > dark after training (5 attempts)");
 
   // Test method
-  CNN::TestResult<double> result = core->test(samples);
+  CNN::TestResult<double> result = core->test(samples.size(), CNN::makeSampleProvider(samples));
   CHECK(result.numSamples == 2, "test numSamples");
   CHECK(result.averageLoss >= 0.0, "test avgLoss non-negative");
   CHECK(result.numCorrect <= result.numSamples, "numCorrect <= numSamples");
@@ -647,7 +647,7 @@ static void testWeightedLossTraining()
   core->train(samples.size(), CNN::makeSampleProvider(samples));
 
   // Verify training completed and test produces valid results
-  CNN::TestResult<double> result = core->test(samples);
+  CNN::TestResult<double> result = core->test(samples.size(), CNN::makeSampleProvider(samples));
   CHECK(result.numSamples == 2, "weighted CNN: tested 2 samples");
   CHECK(result.averageLoss >= 0.0, "weighted CNN: loss non-negative");
   CHECK(std::isfinite(result.averageLoss), "weighted CNN: loss is finite");

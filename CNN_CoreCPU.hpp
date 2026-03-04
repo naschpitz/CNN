@@ -21,7 +21,7 @@ namespace CNN
       //-- Core interface --//
       Output<T> predict(const Input<T>& input) override;
       void train(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
-      TestResult<T> test(const Samples<T>& samples) override;
+      TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
 
     private:
       //-- Step-by-step worker (for predict / single-threaded path) --//

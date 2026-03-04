@@ -61,9 +61,14 @@ config.trainingConfig.numEpochs    = 10;
 config.trainingConfig.batchSize    = 64;
 config.trainingConfig.learningRate = 0.01f;
 
-// Create, train, and query
+config.testConfig.batchSize = 128;   // batch size for test evaluation (default: 64)
+
+// Create, train, test, and query
 auto core = CNN::Core<float>::makeCore(config);
 core->train(samples.size(), CNN::makeSampleProvider(samples));
+
+auto testResult = core->test(testSamples.size(), CNN::makeSampleProvider(testSamples));
+// testResult.accuracy, testResult.averageLoss, testResult.numCorrect, ...
 
 const auto& params = core->getParameters();   // conv + dense params
 const auto& meta   = core->getTrainingMetadata();
