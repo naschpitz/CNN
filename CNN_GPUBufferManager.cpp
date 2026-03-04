@@ -85,10 +85,15 @@ void GPUBufferManager<T>::computeLayerOffsets()
 
       PoolInfo pi;
       pi.indexOffset = this->totalPoolIndexSize;
-      pi.indexSize = outShape.size();
-      this->poolInfos.push_back(pi);
 
-      this->totalPoolIndexSize += pi.indexSize;
+      if (pool.poolType == PoolTypeEnum::MAX) {
+        pi.indexSize = outShape.size();
+        this->totalPoolIndexSize += pi.indexSize;
+      } else {
+        pi.indexSize = 0; // Avg pool doesn't need index storage
+      }
+
+      this->poolInfos.push_back(pi);
       poolIdx++;
       break;
     }

@@ -21,6 +21,12 @@ namespace CNN
       void train(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
       TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
 
+      //-- Worker access (for diagnostics/testing) --//
+      CoreGPUWorker<T>* getWorker(size_t idx = 0)
+      {
+        return (idx < gpuWorkers.size()) ? gpuWorkers[idx].get() : nullptr;
+      }
+
     private:
       //-- GPU workers (one per GPU) --//
       std::vector<std::unique_ptr<CoreGPUWorker<T>>> gpuWorkers;

@@ -28,6 +28,42 @@ kernel void calculate_dCost_dMaxpool(global TYPE* grads, global ulong* pool_indi
 
 //===================================================================================================================//
 
+// Computes ∂Cost/∂avgpool_input: distributes gradient evenly across pooling window (backward pass)
+// One work-item per output element (c, oh, ow)
+// nElements = C * outH * outW
+kernel void calculate_dCost_dAvgpool(global TYPE* grads,
+                                     ulong grad_in_offset, // offset of pool input gradient (destination)
+                                     ulong grad_out_offset, // offset of pool output gradient (source)
+                                     ulong channels, ulong inputH, ulong inputW, ulong poolH, ulong poolW,
+                                     ulong strideY, ulong strideX, ulong outH, ulong outW)
+{
+  size_t gid = get_global_id(0);
+
+  ulong totalOut = channels * outH * outW;
+
+  if (gid >= totalOut)
+    return;
+
+  ulong c = gid / (outH * outW);
+  ulong rem = gid % (outH * outW);
+  ulong oh = rem / outW;
+  ulong ow = rem % outW;
+
+  TYPE dOutVal = grads[grad_out_offset + gid];
+  TYPE distributed = dOutVal / (TYPE)(poolH * poolW);
+
+  for (ulong ph = 0; ph < poolH; ph++) {
+    for (ulong pw = 0; pw < poolW; pw++) {
+      ulong ih = oh * strideY + ph;
+      ulong iw = ow * strideX + pw;
+
+      grads[grad_in_offset + c * inputH * inputW + ih * inputW + iw] += distributed;
+    }
+  }
+}
+
+//===================================================================================================================//
+
 // Computes ∂Cost/∂z = ∂Cost/∂a · (z > 0) (backward pass)
 // One work-item per element
 kernel void calculate_dCost_dRelu(global TYPE* grads, global TYPE* actvs,

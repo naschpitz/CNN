@@ -179,22 +179,40 @@ void GPUKernelBuilder<T>::addPropagateKernels(bool training)
       ulong outW = (currentShape.w - pool.poolW) / pool.strideX + 1;
       ulong nElements = currentShape.c * outH * outW;
 
-      std::string kernelId = "calculate_maxpool_layer" + layerStr;
-      this->core->addKernel(kernelId, "calculate_maxpool", nElements, 0);
-      this->core->template addArgument<T>(kernelId, "cnn_actvs");
-      this->core->template addArgument<ulong>(kernelId, "cnn_pool_indices");
-      this->core->template addArgument<ulong>(kernelId, inOffset);
-      this->core->template addArgument<ulong>(kernelId, outOffset);
-      this->core->template addArgument<ulong>(kernelId, this->bufferManager.poolInfos[poolIdx].indexOffset);
-      this->core->template addArgument<ulong>(kernelId, currentShape.c);
-      this->core->template addArgument<ulong>(kernelId, currentShape.h);
-      this->core->template addArgument<ulong>(kernelId, currentShape.w);
-      this->core->template addArgument<ulong>(kernelId, pool.poolH);
-      this->core->template addArgument<ulong>(kernelId, pool.poolW);
-      this->core->template addArgument<ulong>(kernelId, pool.strideY);
-      this->core->template addArgument<ulong>(kernelId, pool.strideX);
-      this->core->template addArgument<ulong>(kernelId, outH);
-      this->core->template addArgument<ulong>(kernelId, outW);
+      if (pool.poolType == PoolTypeEnum::MAX) {
+        std::string kernelId = "calculate_maxpool_layer" + layerStr;
+        this->core->addKernel(kernelId, "calculate_maxpool", nElements, 0);
+        this->core->template addArgument<T>(kernelId, "cnn_actvs");
+        this->core->template addArgument<ulong>(kernelId, "cnn_pool_indices");
+        this->core->template addArgument<ulong>(kernelId, inOffset);
+        this->core->template addArgument<ulong>(kernelId, outOffset);
+        this->core->template addArgument<ulong>(kernelId, this->bufferManager.poolInfos[poolIdx].indexOffset);
+        this->core->template addArgument<ulong>(kernelId, currentShape.c);
+        this->core->template addArgument<ulong>(kernelId, currentShape.h);
+        this->core->template addArgument<ulong>(kernelId, currentShape.w);
+        this->core->template addArgument<ulong>(kernelId, pool.poolH);
+        this->core->template addArgument<ulong>(kernelId, pool.poolW);
+        this->core->template addArgument<ulong>(kernelId, pool.strideY);
+        this->core->template addArgument<ulong>(kernelId, pool.strideX);
+        this->core->template addArgument<ulong>(kernelId, outH);
+        this->core->template addArgument<ulong>(kernelId, outW);
+      } else {
+        // Average pooling — no pool_indices needed
+        std::string kernelId = "calculate_avgpool_layer" + layerStr;
+        this->core->addKernel(kernelId, "calculate_avgpool", nElements, 0);
+        this->core->template addArgument<T>(kernelId, "cnn_actvs");
+        this->core->template addArgument<ulong>(kernelId, inOffset);
+        this->core->template addArgument<ulong>(kernelId, outOffset);
+        this->core->template addArgument<ulong>(kernelId, currentShape.c);
+        this->core->template addArgument<ulong>(kernelId, currentShape.h);
+        this->core->template addArgument<ulong>(kernelId, currentShape.w);
+        this->core->template addArgument<ulong>(kernelId, pool.poolH);
+        this->core->template addArgument<ulong>(kernelId, pool.poolW);
+        this->core->template addArgument<ulong>(kernelId, pool.strideY);
+        this->core->template addArgument<ulong>(kernelId, pool.strideX);
+        this->core->template addArgument<ulong>(kernelId, outH);
+        this->core->template addArgument<ulong>(kernelId, outW);
+      }
 
       currentShape = {currentShape.c, outH, outW};
       poolIdx++;
@@ -418,6 +436,7 @@ void GPUKernelBuilder<T>::addBackpropagateKernels()
 
     case LayerType::POOL: {
       poolIdx--;
+      const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
 
       ulong inSize = inShape.size();
       std::string zeroId = "zero_pool_grad_layer" + layerStr;
@@ -427,13 +446,32 @@ void GPUKernelBuilder<T>::addBackpropagateKernels()
       this->core->template addArgument<ulong>(zeroId, inSize);
 
       ulong outSize = outShape.size();
-      std::string poolId = "calculate_dCost_dMaxpool_layer" + layerStr;
-      this->core->addKernel(poolId, "calculate_dCost_dMaxpool", outSize, 0);
-      this->core->template addArgument<T>(poolId, "cnn_grads");
-      this->core->template addArgument<ulong>(poolId, "cnn_pool_indices");
-      this->core->template addArgument<ulong>(poolId, gradOutOffset);
-      this->core->template addArgument<ulong>(poolId, this->bufferManager.poolInfos[poolIdx].indexOffset);
-      this->core->template addArgument<ulong>(poolId, outSize);
+
+      if (pool.poolType == PoolTypeEnum::MAX) {
+        std::string poolId = "calculate_dCost_dMaxpool_layer" + layerStr;
+        this->core->addKernel(poolId, "calculate_dCost_dMaxpool", outSize, 0);
+        this->core->template addArgument<T>(poolId, "cnn_grads");
+        this->core->template addArgument<ulong>(poolId, "cnn_pool_indices");
+        this->core->template addArgument<ulong>(poolId, gradOutOffset);
+        this->core->template addArgument<ulong>(poolId, this->bufferManager.poolInfos[poolIdx].indexOffset);
+        this->core->template addArgument<ulong>(poolId, outSize);
+      } else {
+        std::string poolId = "calculate_dCost_dAvgpool_layer" + layerStr;
+        this->core->addKernel(poolId, "calculate_dCost_dAvgpool", outSize, 0);
+        this->core->template addArgument<T>(poolId, "cnn_grads");
+        this->core->template addArgument<ulong>(poolId, gradInOffset);
+        this->core->template addArgument<ulong>(poolId, gradOutOffset);
+        this->core->template addArgument<ulong>(poolId, inShape.c);
+        this->core->template addArgument<ulong>(poolId, inShape.h);
+        this->core->template addArgument<ulong>(poolId, inShape.w);
+        this->core->template addArgument<ulong>(poolId, pool.poolH);
+        this->core->template addArgument<ulong>(poolId, pool.poolW);
+        this->core->template addArgument<ulong>(poolId, pool.strideY);
+        this->core->template addArgument<ulong>(poolId, pool.strideX);
+        this->core->template addArgument<ulong>(poolId, outShape.h);
+        this->core->template addArgument<ulong>(poolId, outShape.w);
+      }
+
       break;
     }
 

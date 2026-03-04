@@ -120,4 +120,39 @@ kernel void calculate_maxpool(global TYPE* actvs, global ulong* pool_indices, ul
 
 //===================================================================================================================//
 
+// Computes a = avg(region) (forward pass)
+// One work-item per output element (c, oh, ow)
+// nElements = C * outH * outW
+kernel void calculate_avgpool(global TYPE* actvs, ulong actv_in_offset, ulong actv_out_offset, ulong channels,
+                              ulong inputH, ulong inputW, ulong poolH, ulong poolW, ulong strideY, ulong strideX,
+                              ulong outH, ulong outW)
+{
+  size_t gid = get_global_id(0);
+
+  ulong totalOut = channels * outH * outW;
+
+  if (gid >= totalOut)
+    return;
+
+  ulong c = gid / (outH * outW);
+  ulong rem = gid % (outH * outW);
+  ulong oh = rem / outW;
+  ulong ow = rem % outW;
+
+  TYPE sum = (TYPE)0;
+
+  for (ulong ph = 0; ph < poolH; ph++) {
+    for (ulong pw = 0; pw < poolW; pw++) {
+      ulong ih = oh * strideY + ph;
+      ulong iw = ow * strideX + pw;
+
+      sum += actvs[actv_in_offset + c * inputH * inputW + ih * inputW + iw];
+    }
+  }
+
+  actvs[actv_out_offset + gid] = sum / (TYPE)(poolH * poolW);
+}
+
+//===================================================================================================================//
+
 #endif // CNN_PROPAGATE_CPP_CL
