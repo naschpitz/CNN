@@ -28,9 +28,7 @@ void GPUKernelBuilder<T>::setupPredictKernels()
   this->core->clearKernels();
   this->invalidateAllKernelFlags();
 
-  // Use training=true so BN computes per-image spatial stats instead of running stats.
-  // This matches training behavior where each image is normalized by its own stats.
-  this->addPropagateKernels(true);
+  this->addPropagateKernels();
   this->addCopyBridgeKernels();
   this->bufferManager.annGPUWorker->kernelBuilder->addPropagateKernels();
 
@@ -46,7 +44,7 @@ void GPUKernelBuilder<T>::setupTrainingKernels()
   this->invalidateAllKernelFlags();
 
   // Propagate pipeline: CNN propagate → copy → ANN propagate
-  this->addPropagateKernels(true);
+  this->addPropagateKernels();
   this->addCopyBridgeKernels();
   this->bufferManager.annGPUWorker->kernelBuilder->addPropagateKernels(true);
 
@@ -113,7 +111,7 @@ void GPUKernelBuilder<T>::invalidateAllKernelFlags()
 //===================================================================================================================//
 
 template <typename T>
-void GPUKernelBuilder<T>::addPropagateKernels(bool training)
+void GPUKernelBuilder<T>::addPropagateKernels()
 {
   const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
   Shape3D currentShape = this->coreConfig.inputShape;
@@ -226,45 +224,40 @@ void GPUKernelBuilder<T>::addPropagateKernels(bool training)
       ulong size = currentShape.size();
       ulong bnParamOffset = this->bufferManager.bnInfos[bnIdx].paramOffset;
 
-      if (training) {
-        // Compute batch mean and variance before normalizing
-        ulong localWS = 256;
-        ulong meanGlobalWS = currentShape.c * localWS;
+      // Always compute per-image spatial mean and variance before normalizing
+      ulong localWS = 256;
+      ulong meanGlobalWS = currentShape.c * localWS;
 
-        std::string meanId = "calculate_batchnorm_mean_layer" + layerStr;
-        this->core->addKernel(meanId, "calculate_batchnorm_mean", meanGlobalWS, 0, localWS);
-        this->core->template addArgument<T>(meanId, "cnn_actvs");
-        this->core->template addArgument<T>(meanId, "cnn_bn_batch_mean");
-        this->core->template addArgument<ulong>(meanId, inOffset);
-        this->core->template addArgument<ulong>(meanId, bnParamOffset);
-        this->core->template addArgument<ulong>(meanId, currentShape.c);
-        this->core->template addArgument<ulong>(meanId, currentShape.h);
-        this->core->template addArgument<ulong>(meanId, currentShape.w);
+      std::string meanId = "calculate_batchnorm_mean_layer" + layerStr;
+      this->core->addKernel(meanId, "calculate_batchnorm_mean", meanGlobalWS, 0, localWS);
+      this->core->template addArgument<T>(meanId, "cnn_actvs");
+      this->core->template addArgument<T>(meanId, "cnn_bn_batch_mean");
+      this->core->template addArgument<ulong>(meanId, inOffset);
+      this->core->template addArgument<ulong>(meanId, bnParamOffset);
+      this->core->template addArgument<ulong>(meanId, currentShape.c);
+      this->core->template addArgument<ulong>(meanId, currentShape.h);
+      this->core->template addArgument<ulong>(meanId, currentShape.w);
 
-        std::string varId = "calculate_batchnorm_var_layer" + layerStr;
-        this->core->addKernel(varId, "calculate_batchnorm_var", meanGlobalWS, 0, localWS);
-        this->core->template addArgument<T>(varId, "cnn_actvs");
-        this->core->template addArgument<T>(varId, "cnn_bn_batch_mean");
-        this->core->template addArgument<T>(varId, "cnn_bn_batch_var");
-        this->core->template addArgument<ulong>(varId, inOffset);
-        this->core->template addArgument<ulong>(varId, bnParamOffset);
-        this->core->template addArgument<ulong>(varId, currentShape.c);
-        this->core->template addArgument<ulong>(varId, currentShape.h);
-        this->core->template addArgument<ulong>(varId, currentShape.w);
-      }
+      std::string varId = "calculate_batchnorm_var_layer" + layerStr;
+      this->core->addKernel(varId, "calculate_batchnorm_var", meanGlobalWS, 0, localWS);
+      this->core->template addArgument<T>(varId, "cnn_actvs");
+      this->core->template addArgument<T>(varId, "cnn_bn_batch_mean");
+      this->core->template addArgument<T>(varId, "cnn_bn_batch_var");
+      this->core->template addArgument<ulong>(varId, inOffset);
+      this->core->template addArgument<ulong>(varId, bnParamOffset);
+      this->core->template addArgument<ulong>(varId, currentShape.c);
+      this->core->template addArgument<ulong>(varId, currentShape.h);
+      this->core->template addArgument<ulong>(varId, currentShape.w);
 
-      // Same normalize kernel for both paths — only the mean/var source differs
-      std::string meanBuf = training ? "cnn_bn_batch_mean" : "cnn_bn_running_mean";
-      std::string varBuf = training ? "cnn_bn_batch_var" : "cnn_bn_running_var";
-
+      // Normalize using the computed per-image spatial stats
       std::string normId = "calculate_batchnorm_normalize_layer" + layerStr;
       this->core->addKernel(normId, "calculate_batchnorm_normalize", size, 0);
       this->core->template addArgument<T>(normId, "cnn_actvs");
       this->core->template addArgument<T>(normId, "cnn_bn_xnorm");
       this->core->template addArgument<T>(normId, "cnn_bn_gamma");
       this->core->template addArgument<T>(normId, "cnn_bn_beta");
-      this->core->template addArgument<T>(normId, meanBuf);
-      this->core->template addArgument<T>(normId, varBuf);
+      this->core->template addArgument<T>(normId, "cnn_bn_batch_mean");
+      this->core->template addArgument<T>(normId, "cnn_bn_batch_var");
       this->core->template addArgument<ulong>(normId, inOffset);
       this->core->template addArgument<ulong>(normId, outOffset);
       this->core->template addArgument<ulong>(normId, inOffset); // xnorm offset

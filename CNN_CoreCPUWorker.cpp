@@ -266,14 +266,12 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
         this->bnBatchMeans.push_back({});
         this->bnBatchVars.push_back({});
         this->bnXNormalized.push_back({});
-        current = BatchNorm<T>::propagate(current, current.shape, bnParams, bn, true, &this->bnBatchMeans.back(),
+        current = BatchNorm<T>::propagate(current, current.shape, bnParams, bn, &this->bnBatchMeans.back(),
                                           &this->bnBatchVars.back(), &this->bnXNormalized.back());
       } else {
-        // Use per-image spatial stats (instance norm) at inference to match training behavior.
-        // bnParams is a copy, so running stats updates inside propagate are discarded.
-        std::vector<T> tmpMean, tmpVar;
-        Tensor3D<T> tmpXNorm;
-        current = BatchNorm<T>::propagate(current, current.shape, bnParams, bn, true, &tmpMean, &tmpVar, &tmpXNorm);
+        // Inference: compute per-image spatial stats without storing intermediates.
+        // bnParams is a copy, so no side effects on shared parameters.
+        current = BatchNorm<T>::propagate(current, current.shape, bnParams, bn);
       }
 
       bnIdx++;

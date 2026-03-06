@@ -8,7 +8,7 @@ using namespace CNN;
 
 template <typename T>
 Tensor3D<T> BatchNorm<T>::propagate(const Tensor3D<T>& input, const Shape3D& inputShape, BatchNormParameters<T>& params,
-                                    const BatchNormLayerConfig& config, bool training, std::vector<T>* batchMean,
+                                    const BatchNormLayerConfig& config, std::vector<T>* batchMean,
                                     std::vector<T>* batchVar, Tensor3D<T>* xNormalized)
 {
   ulong C = inputShape.c;
@@ -16,57 +16,44 @@ Tensor3D<T> BatchNorm<T>::propagate(const Tensor3D<T>& input, const Shape3D& inp
   ulong W = inputShape.w;
   ulong spatialSize = H * W;
   T eps = static_cast<T>(config.epsilon);
+  bool storeIntermediates = (batchMean != nullptr && batchVar != nullptr && xNormalized != nullptr);
 
   Tensor3D<T> output(inputShape);
 
-  if (!training) {
-    // Inference: use running mean/var
-    for (ulong c = 0; c < C; c++) {
-      T mean = params.runningMean[c];
-      T var = params.runningVar[c];
-      T gamma = params.gamma[c];
-      T beta = params.beta[c];
-      T invStd = static_cast<T>(1) / std::sqrt(var + eps);
-
-      for (ulong s = 0; s < spatialSize; s++) {
-        ulong idx = c * spatialSize + s;
-        output.data[idx] = gamma * (input.data[idx] - mean) * invStd + beta;
-      }
-    }
-  } else {
-    // Training: compute batch statistics, store intermediates, update running stats
-    T momentum = static_cast<T>(config.momentum);
+  if (storeIntermediates) {
     batchMean->resize(C);
     batchVar->resize(C);
     *xNormalized = Tensor3D<T>(inputShape);
+  }
 
-    for (ulong c = 0; c < C; c++) {
-      // Compute mean over spatial dimensions
-      T mean = static_cast<T>(0);
+  for (ulong c = 0; c < C; c++) {
+    // Always compute per-image spatial mean
+    T mean = static_cast<T>(0);
 
-      for (ulong s = 0; s < spatialSize; s++) {
-        mean += input.data[c * spatialSize + s];
-      }
+    for (ulong s = 0; s < spatialSize; s++) {
+      mean += input.data[c * spatialSize + s];
+    }
 
-      mean /= static_cast<T>(spatialSize);
+    mean /= static_cast<T>(spatialSize);
 
-      // Compute variance over spatial dimensions
-      T var = static_cast<T>(0);
+    // Always compute per-image spatial variance
+    T var = static_cast<T>(0);
 
-      for (ulong s = 0; s < spatialSize; s++) {
-        T diff = input.data[c * spatialSize + s] - mean;
-        var += diff * diff;
-      }
+    for (ulong s = 0; s < spatialSize; s++) {
+      T diff = input.data[c * spatialSize + s] - mean;
+      var += diff * diff;
+    }
 
-      var /= static_cast<T>(spatialSize);
+    var /= static_cast<T>(spatialSize);
 
+    // Normalize, scale, and shift
+    T invStd = static_cast<T>(1) / std::sqrt(var + eps);
+    T gamma = params.gamma[c];
+    T beta = params.beta[c];
+
+    if (storeIntermediates) {
       (*batchMean)[c] = mean;
       (*batchVar)[c] = var;
-
-      // Normalize, scale, and shift
-      T invStd = static_cast<T>(1) / std::sqrt(var + eps);
-      T gamma = params.gamma[c];
-      T beta = params.beta[c];
 
       for (ulong s = 0; s < spatialSize; s++) {
         ulong idx = c * spatialSize + s;
@@ -75,8 +62,14 @@ Tensor3D<T> BatchNorm<T>::propagate(const Tensor3D<T>& input, const Shape3D& inp
       }
 
       // Update running statistics
+      T momentum = static_cast<T>(config.momentum);
       params.runningMean[c] = (static_cast<T>(1) - momentum) * params.runningMean[c] + momentum * mean;
       params.runningVar[c] = (static_cast<T>(1) - momentum) * params.runningVar[c] + momentum * var;
+    } else {
+      for (ulong s = 0; s < spatialSize; s++) {
+        ulong idx = c * spatialSize + s;
+        output.data[idx] = gamma * (input.data[idx] - mean) * invStd + beta;
+      }
     }
   }
 

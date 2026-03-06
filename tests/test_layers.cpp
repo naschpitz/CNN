@@ -221,7 +221,7 @@ static void testBatchNormTraining()
   CNN::Tensor3D<double> xNorm;
 
   CNN::Tensor3D<double> out =
-    CNN::BatchNorm<double>::propagate(input, shape, params, config, true, &batchMean, &batchVar, &xNorm);
+    CNN::BatchNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
 
   CHECK(out.shape.c == 2 && out.shape.h == 2 && out.shape.w == 2, "batchnorm train shape");
 
@@ -274,7 +274,7 @@ static void testBatchNormBackpropagate()
   // Forward pass (training) to get intermediates
   std::vector<double> batchMean, batchVar;
   CNN::Tensor3D<double> xNorm;
-  CNN::BatchNorm<double>::propagate(input, shape, params, config, true, &batchMean, &batchVar, &xNorm);
+  CNN::BatchNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
 
   // mean=2.5, var=1.25
   CHECK_NEAR(batchMean[0], 2.5, 1e-9, "backprop setup mean");
@@ -328,7 +328,7 @@ static void testBatchNormBackpropGradient()
   // Forward pass
   std::vector<double> batchMean, batchVar;
   CNN::Tensor3D<double> xNorm;
-  CNN::BatchNorm<double>::propagate(input, shape, params, config, true, &batchMean, &batchVar, &xNorm);
+  CNN::BatchNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
 
   // Non-uniform upstream gradient
   CNN::Tensor3D<double> dOutput(shape);
@@ -356,7 +356,7 @@ static void testBatchNormBackpropGradient()
     std::vector<double> bmP, bvP;
     CNN::Tensor3D<double> xnP;
     CNN::Tensor3D<double> outPlus =
-      CNN::BatchNorm<double>::propagate(inputPlus, shape, pPlus, config, true, &bmP, &bvP, &xnP);
+      CNN::BatchNorm<double>::propagate(inputPlus, shape, pPlus, config, &bmP, &bvP, &xnP);
 
     // Forward with input[i] - eps
     CNN::Tensor3D<double> inputMinus(shape);
@@ -369,7 +369,7 @@ static void testBatchNormBackpropGradient()
     std::vector<double> bmM, bvM;
     CNN::Tensor3D<double> xnM;
     CNN::Tensor3D<double> outMinus =
-      CNN::BatchNorm<double>::propagate(inputMinus, shape, pMinus, config, true, &bmM, &bvM, &xnM);
+      CNN::BatchNorm<double>::propagate(inputMinus, shape, pMinus, config, &bmM, &bvM, &xnM);
 
     // Numerical gradient = sum_j dOutput[j] * (outPlus[j] - outMinus[j]) / (2*eps)
     double numGrad = 0.0;

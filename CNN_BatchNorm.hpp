@@ -15,12 +15,12 @@ namespace CNN
   class BatchNorm
   {
     public:
-      // Forward pass: when training=false uses running mean/var; when training=true computes
-      // batch statistics, stores normalized values for backpropagation, and updates running stats.
+      // Forward pass: always computes per-image spatial statistics (instance normalization).
+      // If batchMean/batchVar/xNormalized pointers are provided, stores intermediates for
+      // backpropagation and updates running stats. If pointers are null, just computes output.
       static Tensor3D<T> propagate(const Tensor3D<T>& input, const Shape3D& inputShape, BatchNormParameters<T>& params,
-                                   const BatchNormLayerConfig& config, bool training = false,
-                                   std::vector<T>* batchMean = nullptr, std::vector<T>* batchVar = nullptr,
-                                   Tensor3D<T>* xNormalized = nullptr);
+                                   const BatchNormLayerConfig& config, std::vector<T>* batchMean = nullptr,
+                                   std::vector<T>* batchVar = nullptr, Tensor3D<T>* xNormalized = nullptr);
 
       // Backward pass: computes gradients for gamma, beta, and input
       static Tensor3D<T> backpropagate(const Tensor3D<T>& dOutput, const Shape3D& inputShape,
