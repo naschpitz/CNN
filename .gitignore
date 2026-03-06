@@ -76,7 +76,8 @@ CMakeLists.txt.user*
 # ----------------
 build/
 
-
+# Augment
+.augment/
 
 # Exploration/documentation files (auto-generated)
 EXPLORATION_COMPLETE.txt
