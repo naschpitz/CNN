@@ -579,6 +579,19 @@ void GPUKernelBuilder<T>::addCNNAccumulateKernels()
     this->core->template addArgument<T>("accumulate_gradients_bn_beta", "cnn_bn_dBeta");
     this->core->template addArgument<ulong>("accumulate_gradients_bn_beta", static_cast<ulong>(0));
     this->core->template addArgument<ulong>("accumulate_gradients_bn_beta", this->bufferManager.totalBNParamSize);
+
+    // Accumulate per-sample batch mean/var for running stats update
+    this->core->addKernel("accumulate_bn_mean", "accumulate_gradients", this->bufferManager.totalBNParamSize, 0);
+    this->core->template addArgument<T>("accumulate_bn_mean", "cnn_bn_accum_mean");
+    this->core->template addArgument<T>("accumulate_bn_mean", "cnn_bn_batch_mean");
+    this->core->template addArgument<ulong>("accumulate_bn_mean", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("accumulate_bn_mean", this->bufferManager.totalBNParamSize);
+
+    this->core->addKernel("accumulate_bn_var", "accumulate_gradients", this->bufferManager.totalBNParamSize, 0);
+    this->core->template addArgument<T>("accumulate_bn_var", "cnn_bn_accum_var");
+    this->core->template addArgument<T>("accumulate_bn_var", "cnn_bn_batch_var");
+    this->core->template addArgument<ulong>("accumulate_bn_var", static_cast<ulong>(0));
+    this->core->template addArgument<ulong>("accumulate_bn_var", this->bufferManager.totalBNParamSize);
   }
 }
 
@@ -733,10 +746,11 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples)
       this->core->addKernel(kernelId, "update_batchnorm_running_stats", numChannels, 0);
       this->core->template addArgument<T>(kernelId, "cnn_bn_running_mean");
       this->core->template addArgument<T>(kernelId, "cnn_bn_running_var");
-      this->core->template addArgument<T>(kernelId, "cnn_bn_batch_mean");
-      this->core->template addArgument<T>(kernelId, "cnn_bn_batch_var");
+      this->core->template addArgument<T>(kernelId, "cnn_bn_accum_mean");
+      this->core->template addArgument<T>(kernelId, "cnn_bn_accum_var");
       this->core->template addArgument<ulong>(kernelId, bnParamOffset);
       this->core->template addArgument<ulong>(kernelId, numChannels);
+      this->core->template addArgument<ulong>(kernelId, numSamples);
       this->core->template addArgument<float>(kernelId, momentum);
     }
   }

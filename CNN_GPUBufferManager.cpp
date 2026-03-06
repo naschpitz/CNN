@@ -194,6 +194,9 @@ void GPUBufferManager<T>::allocateBuffers()
     // Per-sample batch mean/var for backprop
     this->core->template allocateBuffer<T>("cnn_bn_batch_mean", this->totalBNParamSize);
     this->core->template allocateBuffer<T>("cnn_bn_batch_var", this->totalBNParamSize);
+    // Accumulated batch mean/var across samples (for running stats update)
+    this->core->template allocateBuffer<T>("cnn_bn_accum_mean", this->totalBNParamSize);
+    this->core->template allocateBuffer<T>("cnn_bn_accum_var", this->totalBNParamSize);
     // Normalized values for backprop
     this->core->template allocateBuffer<T>("cnn_bn_xnorm", this->totalActvSize);
   }
@@ -460,6 +463,8 @@ void GPUBufferManager<T>::resetAccumulators()
   if (this->totalBNParamSize > 0) {
     this->core->template fillBuffer<T>("cnn_accum_bn_dGamma", zero, this->totalBNParamSize);
     this->core->template fillBuffer<T>("cnn_accum_bn_dBeta", zero, this->totalBNParamSize);
+    this->core->template fillBuffer<T>("cnn_bn_accum_mean", zero, this->totalBNParamSize);
+    this->core->template fillBuffer<T>("cnn_bn_accum_var", zero, this->totalBNParamSize);
   }
 
   this->annGPUWorker->resetAccumulators();
