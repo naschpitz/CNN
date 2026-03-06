@@ -28,7 +28,9 @@ void GPUKernelBuilder<T>::setupPredictKernels()
   this->core->clearKernels();
   this->invalidateAllKernelFlags();
 
-  this->addPropagateKernels();
+  // Use training=true so BN computes per-image spatial stats instead of running stats.
+  // This matches training behavior where each image is normalized by its own stats.
+  this->addPropagateKernels(true);
   this->addCopyBridgeKernels();
   this->bufferManager.annGPUWorker->kernelBuilder->addPropagateKernels();
 
