@@ -1,9 +1,11 @@
 #include "CNN_CoreGPU.hpp"
 
 #include <OCLW_Core.hpp>
+#include <QMutex>
 #include <QtConcurrent>
 
 #include <algorithm>
+#include <atomic>
 #include <iostream>
 #include <numeric>
 #include <random>
@@ -235,6 +237,7 @@ TestResult<T> CoreGPU<T>::test(ulong numSamples, const SampleProvider<T>& sample
 
   T totalLoss = static_cast<T>(0);
   ulong totalCorrect = 0;
+  ulong totalProcessed = 0;
 
   for (ulong b = 0; b < numBatches; b++) {
     Samples<T> batch = sampleProvider(sampleIndices, batchSize, b);
@@ -262,14 +265,31 @@ TestResult<T> CoreGPU<T>::test(ulong numSamples, const SampleProvider<T>& sample
 
     std::vector<std::pair<T, ulong>> gpuResults(this->numGPUs, {0, 0});
 
-    QtConcurrent::blockingMap(workItems, [this, &batch, &gpuResults](const GPUWorkItem& item) {
-      gpuResults[item.gpuIdx] = this->gpuWorkers[item.gpuIdx]->testSubset(batch, item.startIdx, item.endIdx);
-    });
+    std::atomic<ulong> completedSamples{totalProcessed};
+    QMutex callbackMutex;
+
+    QtConcurrent::blockingMap(
+      workItems, [this, &batch, &gpuResults, &completedSamples, &callbackMutex, numSamples](const GPUWorkItem& item) {
+        gpuResults[item.gpuIdx] = this->gpuWorkers[item.gpuIdx]->testSubset(batch, item.startIdx, item.endIdx);
+
+        ulong samplesProcessed = item.endIdx - item.startIdx;
+        ulong completed = completedSamples.fetch_add(samplesProcessed) + samplesProcessed;
+
+        if (this->testCallback) {
+          QMutexLocker locker(&callbackMutex);
+          TestProgress<T> progress;
+          progress.currentSample = completed;
+          progress.totalSamples = numSamples;
+          this->testCallback(progress);
+        }
+      });
 
     for (size_t i = 0; i < this->numGPUs; i++) {
       totalLoss += gpuResults[i].first;
       totalCorrect += gpuResults[i].second;
     }
+
+    totalProcessed = completedSamples.load();
   }
 
   TestResult<T> result;

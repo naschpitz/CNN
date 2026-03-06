@@ -5,6 +5,7 @@
 #include "CNN_CoreConfig.hpp"
 #include "CNN_Sample.hpp"
 #include "CNN_TrainingProgress.hpp"
+#include "CNN_TestProgress.hpp"
 #include "CNN_TrainingMetadata.hpp"
 #include "CNN_PredictMetadata.hpp"
 #include "CNN_TestResult.hpp"
@@ -93,6 +94,11 @@ namespace CNN
         trainingCallback = callback;
       }
 
+      void setTestCallback(TestCallback<T> callback)
+      {
+        testCallback = callback;
+      }
+
       //-- Log level --//
       void setLogLevel(LogLevel level)
       {
@@ -135,6 +141,7 @@ namespace CNN
 
       //-- Internal state --//
       TrainingCallback<T> trainingCallback;
+      TestCallback<T> testCallback;
 
     private:
       //-- Timing state --//
