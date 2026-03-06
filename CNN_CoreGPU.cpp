@@ -89,6 +89,12 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   std::vector<std::vector<std::vector<OpenCLWrapper::Kernel>>> savedKernels(this->numGPUs);
   bool kernelsSaved = false;
 
+  // Emit initial 0% progress callback
+  if (this->trainingCallback) {
+    TrainingProgress<T> progress{1, numEpochs, 0, numSamples, 0, 0, -1, static_cast<int>(this->numGPUs)};
+    this->trainingCallback(progress);
+  }
+
   for (ulong e = 0; e < numEpochs; e++) {
     T epochLoss = 0;
 
@@ -238,6 +244,14 @@ TestResult<T> CoreGPU<T>::test(ulong numSamples, const SampleProvider<T>& sample
   T totalLoss = static_cast<T>(0);
   ulong totalCorrect = 0;
   ulong totalProcessed = 0;
+
+  // Emit initial 0% progress callback
+  if (this->testCallback) {
+    TestProgress<T> progress;
+    progress.currentSample = 0;
+    progress.totalSamples = numSamples;
+    this->testCallback(progress);
+  }
 
   for (ulong b = 0; b < numBatches; b++) {
     Samples<T> batch = sampleProvider(sampleIndices, batchSize, b);

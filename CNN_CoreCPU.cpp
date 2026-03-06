@@ -308,6 +308,12 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
   std::mt19937 rng(std::random_device{}());
 
+  // Emit initial 0% progress callback
+  if (this->trainingCallback) {
+    TrainingProgress<T> progress{1, numEpochs, 0, numSamples, 0, 0, -1, 0};
+    this->trainingCallback(progress);
+  }
+
   for (ulong e = 0; e < numEpochs; e++) {
     T epochLoss = static_cast<T>(0);
     std::atomic<ulong> completedSamples{0};
@@ -487,6 +493,14 @@ TestResult<T> CoreCPU<T>::test(ulong numSamples, const SampleProvider<T>& sample
   ulong totalCorrect = 0;
   std::atomic<ulong> completedSamples{0};
   QMutex callbackMutex;
+
+  // Emit initial 0% progress callback
+  if (this->testCallback) {
+    TestProgress<T> progress;
+    progress.currentSample = 0;
+    progress.totalSamples = numSamples;
+    this->testCallback(progress);
+  }
 
   for (ulong b = 0; b < numBatches; b++) {
     Samples<T> batch = sampleProvider(sampleIndices, batchSize, b);
