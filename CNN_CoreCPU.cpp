@@ -346,7 +346,6 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       this->mergeWorkerCNNAccumulators(*this->stepWorker);
       epochLoss += this->stepWorker->getAccumLoss();
       this->updateCNNParameters(currentBatchSize);
-      this->updateNormRunningStats(currentBatchSize);
     }
 
     // Sync ANN parameters for checkpoint saves

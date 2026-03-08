@@ -203,11 +203,13 @@ kernel void calculate_norm_dInput(global TYPE* grads, global TYPE* norm_xnorm, g
 
 //===================================================================================================================//
 
-// Update running stats: running = (1 - momentum) * running + momentum * (accum / numSamples)
+// Update running stats directly from batch statistics (EMA):
+//   running = (1 - momentum) * running + momentum * batch_stat
+// Called during forward pass: once per batch for BatchNorm, once per sample for InstanceNorm.
 // One work-item per channel.
 kernel void update_norm_running_stats(global TYPE* norm_running_mean, global TYPE* norm_running_var,
-                                      global TYPE* norm_accum_mean, global TYPE* norm_accum_var,
-                                      ulong norm_param_offset, ulong numChannels, ulong numSamples, float momentum)
+                                      global TYPE* norm_batch_mean, global TYPE* norm_batch_var,
+                                      ulong norm_param_offset, ulong numChannels, float momentum)
 {
   size_t gid = get_global_id(0);
 
@@ -215,10 +217,8 @@ kernel void update_norm_running_stats(global TYPE* norm_running_mean, global TYP
     return;
 
   ulong idx = norm_param_offset + gid;
-  TYPE avgMean = norm_accum_mean[idx] / (TYPE)numSamples;
-  TYPE avgVar = norm_accum_var[idx] / (TYPE)numSamples;
-  norm_running_mean[idx] = ((TYPE)1 - (TYPE)momentum) * norm_running_mean[idx] + (TYPE)momentum * avgMean;
-  norm_running_var[idx] = ((TYPE)1 - (TYPE)momentum) * norm_running_var[idx] + (TYPE)momentum * avgVar;
+  norm_running_mean[idx] = ((TYPE)1 - (TYPE)momentum) * norm_running_mean[idx] + (TYPE)momentum * norm_batch_mean[idx];
+  norm_running_var[idx] = ((TYPE)1 - (TYPE)momentum) * norm_running_var[idx] + (TYPE)momentum * norm_batch_var[idx];
 }
 
 //===================================================================================================================//

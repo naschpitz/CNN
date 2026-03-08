@@ -456,42 +456,8 @@ T CoreCPUWorker<T>::processBatch(const std::vector<std::pair<Input<T>, Output<T>
       this->accumDNormBeta[i][j] += dNormBeta[i][j];
   }
 
-  // Store batch means/vars for running stat update.
-  // trueBN intermediates track BN layers; normBatchMeans track IN layers (per-sample).
-  // We need to map them back to the unified normIdx.
-  {
-    ulong bnI = 0;
-    ulong inI = 0;
-
-    for (const auto& layerConfig : this->layersConfig.cnnLayers) {
-      if (layerConfig.type == LayerType::BATCHNORM) {
-        ulong ni = bnI + inI; // Combined norm index up to this point
-        // Find the actual normIdx by counting all norm layers in order
-        for (ulong j = 0; j < this->trueBNMeans[bnI].size(); j++) {
-          this->accumNormMean[ni][j] += this->trueBNMeans[bnI][j];
-          this->accumNormVar[ni][j] += this->trueBNVars[bnI][j];
-        }
-
-        bnI++;
-      } else if (layerConfig.type == LayerType::INSTANCENORM) {
-        // IN running stats are accumulated per-sample during forward pass;
-        // normBatchMeans stores N entries per IN layer. Average over samples.
-        ulong ni = bnI + inI;
-        ulong baseIdx = inI * N;
-
-        for (ulong s = 0; s < N; s++) {
-          for (ulong j = 0; j < this->normBatchMeans[baseIdx + s].size(); j++) {
-            this->accumNormMean[ni][j] += this->normBatchMeans[baseIdx + s][j];
-            this->accumNormVar[ni][j] += this->normBatchVars[baseIdx + s][j];
-          }
-        }
-
-        inI++;
-      }
-    }
-  }
-
-  this->normSampleCount += N;
+  // Running stats (runningMean, runningVar) are updated directly inside
+  // BatchNorm::propagate() and InstanceNorm::propagate() during the forward pass.
   this->accum_loss += batchLoss;
 
   return batchLoss;

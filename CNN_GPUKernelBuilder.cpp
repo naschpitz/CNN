@@ -114,8 +114,7 @@ void GPUKernelBuilder<T>::setupBatchBackwardKernels()
     this->addCNNPerSampleAccumulateKernels(s);
   }
 
-  // Norm mean/var accumulation for running stats (once per batch, not per sample)
-  this->addCNNNormStatsAccumulateKernels();
+  // Running stats are updated directly in the forward pass (EMA during propagate).
 }
 
 //===================================================================================================================//
@@ -293,6 +292,20 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx)
       this->core->template addArgument<ulong>(varId, static_cast<ulong>(0)); // sample_stride = 0
       this->core->template addArgument<ulong>(varId, inOffset); // actv_layer_offset = inOffset
 
+      // Update running stats (EMA) for each sample during training
+      if (batchSize > 1) {
+        float momentum = norm.momentum;
+        std::string rsId = "update_norm_running_stats_" + sStr + "_layer" + layerStr;
+        this->core->addKernel(rsId, "update_norm_running_stats", currentShape.c, 0);
+        this->core->template addArgument<T>(rsId, "cnn_norm_running_mean");
+        this->core->template addArgument<T>(rsId, "cnn_norm_running_var");
+        this->core->template addArgument<T>(rsId, "cnn_norm_batch_mean");
+        this->core->template addArgument<T>(rsId, "cnn_norm_batch_var");
+        this->core->template addArgument<ulong>(rsId, normParamOffset);
+        this->core->template addArgument<ulong>(rsId, currentShape.c);
+        this->core->template addArgument<float>(rsId, momentum);
+      }
+
       std::string normId = "calculate_norm_normalize_" + sStr + "_layer" + layerStr;
       this->core->addKernel(normId, "calculate_norm_normalize", size, 0);
       this->core->template addArgument<T>(normId, "cnn_actvs");
@@ -351,6 +364,18 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx)
           this->core->template addArgument<ulong>(varId, batchSize);
           this->core->template addArgument<ulong>(varId, sampleStride);
           this->core->template addArgument<ulong>(varId, layerActvOffset);
+
+          // Update running stats (EMA) once per batch
+          float momentum = norm.momentum;
+          std::string rsId = "update_norm_running_stats_layer" + layerStr;
+          this->core->addKernel(rsId, "update_norm_running_stats", currentShape.c, 0);
+          this->core->template addArgument<T>(rsId, "cnn_norm_running_mean");
+          this->core->template addArgument<T>(rsId, "cnn_norm_running_var");
+          this->core->template addArgument<T>(rsId, "cnn_norm_batch_mean");
+          this->core->template addArgument<T>(rsId, "cnn_norm_batch_var");
+          this->core->template addArgument<ulong>(rsId, normParamOffset);
+          this->core->template addArgument<ulong>(rsId, currentShape.c);
+          this->core->template addArgument<float>(rsId, momentum);
         }
 
         // Per-sample normalize using batch-wide stats
@@ -937,34 +962,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples)
     }
   }
 
-  // Running stats update (same for both Adam and SGD)
-  if (this->bufferManager.totalNormParamSize > 0) {
-    // Get momentum from first norm layer config
-    float momentum = 0.1f;
-
-    for (const auto& layerConfig : this->coreConfig.layersConfig.cnnLayers) {
-      if (layerConfig.type == LayerType::BATCHNORM || layerConfig.type == LayerType::INSTANCENORM) {
-        const auto& norm = std::get<NormLayerConfig>(layerConfig.config);
-        momentum = norm.momentum;
-        break;
-      }
-    }
-
-    for (ulong n = 0; n < this->bufferManager.normInfos.size(); n++) {
-      ulong normParamOffset = this->bufferManager.normInfos[n].paramOffset;
-      ulong numChannels = this->bufferManager.normInfos[n].numChannels;
-      std::string kernelId = "update_norm_running_stats_" + std::to_string(n);
-      this->core->addKernel(kernelId, "update_norm_running_stats", numChannels, 0);
-      this->core->template addArgument<T>(kernelId, "cnn_norm_running_mean");
-      this->core->template addArgument<T>(kernelId, "cnn_norm_running_var");
-      this->core->template addArgument<T>(kernelId, "cnn_norm_accum_mean");
-      this->core->template addArgument<T>(kernelId, "cnn_norm_accum_var");
-      this->core->template addArgument<ulong>(kernelId, normParamOffset);
-      this->core->template addArgument<ulong>(kernelId, numChannels);
-      this->core->template addArgument<ulong>(kernelId, numSamples);
-      this->core->template addArgument<float>(kernelId, momentum);
-    }
-  }
+  // Running stats are updated directly in the forward pass (EMA during propagate).
 }
 
 //===================================================================================================================//
