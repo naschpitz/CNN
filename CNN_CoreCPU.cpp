@@ -378,12 +378,10 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 template <typename T>
 TestResult<T> CoreCPU<T>::test(ulong numSamples, const SampleProvider<T>& sampleProvider)
 {
-  // When seed > 0, force single-threaded for deterministic results.
+  // Use configured numThreads, or all available cores if 0.
   int numThreads = this->numThreads;
 
-  if (this->seed > 0)
-    numThreads = 1;
-  else if (numThreads <= 0)
+  if (numThreads <= 0)
     numThreads = QThreadPool::globalInstance()->maxThreadCount();
 
   // Create per-thread workers (forward pass only — no training buffers)
