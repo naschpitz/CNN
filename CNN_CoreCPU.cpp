@@ -136,14 +136,18 @@ void CoreCPU<T>::updateNormRunningStats(ulong numSamples)
     if (layerConfig.type == LayerType::BATCHNORM || layerConfig.type == LayerType::INSTANCENORM) {
       const auto& normConfig = std::get<NormLayerConfig>(layerConfig.config);
       T momentum = static_cast<T>(normConfig.momentum);
+      bool isBatchNorm = (layerConfig.type == LayerType::BATCHNORM);
 
       for (ulong j = 0; j < this->parameters.normParams[normIdx].numChannels; j++) {
-        T avgMean = this->accumNormMean[normIdx][j] / n;
-        T avgVar = this->accumNormVar[normIdx][j] / n;
+        // BatchNorm: accum contains one batch-wide mean (already averaged over N×H×W).
+        // InstanceNorm: accum contains N per-sample means, need to average.
+        T mean = isBatchNorm ? this->accumNormMean[normIdx][j] : this->accumNormMean[normIdx][j] / n;
+        T var = isBatchNorm ? this->accumNormVar[normIdx][j] : this->accumNormVar[normIdx][j] / n;
+
         this->parameters.normParams[normIdx].runningMean[j] =
-          (static_cast<T>(1) - momentum) * this->parameters.normParams[normIdx].runningMean[j] + momentum * avgMean;
+          (static_cast<T>(1) - momentum) * this->parameters.normParams[normIdx].runningMean[j] + momentum * mean;
         this->parameters.normParams[normIdx].runningVar[j] =
-          (static_cast<T>(1) - momentum) * this->parameters.normParams[normIdx].runningVar[j] + momentum * avgVar;
+          (static_cast<T>(1) - momentum) * this->parameters.normParams[normIdx].runningVar[j] + momentum * var;
       }
 
       normIdx++;
@@ -346,6 +350,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       this->mergeWorkerCNNAccumulators(*this->stepWorker);
       epochLoss += this->stepWorker->getAccumLoss();
       this->updateCNNParameters(currentBatchSize);
+      this->updateNormRunningStats(currentBatchSize);
     }
 
     // Sync ANN parameters for checkpoint saves

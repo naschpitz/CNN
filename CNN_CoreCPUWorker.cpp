@@ -456,8 +456,39 @@ T CoreCPUWorker<T>::processBatch(const std::vector<std::pair<Input<T>, Output<T>
       this->accumDNormBeta[i][j] += dNormBeta[i][j];
   }
 
-  // Running stats (runningMean, runningVar) are updated directly inside
-  // BatchNorm::propagate() and InstanceNorm::propagate() during the forward pass.
+  // Accumulate batch means/vars for running stats update in CoreCPU.
+  // BatchNorm: one batch-wide mean per layer (trueBNMeans).
+  // InstanceNorm: N per-sample means per layer (normBatchMeans).
+  {
+    ulong bnI = 0;
+    ulong inI = 0;
+
+    for (const auto& layerConfig : this->layersConfig.cnnLayers) {
+      if (layerConfig.type == LayerType::BATCHNORM) {
+        ulong ni = bnI + inI;
+
+        for (ulong j = 0; j < this->trueBNMeans[bnI].size(); j++) {
+          this->accumNormMean[ni][j] += this->trueBNMeans[bnI][j];
+          this->accumNormVar[ni][j] += this->trueBNVars[bnI][j];
+        }
+
+        bnI++;
+      } else if (layerConfig.type == LayerType::INSTANCENORM) {
+        ulong ni = bnI + inI;
+        ulong baseIdx = inI * N;
+
+        for (ulong s = 0; s < N; s++) {
+          for (ulong j = 0; j < this->normBatchMeans[baseIdx + s].size(); j++) {
+            this->accumNormMean[ni][j] += this->normBatchMeans[baseIdx + s][j];
+            this->accumNormVar[ni][j] += this->normBatchVars[baseIdx + s][j];
+          }
+        }
+
+        inI++;
+      }
+    }
+  }
+
   this->accum_loss += batchLoss;
 
   return batchLoss;
