@@ -96,7 +96,7 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   // Sample index indirection for shuffling
   std::vector<ulong> sampleIndices(numSamples);
   std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
-  std::mt19937 rng(std::random_device{}());
+  std::mt19937 rng(this->seed > 0 ? static_cast<unsigned>(this->seed) : std::random_device{}());
 
   // Emit initial 0% progress callback
   if (this->trainingCallback) {

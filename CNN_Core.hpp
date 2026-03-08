@@ -138,6 +138,7 @@ namespace CNN
       Parameters<T> parameters;
       ulong progressReports = 1000;
       LogLevel logLevel = LogLevel::ERROR;
+      ulong seed = 0;
 
       //-- Internal state --//
       TrainingCallback<T> trainingCallback;

@@ -41,6 +41,7 @@ Core<T>::Core(const CoreConfig<T>& coreConfig) : coreConfig(coreConfig)
   this->parameters = coreConfig.parameters;
   this->progressReports = coreConfig.progressReports;
   this->logLevel = coreConfig.logLevel;
+  this->seed = coreConfig.seed;
 }
 
 //===================================================================================================================//

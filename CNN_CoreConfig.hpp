@@ -29,6 +29,7 @@ namespace CNN
       Parameters<T> parameters;
       ulong progressReports = 1000; // Number of progress reports (0 = no reports, default = 1000)
       LogLevel logLevel = LogLevel::ERROR;
+      ulong seed = 0; // Random seed (0 = non-deterministic, >0 = deterministic)
   };
 }
 

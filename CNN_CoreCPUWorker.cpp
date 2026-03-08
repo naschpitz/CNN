@@ -109,6 +109,7 @@ ANN::CoreConfig<T> CoreCPUWorker<T>::buildANNConfig(const CoreConfig<T>& cnnConf
 
   annConfig.logLevel = static_cast<ANN::LogLevel>(cnnConfig.logLevel);
   annConfig.progressReports = 0;
+  annConfig.seed = cnnConfig.seed;
 
   return annConfig;
 }
