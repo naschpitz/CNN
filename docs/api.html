@@ -227,7 +227,8 @@
   <tr><td><code>strideX</code></td><td><code>ulong</code></td><td>Horizontal stride</td></tr>
 </table>
 
-<h3>BatchNormLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
+<h3>NormLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
+<p>Shared configuration for both BatchNorm and InstanceNorm layers.</p>
 <table>
   <tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
   <tr><td><code>epsilon</code></td><td><code>float</code></td><td>1e-5</td><td>Small constant added to variance for numerical stability</td></tr>
@@ -237,7 +238,7 @@
 <h3>CNNLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-  <tr><td><code>type</code></td><td><code>LayerType</code></td><td>CONV, RELU, POOL, BATCHNORM, or FLATTEN</td></tr>
+  <tr><td><code>type</code></td><td><code>LayerType</code></td><td>CONV, RELU, POOL, BATCHNORM, INSTANCENORM, or FLATTEN</td></tr>
   <tr><td><code>config</code></td><td><code>std::variant&lt;...&gt;</code></td><td>Layer-specific configuration</td></tr>
 </table>
 
@@ -256,7 +257,8 @@
   <tr><td><code>filterAt(f,c,h,w)</code></td><td><code>T&amp;</code></td><td>Access filter weight at [f][c][h][w]</td></tr>
 </table>
 
-<h3>BatchNormParameters&lt;T&gt; <span class="badge badge-blue">CNN_BatchNormParameters.hpp</span></h3>
+<h3>NormParameters&lt;T&gt; <span class="badge badge-blue">CNN_NormParameters.hpp</span></h3>
+<p>Shared parameters for both BatchNorm and InstanceNorm layers.</p>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
   <tr><td><code>numChannels</code></td><td><code>ulong</code></td><td>Number of channels (one γ, β, μ, σ² per channel)</td></tr>
@@ -341,9 +343,18 @@
 </table>
 
 <h3>BatchNorm&lt;T&gt;</h3>
+<p>True batch normalization — computes statistics across all N samples in a mini-batch (N×H×W per channel).</p>
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-  <tr><td><code>propagate(input, inputShape, params, config, training, batchMean*, batchVar*, xNormalized*)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Normalize per channel; inference uses running stats, training computes batch stats and updates running stats</td></tr>
+  <tr><td><code>propagate(batch, inputShape, params, config, batchMean*, batchVar*, xNorm*)</code></td><td><code>vector&lt;Tensor3D&lt;T&gt;&gt;</code></td><td>Normalize per channel across the batch; inference uses running stats, training computes batch-wide stats</td></tr>
+  <tr><td><code>backpropagate(dBatch, inputShape, params, config, batchMean, batchVar, xNorm, dGamma, dBeta)</code></td><td><code>vector&lt;Tensor3D&lt;T&gt;&gt;</code></td><td>Compute gradients for γ, β, and input across the batch</td></tr>
+</table>
+
+<h3>InstanceNorm&lt;T&gt;</h3>
+<p>Instance normalization — computes statistics per individual sample (H×W per channel).</p>
+<table>
+  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+  <tr><td><code>propagate(input, inputShape, params, config, batchMean*, batchVar*, xNormalized*)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Normalize per channel per sample; inference uses running stats, training computes per-sample stats</td></tr>
   <tr><td><code>backpropagate(dOut, inputShape, params, config, batchMean, batchVar, xNormalized, dGamma, dBeta)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Compute gradients for γ, β, and input</td></tr>
 </table>
 

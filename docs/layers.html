@@ -38,6 +38,7 @@
     <li><a href="#relu">ReLU Layer</a></li>
     <li><a href="#pool">Pool Layer</a></li>
     <li><a href="#batchnorm">BatchNorm Layer</a></li>
+    <li><a href="#instancenorm">InstanceNorm Layer</a></li>
     <li><a href="#flatten">Flatten Layer</a></li>
     <li><a href="#pipeline">Layer Pipeline Example</a></li>
   </ol>
@@ -362,7 +363,7 @@
 <p><strong>No learnable parameters.</strong> Pooling is a fixed operation.</p>
 
 <h2 id="batchnorm">BatchNorm Layer</h2>
-<p>Batch Normalization normalizes activations per channel, reducing internal covariate shift. It stabilizes training, allows higher learning rates, and acts as a mild regularizer. It is typically placed after Conv2D and before ReLU.</p>
+<p>Batch Normalization normalizes activations per channel across all samples in a mini-batch (\(N \times H \times W\) per channel), reducing internal covariate shift. It stabilizes training, allows higher learning rates, and acts as a mild regularizer. It is typically placed after Conv2D and before ReLU.</p>
 
 <h3>Purpose</h3>
 <ul>
@@ -440,6 +441,35 @@ y_{c,h,w} = \gamma_c \, \frac{x_{c,h,w} - \bar{\mu}_c}{\sqrt{\bar{\sigma}^2_c + 
 
 <div class="info-box">
   <strong>Typical placement:</strong> Conv2D → <strong>BatchNorm</strong> → ReLU. Placing BatchNorm before the activation ensures the normalized distribution is passed to ReLU, which improves gradient flow.
+</div>
+
+
+<h2 id="instancenorm">InstanceNorm Layer</h2>
+<p>Instance Normalization normalizes activations per channel per individual sample (\(H \times W\) per channel), unlike BatchNorm which normalizes across the entire mini-batch. It uses the same learnable parameters (\(\gamma\), \(\beta\)) and running statistics structure as BatchNorm.</p>
+
+<h3>Purpose</h3>
+<ul>
+  <li><strong>Batch-size independence</strong> — statistics are computed per sample, so behavior is identical regardless of batch size</li>
+  <li><strong>Style transfer</strong> — originally designed for neural style transfer where per-instance statistics are more appropriate</li>
+  <li><strong>Small batch training</strong> — more stable than BatchNorm when batch sizes are very small</li>
+</ul>
+
+<h3>Configuration</h3>
+<table>
+  <tr><th>Hyperparameter</th><th>Default</th><th>Description</th></tr>
+  <tr><td><strong>epsilon</strong> (\(\epsilon\))</td><td>1×10⁻⁵</td><td>Numerical stability constant added to variance</td></tr>
+  <tr><td><strong>momentum</strong> (\(m\))</td><td>0.1</td><td>EMA factor for running statistics</td></tr>
+</table>
+
+<h3>JSON Configuration</h3>
+<pre><code>{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
+{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span>, <span class="string">"epsilon"</span>: <span class="number">1e-5</span>, <span class="string">"momentum"</span>: <span class="number">0.1</span> }</code></pre>
+
+<h3>Parameters</h3>
+<p>Same as BatchNorm: \(2C\) learnable (\(\gamma, \beta\)) + \(2C\) running statistics. The output shape is identical to the input shape.</p>
+
+<div class="info-box">
+  <strong>Key difference from BatchNorm:</strong> During training, statistics are computed over \(H \times W\) per sample (not \(N \times H \times W\) across the batch). Both share the same <code>NormLayerConfig</code> and <code>NormParameters</code> structures, and use the same unified GPU kernels with different <code>N</code> and <code>sample_stride</code> arguments.
 </div>
 
 <h2 id="flatten">Flatten Layer</h2>

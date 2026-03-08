@@ -148,7 +148,7 @@
     </tr>
     <tr>
       <td><code>opencl/CNN_BatchNorm.cpp.cl</code></td>
-      <td>Batch normalization kernels (mean, variance, normalize, gradient, running stats update)</td>
+      <td>Unified normalization kernels for both BatchNorm and InstanceNorm (mean, variance, normalize, gradient, running stats update)</td>
     </tr>
     <tr>
       <td><code>opencl/CNN_Bridge.cpp.cl</code></td>
@@ -253,10 +253,10 @@
   actvs[out_offset + gid] = (val > 0) ? val : 0
 }</code></pre>
 
-<h3>calculate_batchnorm_normalize</h3>
-<p><strong>Work distribution:</strong> One work-item per element. Total work-items = layer tensor size.</p>
-<p>Used for both inference and training. The mean/var buffer arguments point to either running stats (inference) or batch-computed stats (training).</p>
-<pre><code>kernel void calculate_batchnorm_normalize(...) {
+<h3>calculate_norm_normalize</h3>
+<p><strong>Work distribution:</strong> One work-item per element. Total work-items = layer tensor size (C×H×W).</p>
+<p>Unified kernel for both BatchNorm and InstanceNorm. Used for both inference and training. The mean/var buffer arguments point to either running stats (inference) or computed stats (training).</p>
+<pre><code>kernel void calculate_norm_normalize(...) {
   gid = get_global_id(0)
 
   // Determine channel from gid
@@ -269,8 +269,13 @@
   actvs[out_offset + gid] = gamma[c] * xhat + beta[c]
 }</code></pre>
 
-<h3>calculate_batchnorm_mean / calculate_batchnorm_var</h3>
-<p><strong>Training only:</strong> Two kernels executed before <code>calculate_batchnorm_normalize</code>. <code>calculate_batchnorm_mean</code> computes per-channel means (one work-group per channel with local reduction), <code>calculate_batchnorm_var</code> computes per-channel variances. Their outputs are passed as the mean/var arguments to the normalize kernel.</p>
+<h3>calculate_norm_mean / calculate_norm_var</h3>
+<p><strong>Training only:</strong> Unified kernels for both BatchNorm and InstanceNorm. Compute per-channel means and variances using tree reduction (one work-group per channel). The <code>N</code> and <code>sample_stride</code> parameters control the reduction domain:</p>
+<ul>
+  <li><strong>BatchNorm:</strong> <code>N = batchSize</code>, <code>sample_stride = sampleStride</code> — reduces across N×H×W</li>
+  <li><strong>InstanceNorm:</strong> <code>N = 1</code>, <code>sample_stride = 0</code> — reduces across H×W only</li>
+</ul>
+<p>Their outputs are passed as the mean/var arguments to <code>calculate_norm_normalize</code>.</p>
 
 <h3>calculate_maxpool</h3>
 <p><strong>Work distribution:</strong> One work-item per output element. Total work-items = \(\text{channels} \times \text{outH} \times \text{outW}\).</p>
@@ -397,8 +402,8 @@
   grads[maxIdx] += dOutVal
 }</code></pre>
 
-<h3>calculate_batchnorm_dGammaBeta / calculate_batchnorm_dInput</h3>
-<p><strong>Work distribution:</strong> <code>calculate_batchnorm_dGammaBeta</code> uses one work-item per channel to compute \(\partial L / \partial \gamma_c\) and \(\partial L / \partial \beta_c\) by summing over spatial dimensions. <code>calculate_batchnorm_dInput</code> uses one work-item per element to compute the input gradient using the full batch normalization gradient formula.</p>
+<h3>calculate_norm_dGammaBeta / calculate_norm_dInput</h3>
+<p><strong>Work distribution:</strong> Unified kernels for both BatchNorm and InstanceNorm backward pass. <code>calculate_norm_dGammaBeta</code> uses one work-group per channel with tree reduction to compute ∂L/∂γ<sub>c</sub> and ∂L/∂β<sub>c</sub>. Like the forward kernels, <code>N</code> and <code>sample_stride</code> control the reduction domain (N×H×W for BatchNorm, H×W for InstanceNorm). <code>calculate_norm_dInput</code> uses one work-item per element and takes <code>M</code> (total elements in the normalization domain) to compute the input gradient.</p>
 
 <h2 id="utility-kernels">Utility Kernels</h2>
 
@@ -476,7 +481,7 @@ for each GPU worker:
 <p>Kernels are compiled only when first needed, not at initialization. This reduces startup time and memory usage.</p>
 
 <div class="info-box">
-  <strong>Predict mode:</strong> Compiles only propagation kernels (calculate_conv2d, calculate_relu, calculate_maxpool, calculate_batchnorm_normalize).
+  <strong>Predict mode:</strong> Compiles only propagation kernels (calculate_conv2d, calculate_relu, calculate_maxpool, calculate_norm_normalize).
 </div>
 
 <div class="info-box">

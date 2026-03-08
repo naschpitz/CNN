@@ -42,6 +42,7 @@
     <li><a href="#pooling-backprop">Pooling Backpropagation</a></li>
     <li><a href="#relu-backprop">ReLU Backpropagation</a></li>
     <li><a href="#batchnorm">Batch Normalization</a></li>
+    <li><a href="#instancenorm">Instance Normalization</a></li>
     <li><a href="#he-init">He Initialization</a></li>
     <li><a href="#sgd">SGD Update Rule</a></li>
     <li><a href="#adam">Adam Optimizer</a></li>
@@ -231,16 +232,16 @@ ReLU is computationally efficient and helps mitigate the vanishing gradient prob
 </div>
 
 <h2 id="batchnorm">Batch Normalization</h2>
-<p>Batch Normalization normalizes activations per channel, stabilizing training and allowing higher learning rates. It is typically placed after a Conv2D layer and before the activation function (e.g., ReLU).</p>
+<p>Batch Normalization normalizes activations per channel across all samples in a mini-batch, stabilizing training and allowing higher learning rates. It is typically placed after a Conv2D layer and before the activation function (e.g., ReLU).</p>
 
 <h3>Propagation (Training)</h3>
-<p>During training, for each channel \(c\), the mean and variance are computed over the spatial dimensions \(H \times W\):</p>
+<p>During training, for each channel \(c\), the mean and variance are computed over all \(N\) samples and spatial dimensions \(H \times W\):</p>
 
 <div class="math-block">
 \[
-\mu_c = \frac{1}{H \cdot W} \sum_{h,w} x_{c,h,w}
+\mu_c = \frac{1}{N \cdot H \cdot W} \sum_{n,h,w} x_{n,c,h,w}
 \qquad
-\sigma^2_c = \frac{1}{H \cdot W} \sum_{h,w} (x_{c,h,w} - \mu_c)^2
+\sigma^2_c = \frac{1}{N \cdot H \cdot W} \sum_{n,h,w} (x_{n,c,h,w} - \mu_c)^2
 \]
 </div>
 
@@ -248,9 +249,9 @@ ReLU is computationally efficient and helps mitigate the vanishing gradient prob
 
 <div class="math-block">
 \[
-\hat{x}_{c,h,w} = \frac{x_{c,h,w} - \mu_c}{\sqrt{\sigma^2_c + \epsilon}}
+\hat{x}_{n,c,h,w} = \frac{x_{n,c,h,w} - \mu_c}{\sqrt{\sigma^2_c + \epsilon}}
 \qquad
-y_{c,h,w} = \gamma_c \, \hat{x}_{c,h,w} + \beta_c
+y_{n,c,h,w} = \gamma_c \, \hat{x}_{n,c,h,w} + \beta_c
 \]
 </div>
 
@@ -280,27 +281,51 @@ y_{c,h,w} = \gamma_c \, \frac{x_{c,h,w} - \bar{\mu}_c}{\sqrt{\bar{\sigma}^2_c + 
 
 <div class="math-block">
 \[
-\frac{\partial L}{\partial \gamma_c} = \sum_{h,w} \frac{\partial L}{\partial y_{c,h,w}} \, \hat{x}_{c,h,w}
+\frac{\partial L}{\partial \gamma_c} = \sum_{n,h,w} \frac{\partial L}{\partial y_{n,c,h,w}} \, \hat{x}_{n,c,h,w}
 \qquad
-\frac{\partial L}{\partial \beta_c} = \sum_{h,w} \frac{\partial L}{\partial y_{c,h,w}}
+\frac{\partial L}{\partial \beta_c} = \sum_{n,h,w} \frac{\partial L}{\partial y_{n,c,h,w}}
 \]
 </div>
 
-<p>The input gradient uses the full batch normalization gradient formula (with \(N = H \times W\)):</p>
+<p>The input gradient uses the full batch normalization gradient formula (with \(M = N \times H \times W\)):</p>
 
 <div class="math-block">
 \[
-\frac{\partial L}{\partial x_{c,i}} = \frac{\gamma_c}{N \sqrt{\sigma^2_c + \epsilon}} \left( N \, \frac{\partial L}{\partial y_{c,i}} - \frac{\partial L}{\partial \beta_c} - \hat{x}_{c,i} \, \frac{\partial L}{\partial \gamma_c} \right)
+\frac{\partial L}{\partial x_{n,c,i}} = \frac{\gamma_c}{M \sqrt{\sigma^2_c + \epsilon}} \left( M \, \frac{\partial L}{\partial y_{n,c,i}} - \frac{\partial L}{\partial \beta_c} - \hat{x}_{n,c,i} \, \frac{\partial L}{\partial \gamma_c} \right)
 \]
 </div>
 
 <div class="tip-box">
-<strong>Code:</strong> <code>BatchNorm&lt;T&gt;::propagate(input, inputShape, params, config, training, ...)</code> and <code>BatchNorm&lt;T&gt;::backpropagate(dOut, ...)</code> in <code>CNN_BatchNorm.cpp</code>.
-On GPU: <code>calculate_batchnorm_mean</code>, <code>calculate_batchnorm_var</code>, <code>calculate_batchnorm_normalize</code>, <code>calculate_batchnorm_dGammaBeta</code>, and <code>calculate_batchnorm_dInput</code> kernels in <code>opencl/CNN_BatchNorm.cpp.cl</code>.
+<strong>Code:</strong> <code>BatchNorm&lt;T&gt;::propagate(batch, inputShape, params, config, ...)</code> and <code>BatchNorm&lt;T&gt;::backpropagate(dBatch, ...)</code> in <code>CNN_BatchNorm.cpp</code>.
+On GPU: <code>calculate_norm_mean</code>, <code>calculate_norm_var</code>, <code>calculate_norm_normalize</code>, <code>calculate_norm_dGammaBeta</code>, and <code>calculate_norm_dInput</code> kernels in <code>opencl/CNN_BatchNorm.cpp.cl</code>.
 </div>
 
 <div class="info-box">
 <strong>Initialization:</strong> \(\gamma\) is initialized to 1 and \(\beta\) to 0, so the layer initially acts as an identity (after normalization). Running mean and variance are initialized to 0 and 1 respectively.
+</div>
+
+<h2 id="instancenorm">Instance Normalization</h2>
+<p>Instance Normalization normalizes activations per channel per individual sample (over \(H \times W\) only, not across the batch). It uses the same learnable parameters (\(\gamma\), \(\beta\)) and running statistics as BatchNorm.</p>
+
+<h3>Propagation (Training)</h3>
+<p>For each sample \(n\) and channel \(c\), the mean and variance are computed over spatial dimensions only:</p>
+
+<div class="math-block">
+\[
+\mu_{n,c} = \frac{1}{H \cdot W} \sum_{h,w} x_{n,c,h,w}
+\qquad
+\sigma^2_{n,c} = \frac{1}{H \cdot W} \sum_{h,w} (x_{n,c,h,w} - \mu_{n,c})^2
+\]
+</div>
+
+<p>Normalization, scaling, and shifting are identical to BatchNorm but use per-sample statistics.</p>
+
+<h3>Backpropagation</h3>
+<p>The gradient formula is the same as BatchNorm but with \(M = H \times W\) (per-sample spatial size) instead of \(M = N \times H \times W\).</p>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>InstanceNorm&lt;T&gt;::propagate(input, inputShape, params, config, ...)</code> and <code>InstanceNorm&lt;T&gt;::backpropagate(dOut, ...)</code> in <code>CNN_InstanceNorm.cpp</code>.
+On GPU: the same unified <code>calculate_norm_*</code> kernels are used with <code>N=1</code> and <code>sample_stride=0</code>.
 </div>
 
 <h2 id="he-init">He Initialization</h2>
