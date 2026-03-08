@@ -220,6 +220,12 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 template <typename T>
 TestResult<T> CoreGPU<T>::test(ulong numSamples, const SampleProvider<T>& sampleProvider)
 {
+  // Ensure buffers are sized for single-sample inference (batchSize=1 triggers running-stats path in BN)
+  for (size_t i = 0; i < this->numGPUs; i++) {
+    this->gpuWorkers[i]->bufferManager->reallocateForBatchSize(1);
+    this->gpuWorkers[i]->invalidateKernelCache();
+  }
+
   // Sequential index array (no shuffling for test)
   std::vector<ulong> sampleIndices(numSamples);
 
