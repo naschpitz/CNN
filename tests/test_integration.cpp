@@ -757,6 +757,246 @@ static void testShuffleSamplesTraining()
 
 //===================================================================================================================//
 
+//===================================================================================================================//
+
+static void testInstanceNormEndToEnd()
+{
+  std::cout << "--- testInstanceNormEndToEnd (Conv→IN→ReLU→Flatten→Dense) ---" << std::endl;
+
+  // 1x8x8 → Conv(2,3x3) → 2x6x6 → InstanceNorm → ReLU → Flatten(72) → Dense(1,sigmoid)
+  CNN::CoreConfig<double> config;
+  config.modeType = CNN::ModeType::TRAIN;
+  config.deviceType = CNN::DeviceType::CPU;
+  config.inputShape = {1, 8, 8};
+  config.logLevel = CNN::LogLevel::ERROR;
+
+  CNN::CNNLayerConfig conv1;
+  conv1.type = CNN::LayerType::CONV;
+  conv1.config = CNN::ConvLayerConfig{2, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+  CNN::CNNLayerConfig inLayer;
+  inLayer.type = CNN::LayerType::INSTANCENORM;
+  inLayer.config = CNN::NormLayerConfig{};
+
+  CNN::CNNLayerConfig relu1;
+  relu1.type = CNN::LayerType::RELU;
+  relu1.config = CNN::ReLULayerConfig{};
+
+  CNN::CNNLayerConfig flattenLayer;
+  flattenLayer.type = CNN::LayerType::FLATTEN;
+  flattenLayer.config = CNN::FlattenLayerConfig{};
+
+  config.layersConfig.cnnLayers = {conv1, inLayer, relu1, flattenLayer};
+  config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
+
+  CNN::ConvParameters<double> initConv;
+  initConv.numFilters = 2;
+  initConv.inputC = 1;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
+  initConv.filters.assign(2 * 1 * 3 * 3, 0.1);
+  initConv.biases.assign(2, 0.0);
+  config.parameters.convParams = {initConv};
+
+  config.trainingConfig.numEpochs = 500;
+  config.trainingConfig.learningRate = 0.5f;
+  config.progressReports = 0;
+
+  CNN::Samples<double> samples(2);
+  samples[0].input = makeGradientInput<double>({1, 8, 8});
+  samples[0].output = {1.0};
+  samples[1].input = CNN::Tensor3D<double>({1, 8, 8}, 0.0);
+  samples[1].output = {0.0};
+
+  CNN::Output<double> pred0, pred1;
+  bool converged = false;
+  std::unique_ptr<CNN::Core<double>> core;
+
+  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
+    if (attempt > 0)
+      std::cout << "  retry #" << attempt << std::endl;
+    core = CNN::Core<double>::makeCore(config);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
+    pred0 = core->predict(samples[0].input);
+    pred1 = core->predict(samples[1].input);
+
+    if (pred0[0] > pred1[0])
+      converged = true;
+  }
+
+  std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
+  CHECK(converged, "instancenorm e2e bright > dark (5 attempts)");
+
+  // Sanity: test on training data
+  CNN::TestResult<double> result = core->test(samples.size(), CNN::makeSampleProvider(samples));
+  CHECK(result.averageLoss >= 0.0, "instancenorm e2e test loss non-negative");
+  CHECK(result.accuracy >= 50.0, "instancenorm e2e test accuracy >= 50%");
+  std::cout << "  test avgLoss=" << result.averageLoss << " accuracy=" << result.accuracy << "%" << std::endl;
+}
+
+//===================================================================================================================//
+
+static void testBatchNormEndToEnd()
+{
+  std::cout << "--- testBatchNormEndToEnd (Conv→BN→ReLU→Flatten→Dense) ---" << std::endl;
+
+  // 1x8x8 → Conv(2,3x3) → 2x6x6 → BatchNorm → ReLU → Flatten(72) → Dense(1,sigmoid)
+  CNN::CoreConfig<double> config;
+  config.modeType = CNN::ModeType::TRAIN;
+  config.deviceType = CNN::DeviceType::CPU;
+  config.inputShape = {1, 8, 8};
+  config.logLevel = CNN::LogLevel::ERROR;
+
+  CNN::CNNLayerConfig conv1;
+  conv1.type = CNN::LayerType::CONV;
+  conv1.config = CNN::ConvLayerConfig{2, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+  CNN::CNNLayerConfig bnLayer;
+  bnLayer.type = CNN::LayerType::BATCHNORM;
+  bnLayer.config = CNN::NormLayerConfig{};
+
+  CNN::CNNLayerConfig relu1;
+  relu1.type = CNN::LayerType::RELU;
+  relu1.config = CNN::ReLULayerConfig{};
+
+  CNN::CNNLayerConfig flattenLayer;
+  flattenLayer.type = CNN::LayerType::FLATTEN;
+  flattenLayer.config = CNN::FlattenLayerConfig{};
+
+  config.layersConfig.cnnLayers = {conv1, bnLayer, relu1, flattenLayer};
+  config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
+
+  CNN::ConvParameters<double> initConv;
+  initConv.numFilters = 2;
+  initConv.inputC = 1;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
+  initConv.filters.assign(2 * 1 * 3 * 3, 0.1);
+  initConv.biases.assign(2, 0.0);
+  config.parameters.convParams = {initConv};
+
+  config.trainingConfig.numEpochs = 500;
+  config.trainingConfig.learningRate = 0.5f;
+  config.trainingConfig.batchSize = 2; // both samples in one batch for BN stats
+  config.progressReports = 0;
+
+  CNN::Samples<double> samples(4);
+  samples[0].input = makeGradientInput<double>({1, 8, 8});
+  samples[0].output = {1.0};
+  samples[1].input = CNN::Tensor3D<double>({1, 8, 8}, 0.0);
+  samples[1].output = {0.0};
+  samples[2].input = makeGradientInput<double>({1, 8, 8}, 0.3, 0.8);
+  samples[2].output = {1.0};
+  samples[3].input = CNN::Tensor3D<double>({1, 8, 8}, 0.1);
+  samples[3].output = {0.0};
+
+  CNN::Output<double> pred0, pred1;
+  bool converged = false;
+  std::unique_ptr<CNN::Core<double>> core;
+
+  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
+    if (attempt > 0)
+      std::cout << "  retry #" << attempt << std::endl;
+    core = CNN::Core<double>::makeCore(config);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
+    pred0 = core->predict(samples[0].input);
+    pred1 = core->predict(samples[1].input);
+
+    if (pred0[0] > pred1[0])
+      converged = true;
+  }
+
+  std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
+  CHECK(converged, "true batchnorm e2e bright > dark (5 attempts)");
+
+  // Sanity: test on training data
+  CNN::TestResult<double> result = core->test(samples.size(), CNN::makeSampleProvider(samples));
+  CHECK(result.averageLoss >= 0.0, "true batchnorm e2e test loss non-negative");
+  std::cout << "  test avgLoss=" << result.averageLoss << " accuracy=" << result.accuracy << "%" << std::endl;
+}
+
+//===================================================================================================================//
+
+static void testBatchNormLossDecreases()
+{
+  std::cout << "--- testBatchNormLossDecreases ---" << std::endl;
+
+  CNN::CoreConfig<double> config;
+  config.modeType = CNN::ModeType::TRAIN;
+  config.deviceType = CNN::DeviceType::CPU;
+  config.inputShape = {1, 8, 8};
+  config.logLevel = CNN::LogLevel::ERROR;
+
+  CNN::CNNLayerConfig conv1;
+  conv1.type = CNN::LayerType::CONV;
+  conv1.config = CNN::ConvLayerConfig{2, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+  CNN::CNNLayerConfig bnLayer;
+  bnLayer.type = CNN::LayerType::BATCHNORM;
+  bnLayer.config = CNN::NormLayerConfig{};
+
+  CNN::CNNLayerConfig relu1;
+  relu1.type = CNN::LayerType::RELU;
+  relu1.config = CNN::ReLULayerConfig{};
+
+  CNN::CNNLayerConfig flattenLayer;
+  flattenLayer.type = CNN::LayerType::FLATTEN;
+  flattenLayer.config = CNN::FlattenLayerConfig{};
+
+  config.layersConfig.cnnLayers = {conv1, bnLayer, relu1, flattenLayer};
+  config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
+
+  CNN::ConvParameters<double> initConv;
+  initConv.numFilters = 2;
+  initConv.inputC = 1;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
+  initConv.filters.assign(2 * 1 * 3 * 3, 0.1);
+  initConv.biases.assign(2, 0.0);
+  config.parameters.convParams = {initConv};
+
+  config.trainingConfig.batchSize = 4;
+  config.trainingConfig.learningRate = 0.5f;
+  config.progressReports = 0;
+
+  CNN::Samples<double> samples(4);
+  samples[0].input = makeGradientInput<double>({1, 8, 8});
+  samples[0].output = {1.0};
+  samples[1].input = CNN::Tensor3D<double>({1, 8, 8}, 0.0);
+  samples[1].output = {0.0};
+  samples[2].input = makeGradientInput<double>({1, 8, 8}, 0.3, 0.8);
+  samples[2].output = {1.0};
+  samples[3].input = CNN::Tensor3D<double>({1, 8, 8}, 0.1);
+  samples[3].output = {0.0};
+
+  // Capture epoch losses
+  std::vector<double> epochLosses;
+
+  // Train for 50 epochs, record loss
+  config.trainingConfig.numEpochs = 50;
+  auto core = CNN::Core<double>::makeCore(config);
+
+  core->setTrainingCallback([&](const CNN::TrainingProgress<double>& progress) {
+    if (progress.currentSample == progress.totalSamples && progress.epochLoss > 0) {
+      epochLosses.push_back(progress.epochLoss);
+    }
+  });
+
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+
+  // Verify loss decreased from first to last epoch
+  CHECK(epochLosses.size() >= 2, "batchnorm loss: at least 2 epoch losses captured");
+
+  if (epochLosses.size() >= 2) {
+    double firstLoss = epochLosses.front();
+    double lastLoss = epochLosses.back();
+    std::cout << "  firstLoss=" << firstLoss << "  lastLoss=" << lastLoss << std::endl;
+    CHECK(lastLoss < firstLoss, "batchnorm loss decreased over epochs");
+  }
+}
+
+//===================================================================================================================//
+
 void runIntegrationTests()
 {
   testEndToEnd();
@@ -770,4 +1010,9 @@ void runIntegrationTests()
   testWeightedLossTraining();
   testShuffleSamplesDefault();
   testShuffleSamplesTraining();
+  // InstanceNorm integration
+  testInstanceNormEndToEnd();
+  // True BatchNorm integration
+  testBatchNormEndToEnd();
+  testBatchNormLossDecreases();
 }

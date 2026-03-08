@@ -44,6 +44,12 @@ Output<T> CoreGPU<T>::predict(const Input<T>& input)
 {
   this->predictStart();
 
+  // Ensure buffers are sized for single-sample predict
+  for (size_t i = 0; i < this->numGPUs; i++) {
+    this->gpuWorkers[i]->bufferManager->reallocateForBatchSize(1);
+    this->gpuWorkers[i]->invalidateKernelCache();
+  }
+
   Output<T> output = this->gpuWorkers[0]->predict(input);
 
   this->predictEnd();
@@ -65,10 +71,17 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   // Adjust batch size to be divisible by numGPUs (round down, minimum = numGPUs)
   ulong batchSize = this->trainingConfig.batchSize;
   batchSize = std::max(this->numGPUs, (batchSize / this->numGPUs) * this->numGPUs);
+  ulong perGPUBatchSize = batchSize / this->numGPUs;
+
+  // Reallocate GPU buffers for the training batch size
+  for (size_t i = 0; i < this->numGPUs; i++) {
+    this->gpuWorkers[i]->bufferManager->reallocateForBatchSize(perGPUBatchSize);
+    this->gpuWorkers[i]->invalidateKernelCache();
+  }
 
   if (this->logLevel >= CNN::LogLevel::INFO) {
     std::cout << "Starting GPU training: " << numSamples << " samples, " << numEpochs << " epochs, " << this->numGPUs
-              << " GPU" << (this->numGPUs > 1 ? "s" : "") << "\n";
+              << " GPU" << (this->numGPUs > 1 ? "s" : "") << ", batch size " << batchSize << "\n";
   }
 
   struct GPUWorkItem {
@@ -84,10 +97,6 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   std::vector<ulong> sampleIndices(numSamples);
   std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
   std::mt19937 rng(std::random_device{}());
-
-  // Saved training kernels per GPU — populated after first trainSubset
-  std::vector<std::vector<std::vector<OpenCLWrapper::Kernel>>> savedKernels(this->numGPUs);
-  bool kernelsSaved = false;
 
   // Emit initial 0% progress callback
   if (this->trainingCallback) {
@@ -155,15 +164,6 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
           this->gpuWorkers[item.gpuIdx]->trainSubset(gpuSamples, numSamples, e + 1, numEpochs, callback);
       });
 
-      // Save training kernels after first batch (when setupTrainingKernels has run)
-      if (!kernelsSaved) {
-        for (size_t i = 0; i < this->numGPUs; i++) {
-          savedKernels[i] = this->gpuWorkers[i]->saveKernels();
-        }
-
-        kernelsSaved = true;
-      }
-
       // Update cumulative counters after batch completes
       for (const auto& item : workItems) {
         gpuCumulativeSamples[item.gpuIdx] += (item.endIdx - item.startIdx);
@@ -185,18 +185,6 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
           gpuIndices.append(i);
         QtConcurrent::blockingMap(
           gpuIndices, [this, currentBatchSize](size_t gpuIdx) { this->gpuWorkers[gpuIdx]->update(currentBatchSize); });
-      }
-
-      // Restore training kernels after update to avoid expensive re-setup next batch
-      if (kernelsSaved) {
-        QVector<size_t> gpuIndices;
-
-        for (size_t i = 0; i < this->numGPUs; i++)
-          gpuIndices.append(i);
-        QtConcurrent::blockingMap(gpuIndices, [this, &savedKernels](size_t gpuIdx) {
-          this->gpuWorkers[gpuIdx]->restoreKernels(savedKernels[gpuIdx]);
-          this->gpuWorkers[gpuIdx]->setTrainingKernelsReady(true);
-        });
       }
     }
 
@@ -353,7 +341,7 @@ void CoreGPU<T>::mergeCNNGradients()
 
   QtConcurrent::blockingMap(gpuIndices, [this, &allFilters, &allBiases, &allBNGamma, &allBNBeta](size_t gpuIdx) {
     this->gpuWorkers[gpuIdx]->bufferManager->readAccumulatedGradients(allFilters[gpuIdx], allBiases[gpuIdx]);
-    this->gpuWorkers[gpuIdx]->bufferManager->readBNAccumulatedGradients(allBNGamma[gpuIdx], allBNBeta[gpuIdx]);
+    this->gpuWorkers[gpuIdx]->bufferManager->readNormAccumulatedGradients(allBNGamma[gpuIdx], allBNBeta[gpuIdx]);
   });
 
   // Sum on CPU
@@ -380,7 +368,7 @@ void CoreGPU<T>::mergeCNNGradients()
   QtConcurrent::blockingMap(gpuIndices,
                             [this, &totalFilters, &totalBiases, &totalBNGamma, &totalBNBeta](size_t gpuIdx) {
                               this->gpuWorkers[gpuIdx]->bufferManager->setAccumulators(totalFilters, totalBiases);
-                              this->gpuWorkers[gpuIdx]->bufferManager->setBNAccumulators(totalBNGamma, totalBNBeta);
+                              this->gpuWorkers[gpuIdx]->bufferManager->setNormAccumulators(totalBNGamma, totalBNBeta);
                             });
 }
 

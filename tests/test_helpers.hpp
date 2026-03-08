@@ -5,6 +5,7 @@
 #include "CNN_ReLU.hpp"
 #include "CNN_Pool.hpp"
 #include "CNN_BatchNorm.hpp"
+#include "CNN_InstanceNorm.hpp"
 #include "CNN_Flatten.hpp"
 #include "CNN_Core.hpp"
 #include "CNN_CoreConfig.hpp"

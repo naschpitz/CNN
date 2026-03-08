@@ -42,18 +42,18 @@ namespace CNN
   struct FlattenLayerConfig {
   };
 
-  // Batch normalization layer configuration
-  struct BatchNormLayerConfig {
+  // Normalization layer configuration (shared by BatchNorm and InstanceNorm)
+  struct NormLayerConfig {
       float epsilon = 1e-5f; // Small constant for numerical stability
       float momentum = 0.1f; // Momentum for running mean/variance update
   };
 
   // A CNN layer can be any of these types
-  enum class LayerType { CONV, RELU, POOL, FLATTEN, BATCHNORM };
+  enum class LayerType { CONV, RELU, POOL, FLATTEN, BATCHNORM, INSTANCENORM };
 
   struct CNNLayerConfig {
       LayerType type;
-      std::variant<ConvLayerConfig, ReLULayerConfig, PoolLayerConfig, FlattenLayerConfig, BatchNormLayerConfig> config;
+      std::variant<ConvLayerConfig, ReLULayerConfig, PoolLayerConfig, FlattenLayerConfig, NormLayerConfig> config;
   };
 
   // Dense layer configuration (delegates to ANN)

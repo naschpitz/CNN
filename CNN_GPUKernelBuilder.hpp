@@ -23,19 +23,23 @@ namespace CNN
 
       //-- Kernel setup (clears previous kernels and rebuilds) --//
       void setupPredictKernels();
-      void setupTrainingKernels();
       void setupUpdateKernels(ulong numSamples);
 
+      //-- Batch training kernel phases (each clears + sets up + caller runs) --//
+      void setupBatchForwardKernels();
+      void setupPerSampleANNKernels(ulong sampleIdx);
+      void setupBatchBackwardKernels();
+
       //-- Kernel building blocks (public for external orchestration) --//
-      void addPropagateKernels();
-      void addCopyBridgeKernels();
-      void addBackpropagateKernels();
-      void addCNNAccumulateKernels();
+      void addPropagateKernels(ulong sampleIdx);
+      void addCopyBridgeKernels(ulong sampleIdx);
+      void addBackpropagateKernels(ulong sampleIdx);
+      void addCNNPerSampleAccumulateKernels(ulong sampleIdx);
+      void addCNNNormStatsAccumulateKernels();
       void addCNNUpdateKernels(ulong numSamples);
 
       //-- Kernel setup flags --//
       bool predictKernelsSetup = false;
-      bool trainingKernelsSetup = false;
       bool updateKernelsSetup = false;
 
       void invalidateAllKernelFlags();

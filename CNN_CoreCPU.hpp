@@ -30,27 +30,27 @@ namespace CNN
       //-- Global CNN gradient accumulators (for merging worker results) --//
       std::vector<std::vector<T>> accumDConvFilters;
       std::vector<std::vector<T>> accumDConvBiases;
-      std::vector<std::vector<T>> accumDBNGamma;
-      std::vector<std::vector<T>> accumDBNBeta;
-      std::vector<std::vector<T>> accumBNMean;
-      std::vector<std::vector<T>> accumBNVar;
+      std::vector<std::vector<T>> accumDNormGamma;
+      std::vector<std::vector<T>> accumDNormBeta;
+      std::vector<std::vector<T>> accumNormMean;
+      std::vector<std::vector<T>> accumNormVar;
 
-      //-- Adam optimizer state for CNN conv parameters --//
+      //-- Adam optimizer state --//
       std::vector<std::vector<T>> adam_m_filters;
       std::vector<std::vector<T>> adam_v_filters;
       std::vector<std::vector<T>> adam_m_biases;
       std::vector<std::vector<T>> adam_v_biases;
-      std::vector<std::vector<T>> adam_m_bn_gamma;
-      std::vector<std::vector<T>> adam_v_bn_gamma;
-      std::vector<std::vector<T>> adam_m_bn_beta;
-      std::vector<std::vector<T>> adam_v_bn_beta;
+      std::vector<std::vector<T>> adam_m_norm_gamma;
+      std::vector<std::vector<T>> adam_v_norm_gamma;
+      std::vector<std::vector<T>> adam_m_norm_beta;
+      std::vector<std::vector<T>> adam_v_norm_beta;
       ulong adam_t = 0;
 
       //-- Training helpers --//
       void resetGlobalCNNAccumulators();
       void mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker);
       void updateCNNParameters(ulong numSamples);
-      void updateBNRunningStats(ulong numSamples);
+      void updateNormRunningStats(ulong numSamples);
       void allocateAdamState();
   };
 }

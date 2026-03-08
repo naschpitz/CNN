@@ -42,10 +42,10 @@ void GPUBufferManager<T>::computeLayerOffsets()
   this->totalFilterSize = 0;
   this->totalBiasSize = 0;
   this->totalPoolIndexSize = 0;
-  this->totalBNParamSize = 0;
+  this->totalNormParamSize = 0;
   this->convInfos.clear();
   this->poolInfos.clear();
-  this->bnInfos.clear();
+  this->normInfos.clear();
 
   for (const auto& layerConfig : cnnLayers) {
     Shape3D outShape = currentShape;
@@ -100,11 +100,21 @@ void GPUBufferManager<T>::computeLayerOffsets()
 
     case LayerType::BATCHNORM: {
       // Batch norm doesn't change shape
-      BatchNormInfo bi;
-      bi.paramOffset = this->totalBNParamSize;
-      bi.numChannels = currentShape.c;
-      this->bnInfos.push_back(bi);
-      this->totalBNParamSize += bi.numChannels;
+      NormInfo ni;
+      ni.paramOffset = this->totalNormParamSize;
+      ni.numChannels = currentShape.c;
+      this->normInfos.push_back(ni);
+      this->totalNormParamSize += ni.numChannels;
+      break;
+    }
+
+    case LayerType::INSTANCENORM: {
+      // Instance norm doesn't change shape — uses same GPU buffers as batch norm
+      NormInfo ni;
+      ni.paramOffset = this->totalNormParamSize;
+      ni.numChannels = currentShape.c;
+      this->normInfos.push_back(ni);
+      this->totalNormParamSize += ni.numChannels;
       break;
     }
 
@@ -157,13 +167,19 @@ void GPUBufferManager<T>::loadSources(bool skipDefines)
 //===================================================================================================================//
 
 template <typename T>
-void GPUBufferManager<T>::allocateBuffers()
+void GPUBufferManager<T>::allocateBuffers(ulong batchSize)
 {
-  // Activation and gradient buffers (same layout)
-  this->core->template allocateBuffer<T>("cnn_actvs", this->totalActvSize);
-  this->core->template allocateBuffer<T>("cnn_grads", this->totalActvSize);
+  this->batchSize = batchSize;
 
-  // Filter and bias parameter buffers
+  // Per-sample buffers are scaled by batchSize to hold all samples simultaneously
+  ulong batchActvSize = this->totalActvSize * batchSize;
+  ulong batchPoolIndexSize = this->totalPoolIndexSize * batchSize;
+
+  // Activation and gradient buffers (N samples)
+  this->core->template allocateBuffer<T>("cnn_actvs", batchActvSize);
+  this->core->template allocateBuffer<T>("cnn_grads", batchActvSize);
+
+  // Filter and bias parameter buffers (shared across samples)
   if (this->totalFilterSize > 0) {
     this->core->template allocateBuffer<T>("cnn_filters", this->totalFilterSize);
     this->core->template allocateBuffer<T>("cnn_dFilters", this->totalFilterSize);
@@ -176,29 +192,29 @@ void GPUBufferManager<T>::allocateBuffers()
     this->core->template allocateBuffer<T>("cnn_accum_dBiases", this->totalBiasSize);
   }
 
-  // Pool index buffer
-  if (this->totalPoolIndexSize > 0) {
-    this->core->template allocateBuffer<ulong>("cnn_pool_indices", this->totalPoolIndexSize);
+  // Pool index buffer (N samples)
+  if (batchPoolIndexSize > 0) {
+    this->core->template allocateBuffer<ulong>("cnn_pool_indices", batchPoolIndexSize);
   }
 
-  // Batch norm buffers
-  if (this->totalBNParamSize > 0) {
-    this->core->template allocateBuffer<T>("cnn_bn_gamma", this->totalBNParamSize);
-    this->core->template allocateBuffer<T>("cnn_bn_beta", this->totalBNParamSize);
-    this->core->template allocateBuffer<T>("cnn_bn_running_mean", this->totalBNParamSize);
-    this->core->template allocateBuffer<T>("cnn_bn_running_var", this->totalBNParamSize);
-    this->core->template allocateBuffer<T>("cnn_bn_dGamma", this->totalBNParamSize);
-    this->core->template allocateBuffer<T>("cnn_bn_dBeta", this->totalBNParamSize);
-    this->core->template allocateBuffer<T>("cnn_accum_bn_dGamma", this->totalBNParamSize);
-    this->core->template allocateBuffer<T>("cnn_accum_bn_dBeta", this->totalBNParamSize);
-    // Per-sample batch mean/var for backprop
-    this->core->template allocateBuffer<T>("cnn_bn_batch_mean", this->totalBNParamSize);
-    this->core->template allocateBuffer<T>("cnn_bn_batch_var", this->totalBNParamSize);
-    // Accumulated batch mean/var across samples (for running stats update)
-    this->core->template allocateBuffer<T>("cnn_bn_accum_mean", this->totalBNParamSize);
-    this->core->template allocateBuffer<T>("cnn_bn_accum_var", this->totalBNParamSize);
-    // Normalized values for backprop
-    this->core->template allocateBuffer<T>("cnn_bn_xnorm", this->totalActvSize);
+  // Normalization buffers (shared by BatchNorm and InstanceNorm)
+  if (this->totalNormParamSize > 0) {
+    this->core->template allocateBuffer<T>("cnn_norm_gamma", this->totalNormParamSize);
+    this->core->template allocateBuffer<T>("cnn_norm_beta", this->totalNormParamSize);
+    this->core->template allocateBuffer<T>("cnn_norm_running_mean", this->totalNormParamSize);
+    this->core->template allocateBuffer<T>("cnn_norm_running_var", this->totalNormParamSize);
+    this->core->template allocateBuffer<T>("cnn_norm_dGamma", this->totalNormParamSize);
+    this->core->template allocateBuffer<T>("cnn_norm_dBeta", this->totalNormParamSize);
+    this->core->template allocateBuffer<T>("cnn_accum_norm_dGamma", this->totalNormParamSize);
+    this->core->template allocateBuffer<T>("cnn_accum_norm_dBeta", this->totalNormParamSize);
+    // Batch-wide mean/var (per-channel, shared across samples)
+    this->core->template allocateBuffer<T>("cnn_norm_batch_mean", this->totalNormParamSize);
+    this->core->template allocateBuffer<T>("cnn_norm_batch_var", this->totalNormParamSize);
+    // Accumulated mean/var across batches (for running stats update)
+    this->core->template allocateBuffer<T>("cnn_norm_accum_mean", this->totalNormParamSize);
+    this->core->template allocateBuffer<T>("cnn_norm_accum_var", this->totalNormParamSize);
+    // Normalized values for backprop (N samples)
+    this->core->template allocateBuffer<T>("cnn_norm_xnorm", batchActvSize);
   }
 
   // Write initial filter/bias values to GPU
@@ -232,29 +248,29 @@ void GPUBufferManager<T>::allocateBuffers()
     this->core->template writeBuffer<T>("cnn_biases", flatBiases, 0);
   }
 
-  // Write initial batch norm parameters to GPU
-  if (this->totalBNParamSize > 0) {
-    std::vector<T> flatGamma(this->totalBNParamSize);
-    std::vector<T> flatBeta(this->totalBNParamSize);
-    std::vector<T> flatRunningMean(this->totalBNParamSize);
-    std::vector<T> flatRunningVar(this->totalBNParamSize);
+  // Write initial normalization parameters to GPU
+  if (this->totalNormParamSize > 0) {
+    std::vector<T> flatGamma(this->totalNormParamSize);
+    std::vector<T> flatBeta(this->totalNormParamSize);
+    std::vector<T> flatRunningMean(this->totalNormParamSize);
+    std::vector<T> flatRunningVar(this->totalNormParamSize);
 
-    for (ulong i = 0; i < this->bnInfos.size(); i++) {
-      const auto& bi = this->bnInfos[i];
-      const auto& bp = this->parameters.bnParams[i];
+    for (ulong i = 0; i < this->normInfos.size(); i++) {
+      const auto& ni = this->normInfos[i];
+      const auto& bp = this->parameters.normParams[i];
 
-      for (ulong j = 0; j < bi.numChannels; j++) {
-        flatGamma[bi.paramOffset + j] = bp.gamma[j];
-        flatBeta[bi.paramOffset + j] = bp.beta[j];
-        flatRunningMean[bi.paramOffset + j] = bp.runningMean[j];
-        flatRunningVar[bi.paramOffset + j] = bp.runningVar[j];
+      for (ulong j = 0; j < ni.numChannels; j++) {
+        flatGamma[ni.paramOffset + j] = bp.gamma[j];
+        flatBeta[ni.paramOffset + j] = bp.beta[j];
+        flatRunningMean[ni.paramOffset + j] = bp.runningMean[j];
+        flatRunningVar[ni.paramOffset + j] = bp.runningVar[j];
       }
     }
 
-    this->core->template writeBuffer<T>("cnn_bn_gamma", flatGamma, 0);
-    this->core->template writeBuffer<T>("cnn_bn_beta", flatBeta, 0);
-    this->core->template writeBuffer<T>("cnn_bn_running_mean", flatRunningMean, 0);
-    this->core->template writeBuffer<T>("cnn_bn_running_var", flatRunningVar, 0);
+    this->core->template writeBuffer<T>("cnn_norm_gamma", flatGamma, 0);
+    this->core->template writeBuffer<T>("cnn_norm_beta", flatBeta, 0);
+    this->core->template writeBuffer<T>("cnn_norm_running_mean", flatRunningMean, 0);
+    this->core->template writeBuffer<T>("cnn_norm_running_var", flatRunningVar, 0);
   }
 
   // Adam optimizer buffers
@@ -275,20 +291,49 @@ void GPUBufferManager<T>::allocateBuffers()
       this->core->template fillBuffer<T>("cnn_adam_v_biases", zero, this->totalBiasSize);
     }
 
-    if (this->totalBNParamSize > 0) {
-      this->core->template allocateBuffer<T>("cnn_adam_m_bn_gamma", this->totalBNParamSize);
-      this->core->template allocateBuffer<T>("cnn_adam_v_bn_gamma", this->totalBNParamSize);
-      this->core->template allocateBuffer<T>("cnn_adam_m_bn_beta", this->totalBNParamSize);
-      this->core->template allocateBuffer<T>("cnn_adam_v_bn_beta", this->totalBNParamSize);
-      this->core->template fillBuffer<T>("cnn_adam_m_bn_gamma", zero, this->totalBNParamSize);
-      this->core->template fillBuffer<T>("cnn_adam_v_bn_gamma", zero, this->totalBNParamSize);
-      this->core->template fillBuffer<T>("cnn_adam_m_bn_beta", zero, this->totalBNParamSize);
-      this->core->template fillBuffer<T>("cnn_adam_v_bn_beta", zero, this->totalBNParamSize);
+    if (this->totalNormParamSize > 0) {
+      this->core->template allocateBuffer<T>("cnn_adam_m_norm_gamma", this->totalNormParamSize);
+      this->core->template allocateBuffer<T>("cnn_adam_v_norm_gamma", this->totalNormParamSize);
+      this->core->template allocateBuffer<T>("cnn_adam_m_norm_beta", this->totalNormParamSize);
+      this->core->template allocateBuffer<T>("cnn_adam_v_norm_beta", this->totalNormParamSize);
+      this->core->template fillBuffer<T>("cnn_adam_m_norm_gamma", zero, this->totalNormParamSize);
+      this->core->template fillBuffer<T>("cnn_adam_v_norm_gamma", zero, this->totalNormParamSize);
+      this->core->template fillBuffer<T>("cnn_adam_m_norm_beta", zero, this->totalNormParamSize);
+      this->core->template fillBuffer<T>("cnn_adam_v_norm_beta", zero, this->totalNormParamSize);
     }
   }
 
   if (this->logLevel >= CNN::LogLevel::INFO)
     std::cout << "CNN GPU buffers allocated.\n";
+}
+
+//===================================================================================================================//
+
+template <typename T>
+void GPUBufferManager<T>::reallocateForBatchSize(ulong newBatchSize)
+{
+  if (newBatchSize == this->batchSize)
+    return;
+
+  this->batchSize = newBatchSize;
+
+  ulong batchActvSize = this->totalActvSize * newBatchSize;
+  ulong batchPoolIndexSize = this->totalPoolIndexSize * newBatchSize;
+
+  // Reallocate per-sample buffers
+  this->core->template reallocateBuffer<T>("cnn_actvs", batchActvSize);
+  this->core->template reallocateBuffer<T>("cnn_grads", batchActvSize);
+
+  if (batchPoolIndexSize > 0) {
+    this->core->template reallocateBuffer<ulong>("cnn_pool_indices", batchPoolIndexSize);
+  }
+
+  if (this->totalNormParamSize > 0) {
+    this->core->template reallocateBuffer<T>("cnn_norm_xnorm", batchActvSize);
+  }
+
+  if (this->logLevel >= CNN::LogLevel::INFO)
+    std::cout << "CNN GPU buffers reallocated for batch size " << newBatchSize << ".\n";
 }
 
 //===================================================================================================================//
@@ -325,6 +370,8 @@ void GPUBufferManager<T>::buildANNWorker()
     }
 
     case LayerType::BATCHNORM:
+      break;
+    case LayerType::INSTANCENORM:
       break;
     case LayerType::FLATTEN:
       break;
@@ -412,29 +459,29 @@ void GPUBufferManager<T>::syncParametersFromGPU()
     }
   }
 
-  // Read batch norm parameters from GPU
-  if (this->totalBNParamSize > 0) {
-    std::vector<T> flatGamma(this->totalBNParamSize);
-    std::vector<T> flatBeta(this->totalBNParamSize);
-    std::vector<T> flatRunningMean(this->totalBNParamSize);
-    std::vector<T> flatRunningVar(this->totalBNParamSize);
+  // Read normalization parameters from GPU
+  if (this->totalNormParamSize > 0) {
+    std::vector<T> flatGamma(this->totalNormParamSize);
+    std::vector<T> flatBeta(this->totalNormParamSize);
+    std::vector<T> flatRunningMean(this->totalNormParamSize);
+    std::vector<T> flatRunningVar(this->totalNormParamSize);
 
-    this->core->template readBuffer<T>("cnn_bn_gamma", flatGamma, 0);
-    this->core->template readBuffer<T>("cnn_bn_beta", flatBeta, 0);
-    this->core->template readBuffer<T>("cnn_bn_running_mean", flatRunningMean, 0);
-    this->core->template readBuffer<T>("cnn_bn_running_var", flatRunningVar, 0);
+    this->core->template readBuffer<T>("cnn_norm_gamma", flatGamma, 0);
+    this->core->template readBuffer<T>("cnn_norm_beta", flatBeta, 0);
+    this->core->template readBuffer<T>("cnn_norm_running_mean", flatRunningMean, 0);
+    this->core->template readBuffer<T>("cnn_norm_running_var", flatRunningVar, 0);
 
-    for (ulong i = 0; i < this->bnInfos.size(); i++) {
-      ulong offset = this->bnInfos[i].paramOffset;
-      ulong count = this->bnInfos[i].numChannels;
-      this->parameters.bnParams[i].gamma.assign(flatGamma.begin() + static_cast<long>(offset),
-                                                flatGamma.begin() + static_cast<long>(offset + count));
-      this->parameters.bnParams[i].beta.assign(flatBeta.begin() + static_cast<long>(offset),
-                                               flatBeta.begin() + static_cast<long>(offset + count));
-      this->parameters.bnParams[i].runningMean.assign(flatRunningMean.begin() + static_cast<long>(offset),
-                                                      flatRunningMean.begin() + static_cast<long>(offset + count));
-      this->parameters.bnParams[i].runningVar.assign(flatRunningVar.begin() + static_cast<long>(offset),
-                                                     flatRunningVar.begin() + static_cast<long>(offset + count));
+    for (ulong i = 0; i < this->normInfos.size(); i++) {
+      ulong offset = this->normInfos[i].paramOffset;
+      ulong count = this->normInfos[i].numChannels;
+      this->parameters.normParams[i].gamma.assign(flatGamma.begin() + static_cast<long>(offset),
+                                                  flatGamma.begin() + static_cast<long>(offset + count));
+      this->parameters.normParams[i].beta.assign(flatBeta.begin() + static_cast<long>(offset),
+                                                 flatBeta.begin() + static_cast<long>(offset + count));
+      this->parameters.normParams[i].runningMean.assign(flatRunningMean.begin() + static_cast<long>(offset),
+                                                        flatRunningMean.begin() + static_cast<long>(offset + count));
+      this->parameters.normParams[i].runningVar.assign(flatRunningVar.begin() + static_cast<long>(offset),
+                                                       flatRunningVar.begin() + static_cast<long>(offset + count));
     }
   }
 
@@ -460,11 +507,11 @@ void GPUBufferManager<T>::resetAccumulators()
     this->core->template fillBuffer<T>("cnn_accum_dBiases", zero, this->totalBiasSize);
   }
 
-  if (this->totalBNParamSize > 0) {
-    this->core->template fillBuffer<T>("cnn_accum_bn_dGamma", zero, this->totalBNParamSize);
-    this->core->template fillBuffer<T>("cnn_accum_bn_dBeta", zero, this->totalBNParamSize);
-    this->core->template fillBuffer<T>("cnn_bn_accum_mean", zero, this->totalBNParamSize);
-    this->core->template fillBuffer<T>("cnn_bn_accum_var", zero, this->totalBNParamSize);
+  if (this->totalNormParamSize > 0) {
+    this->core->template fillBuffer<T>("cnn_accum_norm_dGamma", zero, this->totalNormParamSize);
+    this->core->template fillBuffer<T>("cnn_accum_norm_dBeta", zero, this->totalNormParamSize);
+    this->core->template fillBuffer<T>("cnn_norm_accum_mean", zero, this->totalNormParamSize);
+    this->core->template fillBuffer<T>("cnn_norm_accum_var", zero, this->totalNormParamSize);
   }
 
   this->annGPUWorker->resetAccumulators();
@@ -504,25 +551,25 @@ void GPUBufferManager<T>::setAccumulators(const std::vector<T>& accumFilters, co
 //===================================================================================================================//
 
 template <typename T>
-void GPUBufferManager<T>::readBNAccumulatedGradients(std::vector<T>& accumGamma, std::vector<T>& accumBeta)
+void GPUBufferManager<T>::readNormAccumulatedGradients(std::vector<T>& accumGamma, std::vector<T>& accumBeta)
 {
-  accumGamma.resize(this->totalBNParamSize);
-  accumBeta.resize(this->totalBNParamSize);
+  accumGamma.resize(this->totalNormParamSize);
+  accumBeta.resize(this->totalNormParamSize);
 
-  if (this->totalBNParamSize > 0) {
-    this->core->template readBuffer<T>("cnn_accum_bn_dGamma", accumGamma, 0);
-    this->core->template readBuffer<T>("cnn_accum_bn_dBeta", accumBeta, 0);
+  if (this->totalNormParamSize > 0) {
+    this->core->template readBuffer<T>("cnn_accum_norm_dGamma", accumGamma, 0);
+    this->core->template readBuffer<T>("cnn_accum_norm_dBeta", accumBeta, 0);
   }
 }
 
 //===================================================================================================================//
 
 template <typename T>
-void GPUBufferManager<T>::setBNAccumulators(const std::vector<T>& accumGamma, const std::vector<T>& accumBeta)
+void GPUBufferManager<T>::setNormAccumulators(const std::vector<T>& accumGamma, const std::vector<T>& accumBeta)
 {
-  if (this->totalBNParamSize > 0) {
-    this->core->template writeBuffer<T>("cnn_accum_bn_dGamma", accumGamma, 0);
-    this->core->template writeBuffer<T>("cnn_accum_bn_dBeta", accumBeta, 0);
+  if (this->totalNormParamSize > 0) {
+    this->core->template writeBuffer<T>("cnn_accum_norm_dGamma", accumGamma, 0);
+    this->core->template writeBuffer<T>("cnn_accum_norm_dBeta", accumBeta, 0);
   }
 }
 

@@ -162,17 +162,17 @@ static void testBatchNormInference()
   input.data = {1.0, 2.0, 3.0, 4.0, // channel 0
                 5.0, 6.0, 7.0, 8.0}; // channel 1
 
-  CNN::BatchNormParameters<double> params;
+  CNN::NormParameters<double> params;
   params.numChannels = 2;
   params.gamma = {2.0, 0.5};
   params.beta = {1.0, -1.0};
   params.runningMean = {2.5, 6.5};
   params.runningVar = {1.25, 1.25};
 
-  CNN::BatchNormLayerConfig config;
+  CNN::NormLayerConfig config;
   config.epsilon = 0.0; // zero eps for exact math
 
-  CNN::Tensor3D<double> out = CNN::BatchNorm<double>::propagate(input, shape, params, config);
+  CNN::Tensor3D<double> out = CNN::BatchNorm<double>::propagate({input}, shape, params, config)[0];
 
   CHECK(out.shape.c == 2 && out.shape.h == 2 && out.shape.w == 2, "batchnorm inference shape");
 
@@ -198,22 +198,21 @@ static void testBatchNormInference()
 
 static void testBatchNormTraining()
 {
-  std::cout << "--- testBatchNormTraining ---" << std::endl;
+  std::cout << "--- testBatchNormTraining (now InstanceNorm API) ---" << std::endl;
 
-  // 2 channels, 2x2 spatial
   CNN::Shape3D shape{2, 2, 2};
   CNN::Tensor3D<double> input(shape);
   input.data = {1.0, 2.0, 3.0, 4.0, // channel 0
                 5.0, 6.0, 7.0, 8.0}; // channel 1
 
-  CNN::BatchNormParameters<double> params;
+  CNN::NormParameters<double> params;
   params.numChannels = 2;
   params.gamma = {1.0, 1.0};
   params.beta = {0.0, 0.0};
   params.runningMean = {0.0, 0.0};
   params.runningVar = {1.0, 1.0};
 
-  CNN::BatchNormLayerConfig config;
+  CNN::NormLayerConfig config;
   config.epsilon = 0.0;
   config.momentum = 0.1;
 
@@ -221,7 +220,7 @@ static void testBatchNormTraining()
   CNN::Tensor3D<double> xNorm;
 
   CNN::Tensor3D<double> out =
-    CNN::BatchNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
+    CNN::InstanceNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
 
   CHECK(out.shape.c == 2 && out.shape.h == 2 && out.shape.w == 2, "batchnorm train shape");
 
@@ -260,21 +259,21 @@ static void testBatchNormBackpropagate()
   CNN::Tensor3D<double> input(shape);
   input.data = {1.0, 2.0, 3.0, 4.0};
 
-  CNN::BatchNormParameters<double> params;
+  CNN::NormParameters<double> params;
   params.numChannels = 1;
   params.gamma = {2.0};
   params.beta = {0.5};
   params.runningMean = {0.0};
   params.runningVar = {1.0};
 
-  CNN::BatchNormLayerConfig config;
+  CNN::NormLayerConfig config;
   config.epsilon = 0.0;
   config.momentum = 0.1;
 
   // Forward pass (training) to get intermediates
   std::vector<double> batchMean, batchVar;
   CNN::Tensor3D<double> xNorm;
-  CNN::BatchNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
+  CNN::InstanceNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
 
   // mean=2.5, var=1.25
   CHECK_NEAR(batchMean[0], 2.5, 1e-9, "backprop setup mean");
@@ -285,7 +284,7 @@ static void testBatchNormBackpropagate()
 
   std::vector<double> dGamma, dBeta;
   CNN::Tensor3D<double> dInput =
-    CNN::BatchNorm<double>::backpropagate(dOutput, shape, params, config, batchMean, batchVar, xNorm, dGamma, dBeta);
+    CNN::InstanceNorm<double>::backpropagate(dOutput, shape, params, config, batchMean, batchVar, xNorm, dGamma, dBeta);
 
   // dBeta = sum(dOutput) = 4.0
   CHECK_NEAR(dBeta[0], 4.0, 1e-9, "batchnorm backprop dBeta");
@@ -314,21 +313,21 @@ static void testBatchNormBackpropGradient()
   CNN::Tensor3D<double> input(shape);
   input.data = {1.0, 2.0, 3.0, 4.0};
 
-  CNN::BatchNormParameters<double> params;
+  CNN::NormParameters<double> params;
   params.numChannels = 1;
   params.gamma = {1.0};
   params.beta = {0.0};
   params.runningMean = {0.0};
   params.runningVar = {1.0};
 
-  CNN::BatchNormLayerConfig config;
+  CNN::NormLayerConfig config;
   config.epsilon = 1e-7;
   config.momentum = 0.1;
 
   // Forward pass
   std::vector<double> batchMean, batchVar;
   CNN::Tensor3D<double> xNorm;
-  CNN::BatchNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
+  CNN::InstanceNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
 
   // Non-uniform upstream gradient
   CNN::Tensor3D<double> dOutput(shape);
@@ -336,7 +335,7 @@ static void testBatchNormBackpropGradient()
 
   std::vector<double> dGamma, dBeta;
   CNN::Tensor3D<double> dInput =
-    CNN::BatchNorm<double>::backpropagate(dOutput, shape, params, config, batchMean, batchVar, xNorm, dGamma, dBeta);
+    CNN::InstanceNorm<double>::backpropagate(dOutput, shape, params, config, batchMean, batchVar, xNorm, dGamma, dBeta);
 
   // dBeta = sum(dOutput) = 1.0
   CHECK_NEAR(dBeta[0], 1.0, 1e-9, "grad dBeta");
@@ -350,26 +349,26 @@ static void testBatchNormBackpropGradient()
     inputPlus.data = input.data;
     inputPlus.data[i] += eps;
 
-    CNN::BatchNormParameters<double> pPlus = params;
+    CNN::NormParameters<double> pPlus = params;
     pPlus.runningMean = {0.0};
     pPlus.runningVar = {1.0};
     std::vector<double> bmP, bvP;
     CNN::Tensor3D<double> xnP;
     CNN::Tensor3D<double> outPlus =
-      CNN::BatchNorm<double>::propagate(inputPlus, shape, pPlus, config, &bmP, &bvP, &xnP);
+      CNN::InstanceNorm<double>::propagate(inputPlus, shape, pPlus, config, &bmP, &bvP, &xnP);
 
     // Forward with input[i] - eps
     CNN::Tensor3D<double> inputMinus(shape);
     inputMinus.data = input.data;
     inputMinus.data[i] -= eps;
 
-    CNN::BatchNormParameters<double> pMinus = params;
+    CNN::NormParameters<double> pMinus = params;
     pMinus.runningMean = {0.0};
     pMinus.runningVar = {1.0};
     std::vector<double> bmM, bvM;
     CNN::Tensor3D<double> xnM;
     CNN::Tensor3D<double> outMinus =
-      CNN::BatchNorm<double>::propagate(inputMinus, shape, pMinus, config, &bmM, &bvM, &xnM);
+      CNN::InstanceNorm<double>::propagate(inputMinus, shape, pMinus, config, &bmM, &bvM, &xnM);
 
     // Numerical gradient = sum_j dOutput[j] * (outPlus[j] - outMinus[j]) / (2*eps)
     double numGrad = 0.0;
@@ -391,16 +390,16 @@ static void testBatchNormOutputShape()
   CNN::Shape3D shape{3, 8, 8};
   CNN::Tensor3D<double> input(shape, 1.0);
 
-  CNN::BatchNormParameters<double> params;
+  CNN::NormParameters<double> params;
   params.numChannels = 3;
   params.gamma = {1.0, 1.0, 1.0};
   params.beta = {0.0, 0.0, 0.0};
   params.runningMean = {0.0, 0.0, 0.0};
   params.runningVar = {1.0, 1.0, 1.0};
 
-  CNN::BatchNormLayerConfig config;
+  CNN::NormLayerConfig config;
 
-  CNN::Tensor3D<double> out = CNN::BatchNorm<double>::propagate(input, shape, params, config);
+  CNN::Tensor3D<double> out = CNN::BatchNorm<double>::propagate({input}, shape, params, config)[0];
   CHECK(out.shape.c == 3, "batchnorm preserves channels");
   CHECK(out.shape.h == 8, "batchnorm preserves height");
   CHECK(out.shape.w == 8, "batchnorm preserves width");
@@ -420,7 +419,7 @@ static void testBatchNormValidateShapes()
 
   CNN::CNNLayerConfig bn;
   bn.type = CNN::LayerType::BATCHNORM;
-  bn.config = CNN::BatchNormLayerConfig{};
+  bn.config = CNN::NormLayerConfig{};
 
   CNN::CNNLayerConfig relu1;
   relu1.type = CNN::LayerType::RELU;
@@ -582,6 +581,433 @@ static void testValidateShapes()
 
 //===================================================================================================================//
 
+//===================================================================================================================//
+//-- InstanceNorm tests (renamed from BatchNorm — same per-image spatial normalization) --//
+//===================================================================================================================//
+
+static void testInstanceNormInference()
+{
+  std::cout << "--- testInstanceNormInference ---" << std::endl;
+
+  // 2 channels, 2x2 spatial — identical math to testBatchNormInference but using InstanceNorm API
+  CNN::Shape3D shape{2, 2, 2};
+  CNN::Tensor3D<double> input(shape);
+  input.data = {1.0, 2.0, 3.0, 4.0, // channel 0
+                5.0, 6.0, 7.0, 8.0}; // channel 1
+
+  CNN::NormParameters<double> params;
+  params.numChannels = 2;
+  params.gamma = {2.0, 0.5};
+  params.beta = {1.0, -1.0};
+  params.runningMean = {2.5, 6.5};
+  params.runningVar = {1.25, 1.25};
+
+  CNN::NormLayerConfig config;
+  config.epsilon = 0.0; // zero eps for exact math
+
+  CNN::Tensor3D<double> out = CNN::InstanceNorm<double>::propagate(input, shape, params, config);
+
+  CHECK(out.shape.c == 2 && out.shape.h == 2 && out.shape.w == 2, "instancenorm inference shape");
+
+  double invStd0 = 1.0 / std::sqrt(1.25);
+  CHECK_NEAR(out.data[0], 2.0 * (1.0 - 2.5) * invStd0 + 1.0, 1e-9, "instancenorm infer ch0 [0]");
+  CHECK_NEAR(out.data[1], 2.0 * (2.0 - 2.5) * invStd0 + 1.0, 1e-9, "instancenorm infer ch0 [1]");
+  CHECK_NEAR(out.data[4], 0.5 * (5.0 - 6.5) * invStd0 - 1.0, 1e-9, "instancenorm infer ch1 [0]");
+
+  // Running stats should not change during inference
+  CHECK_NEAR(params.runningMean[0], 2.5, 1e-9, "instancenorm infer runningMean unchanged");
+}
+
+//===================================================================================================================//
+
+static void testInstanceNormTraining()
+{
+  std::cout << "--- testInstanceNormTraining ---" << std::endl;
+
+  CNN::Shape3D shape{2, 2, 2};
+  CNN::Tensor3D<double> input(shape);
+  input.data = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+
+  CNN::NormParameters<double> params;
+  params.numChannels = 2;
+  params.gamma = {1.0, 1.0};
+  params.beta = {0.0, 0.0};
+  params.runningMean = {0.0, 0.0};
+  params.runningVar = {1.0, 1.0};
+
+  CNN::NormLayerConfig config;
+  config.epsilon = 0.0;
+  config.momentum = 0.1;
+
+  std::vector<double> batchMean, batchVar;
+  CNN::Tensor3D<double> xNorm;
+
+  CNN::Tensor3D<double> out =
+    CNN::InstanceNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
+
+  // Per-image spatial stats: channel 0 mean=(1+2+3+4)/4=2.5, var=1.25
+  CHECK_NEAR(batchMean[0], 2.5, 1e-9, "instancenorm train mean ch0");
+  CHECK_NEAR(batchVar[0], 1.25, 1e-9, "instancenorm train var ch0");
+  CHECK_NEAR(batchMean[1], 6.5, 1e-9, "instancenorm train mean ch1");
+
+  double invStd = 1.0 / std::sqrt(1.25);
+  CHECK_NEAR(out.data[0], (1.0 - 2.5) * invStd, 1e-9, "instancenorm train out ch0 [0]");
+}
+
+//===================================================================================================================//
+
+static void testInstanceNormBackpropGradient()
+{
+  std::cout << "--- testInstanceNormBackpropGradient ---" << std::endl;
+
+  CNN::Shape3D shape{1, 1, 4};
+  CNN::Tensor3D<double> input(shape);
+  input.data = {1.0, 2.0, 3.0, 4.0};
+
+  CNN::NormParameters<double> params;
+  params.numChannels = 1;
+  params.gamma = {1.0};
+  params.beta = {0.0};
+  params.runningMean = {0.0};
+  params.runningVar = {1.0};
+
+  CNN::NormLayerConfig config;
+  config.epsilon = 1e-7;
+  config.momentum = 0.1;
+
+  std::vector<double> batchMean, batchVar;
+  CNN::Tensor3D<double> xNorm;
+  CNN::InstanceNorm<double>::propagate(input, shape, params, config, &batchMean, &batchVar, &xNorm);
+
+  CNN::Tensor3D<double> dOutput(shape);
+  dOutput.data = {0.1, 0.2, 0.3, 0.4};
+
+  std::vector<double> dGamma, dBeta;
+  CNN::Tensor3D<double> dInput =
+    CNN::InstanceNorm<double>::backpropagate(dOutput, shape, params, config, batchMean, batchVar, xNorm, dGamma, dBeta);
+
+  // Numerical gradient check
+  double eps = 1e-5;
+
+  for (ulong i = 0; i < 4; i++) {
+    CNN::Tensor3D<double> inputPlus(shape);
+    inputPlus.data = input.data;
+    inputPlus.data[i] += eps;
+    CNN::NormParameters<double> pPlus = params;
+    pPlus.runningMean = {0.0};
+    pPlus.runningVar = {1.0};
+    std::vector<double> bmP, bvP;
+    CNN::Tensor3D<double> xnP;
+    CNN::Tensor3D<double> outPlus =
+      CNN::InstanceNorm<double>::propagate(inputPlus, shape, pPlus, config, &bmP, &bvP, &xnP);
+
+    CNN::Tensor3D<double> inputMinus(shape);
+    inputMinus.data = input.data;
+    inputMinus.data[i] -= eps;
+    CNN::NormParameters<double> pMinus = params;
+    pMinus.runningMean = {0.0};
+    pMinus.runningVar = {1.0};
+    std::vector<double> bmM, bvM;
+    CNN::Tensor3D<double> xnM;
+    CNN::Tensor3D<double> outMinus =
+      CNN::InstanceNorm<double>::propagate(inputMinus, shape, pMinus, config, &bmM, &bvM, &xnM);
+
+    double numGrad = 0.0;
+
+    for (ulong j = 0; j < 4; j++)
+      numGrad += dOutput.data[j] * (outPlus.data[j] - outMinus.data[j]) / (2.0 * eps);
+
+    CHECK_NEAR(dInput.data[i], numGrad, 1e-4, "instancenorm numerical gradient check");
+  }
+}
+
+//===================================================================================================================//
+
+static void testInstanceNormValidateShapes()
+{
+  std::cout << "--- testInstanceNormValidateShapes ---" << std::endl;
+
+  CNN::LayersConfig lc;
+
+  CNN::CNNLayerConfig conv1;
+  conv1.type = CNN::LayerType::CONV;
+  conv1.config = CNN::ConvLayerConfig{4, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+  CNN::CNNLayerConfig in;
+  in.type = CNN::LayerType::INSTANCENORM;
+  in.config = CNN::NormLayerConfig{};
+
+  CNN::CNNLayerConfig relu1;
+  relu1.type = CNN::LayerType::RELU;
+  relu1.config = CNN::ReLULayerConfig{};
+
+  CNN::CNNLayerConfig flatten;
+  flatten.type = CNN::LayerType::FLATTEN;
+  flatten.config = CNN::FlattenLayerConfig{};
+
+  lc.cnnLayers = {conv1, in, relu1, flatten};
+
+  // 1x8x8 → Conv(4,3x3,valid) → 4x6x6 → IN → 4x6x6 → ReLU → 4x6x6
+  CNN::Shape3D outShape = lc.validateShapes({1, 8, 8});
+  CHECK(outShape.c == 4 && outShape.h == 6 && outShape.w == 6, "validateShapes with instancenorm");
+}
+
+//===================================================================================================================//
+//-- True BatchNorm tests (normalizes across N samples × H × W per channel) --//
+//===================================================================================================================//
+
+static void testTrueBatchNormForward()
+{
+  std::cout << "--- testTrueBatchNormForward ---" << std::endl;
+
+  // N=3, C=2, H=2, W=2
+  CNN::Shape3D shape{2, 2, 2};
+
+  std::vector<CNN::Tensor3D<double>> inputs(3, CNN::Tensor3D<double>(shape));
+  // Sample 0: ch0=[1,2,3,4]  ch1=[13,14,15,16]
+  inputs[0].data = {1.0, 2.0, 3.0, 4.0, 13.0, 14.0, 15.0, 16.0};
+  // Sample 1: ch0=[5,6,7,8]  ch1=[17,18,19,20]
+  inputs[1].data = {5.0, 6.0, 7.0, 8.0, 17.0, 18.0, 19.0, 20.0};
+  // Sample 2: ch0=[9,10,11,12] ch1=[21,22,23,24]
+  inputs[2].data = {9.0, 10.0, 11.0, 12.0, 21.0, 22.0, 23.0, 24.0};
+
+  CNN::NormParameters<double> params;
+  params.numChannels = 2;
+  params.gamma = {1.0, 1.0};
+  params.beta = {0.0, 0.0};
+  params.runningMean = {0.0, 0.0};
+  params.runningVar = {1.0, 1.0};
+
+  CNN::NormLayerConfig config;
+  config.epsilon = 0.0;
+  config.momentum = 0.1;
+
+  std::vector<double> batchMean, batchVar;
+  std::vector<CNN::Tensor3D<double>> xNorms;
+
+  std::vector<CNN::Tensor3D<double>> outputs =
+    CNN::BatchNorm<double>::propagate(inputs, shape, params, config, &batchMean, &batchVar, &xNorms);
+
+  CHECK(outputs.size() == 3, "batchnorm forward N=3 outputs");
+
+  // Channel 0: all values 1..12, mean = (1+2+...+12)/12 = 78/12 = 6.5
+  CHECK_NEAR(batchMean[0], 6.5, 1e-9, "true batchnorm mean ch0");
+
+  // Channel 1: all values 13..24, mean = (13+14+...+24)/12 = 222/12 = 18.5
+  CHECK_NEAR(batchMean[1], 18.5, 1e-9, "true batchnorm mean ch1");
+
+  // Channel 0 variance: sum of (x - 6.5)² / 12
+  // Deviations: -5.5, -4.5, -3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5
+  // Sum of squares: 2*(30.25+20.25+12.25+6.25+2.25+0.25) = 2*71.5 = 143.0
+  // Var = 143.0/12 ≈ 11.9167
+  CHECK_NEAR(batchVar[0], 143.0 / 12.0, 1e-9, "true batchnorm var ch0");
+
+  // Channel 1 has same variance (same pattern shifted by 12)
+  CHECK_NEAR(batchVar[1], 143.0 / 12.0, 1e-9, "true batchnorm var ch1");
+
+  // Output check: with gamma=1, beta=0, out = (x - mean) / sqrt(var)
+  double invStd = 1.0 / std::sqrt(143.0 / 12.0);
+  CHECK_NEAR(outputs[0].data[0], (1.0 - 6.5) * invStd, 1e-9, "true batchnorm out s0 ch0 [0]");
+  CHECK_NEAR(outputs[1].data[0], (5.0 - 6.5) * invStd, 1e-9, "true batchnorm out s1 ch0 [0]");
+  CHECK_NEAR(outputs[2].data[4], (21.0 - 18.5) * invStd, 1e-9, "true batchnorm out s2 ch1 [0]");
+
+  // Running stats updated: runningMean = 0.9*0 + 0.1*6.5 = 0.65
+  CHECK_NEAR(params.runningMean[0], 0.65, 1e-7, "true batchnorm runningMean updated ch0");
+  CHECK_NEAR(params.runningMean[1], 1.85, 1e-7, "true batchnorm runningMean updated ch1");
+}
+
+//===================================================================================================================//
+
+static void testTrueBatchNormBackprop()
+{
+  std::cout << "--- testTrueBatchNormBackprop ---" << std::endl;
+
+  // N=2, C=1, H=1, W=4
+  CNN::Shape3D shape{1, 1, 4};
+
+  std::vector<CNN::Tensor3D<double>> inputs(2, CNN::Tensor3D<double>(shape));
+  inputs[0].data = {1.0, 2.0, 3.0, 4.0};
+  inputs[1].data = {5.0, 6.0, 7.0, 8.0};
+
+  CNN::NormParameters<double> params;
+  params.numChannels = 1;
+  params.gamma = {2.0};
+  params.beta = {0.5};
+  params.runningMean = {0.0};
+  params.runningVar = {1.0};
+
+  CNN::NormLayerConfig config;
+  config.epsilon = 0.0;
+  config.momentum = 0.1;
+
+  // Forward pass
+  std::vector<double> batchMean, batchVar;
+  std::vector<CNN::Tensor3D<double>> xNorms;
+  CNN::BatchNorm<double>::propagate(inputs, shape, params, config, &batchMean, &batchVar, &xNorms);
+
+  // Mean = (1+2+...+8)/8 = 4.5
+  CHECK_NEAR(batchMean[0], 4.5, 1e-9, "true bn backprop setup mean");
+
+  // Uniform gradient
+  std::vector<CNN::Tensor3D<double>> dOutputs(2, CNN::Tensor3D<double>(shape, 1.0));
+
+  std::vector<double> dGamma, dBeta;
+  std::vector<CNN::Tensor3D<double>> dInputs =
+    CNN::BatchNorm<double>::backpropagate(dOutputs, shape, params, config, batchMean, batchVar, xNorms, dGamma, dBeta);
+
+  CHECK(dInputs.size() == 2, "true bn backprop N=2 outputs");
+
+  // dBeta = sum of all dOut = 8.0 (N*H*W = 2*1*4 = 8)
+  CHECK_NEAR(dBeta[0], 8.0, 1e-9, "true bn backprop dBeta");
+
+  // dGamma = sum(dOut * xNorm) = sum(xNorm) = 0 (by construction, xNorm sums to 0)
+  CHECK_NEAR(dGamma[0], 0.0, 1e-9, "true bn backprop dGamma");
+
+  // With uniform dOut=1 and dGamma=0: dInput = 0
+  for (ulong s = 0; s < 2; s++)
+
+    for (ulong i = 0; i < 4; i++)
+      CHECK_NEAR(dInputs[s].data[i], 0.0, 1e-9, "true bn backprop dInput uniform=0");
+}
+
+//===================================================================================================================//
+
+static void testTrueBatchNormGradientCheck()
+{
+  std::cout << "--- testTrueBatchNormGradientCheck ---" << std::endl;
+
+  // Numerical gradient check for true BatchNorm
+  CNN::Shape3D shape{1, 1, 4};
+  ulong N = 2;
+
+  std::vector<CNN::Tensor3D<double>> inputs(N, CNN::Tensor3D<double>(shape));
+  inputs[0].data = {1.0, 2.0, 3.0, 4.0};
+  inputs[1].data = {5.0, 6.0, 7.0, 8.0};
+
+  CNN::NormParameters<double> params;
+  params.numChannels = 1;
+  params.gamma = {1.0};
+  params.beta = {0.0};
+  params.runningMean = {0.0};
+  params.runningVar = {1.0};
+
+  CNN::NormLayerConfig config;
+  config.epsilon = 1e-7;
+  config.momentum = 0.1;
+
+  // Forward
+  std::vector<double> batchMean, batchVar;
+  std::vector<CNN::Tensor3D<double>> xNorms;
+  CNN::BatchNorm<double>::propagate(inputs, shape, params, config, &batchMean, &batchVar, &xNorms);
+
+  // Non-uniform upstream gradient
+  std::vector<CNN::Tensor3D<double>> dOutputs(N, CNN::Tensor3D<double>(shape));
+  dOutputs[0].data = {0.1, 0.2, 0.3, 0.4};
+  dOutputs[1].data = {0.5, 0.6, 0.7, 0.8};
+
+  std::vector<double> dGamma, dBeta;
+  std::vector<CNN::Tensor3D<double>> dInputs =
+    CNN::BatchNorm<double>::backpropagate(dOutputs, shape, params, config, batchMean, batchVar, xNorms, dGamma, dBeta);
+
+  double eps = 1e-5;
+
+  // Check gradient for each element in each sample
+  for (ulong s = 0; s < N; s++) {
+    for (ulong i = 0; i < 4; i++) {
+      // Perturb input[s][i] by +eps
+      std::vector<CNN::Tensor3D<double>> inputsPlus = inputs;
+      inputsPlus[s].data[i] += eps;
+      CNN::NormParameters<double> pPlus = params;
+      pPlus.runningMean = {0.0};
+      pPlus.runningVar = {1.0};
+      std::vector<double> bmP, bvP;
+      std::vector<CNN::Tensor3D<double>> xnP;
+      auto outPlus = CNN::BatchNorm<double>::propagate(inputsPlus, shape, pPlus, config, &bmP, &bvP, &xnP);
+
+      // Perturb input[s][i] by -eps
+      std::vector<CNN::Tensor3D<double>> inputsMinus = inputs;
+      inputsMinus[s].data[i] -= eps;
+      CNN::NormParameters<double> pMinus = params;
+      pMinus.runningMean = {0.0};
+      pMinus.runningVar = {1.0};
+      std::vector<double> bmM, bvM;
+      std::vector<CNN::Tensor3D<double>> xnM;
+      auto outMinus = CNN::BatchNorm<double>::propagate(inputsMinus, shape, pMinus, config, &bmM, &bvM, &xnM);
+
+      // Numerical gradient: sum over all samples and elements of dOut * (outPlus - outMinus) / (2*eps)
+      double numGrad = 0.0;
+
+      for (ulong s2 = 0; s2 < N; s2++)
+
+        for (ulong j = 0; j < 4; j++)
+          numGrad += dOutputs[s2].data[j] * (outPlus[s2].data[j] - outMinus[s2].data[j]) / (2.0 * eps);
+
+      CHECK_NEAR(dInputs[s].data[i], numGrad, 1e-4, "true batchnorm numerical gradient check");
+    }
+  }
+}
+
+//===================================================================================================================//
+
+static void testTrueBatchNormInference()
+{
+  std::cout << "--- testTrueBatchNormInference ---" << std::endl;
+
+  // Inference uses running stats (same behavior for single image)
+  CNN::Shape3D shape{2, 2, 2};
+  CNN::Tensor3D<double> input(shape);
+  input.data = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+
+  CNN::NormParameters<double> params;
+  params.numChannels = 2;
+  params.gamma = {2.0, 0.5};
+  params.beta = {1.0, -1.0};
+  params.runningMean = {2.5, 6.5};
+  params.runningVar = {1.25, 1.25};
+
+  CNN::NormLayerConfig config;
+  config.epsilon = 0.0;
+
+  CNN::Tensor3D<double> out = CNN::BatchNorm<double>::propagate({input}, shape, params, config)[0];
+
+  double invStd0 = 1.0 / std::sqrt(1.25);
+  CHECK_NEAR(out.data[0], 2.0 * (1.0 - 2.5) * invStd0 + 1.0, 1e-9, "true bn inference ch0 [0]");
+  CHECK_NEAR(out.data[4], 0.5 * (5.0 - 6.5) * invStd0 - 1.0, 1e-9, "true bn inference ch1 [0]");
+}
+
+//===================================================================================================================//
+
+static void testTrueBatchNormValidateShapes()
+{
+  std::cout << "--- testTrueBatchNormValidateShapes ---" << std::endl;
+
+  CNN::LayersConfig lc;
+
+  CNN::CNNLayerConfig conv1;
+  conv1.type = CNN::LayerType::CONV;
+  conv1.config = CNN::ConvLayerConfig{4, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+  CNN::CNNLayerConfig bn;
+  bn.type = CNN::LayerType::BATCHNORM;
+  bn.config = CNN::NormLayerConfig{};
+
+  CNN::CNNLayerConfig relu1;
+  relu1.type = CNN::LayerType::RELU;
+  relu1.config = CNN::ReLULayerConfig{};
+
+  CNN::CNNLayerConfig flatten;
+  flatten.type = CNN::LayerType::FLATTEN;
+  flatten.config = CNN::FlattenLayerConfig{};
+
+  lc.cnnLayers = {conv1, bn, relu1, flatten};
+
+  // 1x8x8 → Conv(4,3x3,valid) → 4x6x6 → BN → 4x6x6 → ReLU → 4x6x6
+  CNN::Shape3D outShape = lc.validateShapes({1, 8, 8});
+  CHECK(outShape.c == 4 && outShape.h == 6 && outShape.w == 6, "validateShapes with true batchnorm");
+}
+
+//===================================================================================================================//
+
 void runLayerTests()
 {
   testTensor3D();
@@ -590,12 +1016,25 @@ void runLayerTests()
   testAvgPool();
   testPoolNonSquare();
   testFlatten();
+  // Legacy BatchNorm tests (current implementation — will use old API until rename)
   testBatchNormInference();
   testBatchNormTraining();
   testBatchNormBackpropagate();
   testBatchNormBackpropGradient();
   testBatchNormOutputShape();
   testBatchNormValidateShapes();
+  // InstanceNorm tests (renamed from BatchNorm — per-image spatial normalization)
+  testInstanceNormInference();
+  testInstanceNormTraining();
+  testInstanceNormBackpropGradient();
+  testInstanceNormValidateShapes();
+  // True BatchNorm tests (per-batch normalization across N samples)
+  testTrueBatchNormForward();
+  testTrueBatchNormBackprop();
+  testTrueBatchNormGradientCheck();
+  testTrueBatchNormInference();
+  testTrueBatchNormValidateShapes();
+  // String/enum conversion tests
   testSlidingStrategy();
   testDeviceNameToType();
   testModeNameToType();

@@ -81,10 +81,10 @@ void Worker<T>::initializeConvParams(const LayersConfig& layersConfig, const Sha
 //===================================================================================================================//
 
 template <typename T>
-void Worker<T>::initializeBatchNormParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
-                                          Parameters<T>& parameters)
+void Worker<T>::initializeNormParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
+                                     Parameters<T>& parameters)
 {
-  ulong bnIdx = 0;
+  ulong normIdx = 0;
   Shape3D currentShape = inputShape;
 
   for (const auto& layerConfig : layersConfig.cnnLayers) {
@@ -107,27 +107,28 @@ void Worker<T>::initializeBatchNormParams(const LayersConfig& layersConfig, cons
       break;
     }
 
-    case LayerType::BATCHNORM: {
+    case LayerType::BATCHNORM:
+    case LayerType::INSTANCENORM: {
       ulong numChannels = currentShape.c;
 
       // Check if parameters already loaded
-      if (bnIdx < parameters.bnParams.size() && !parameters.bnParams[bnIdx].gamma.empty()) {
-        bnIdx++;
+      if (normIdx < parameters.normParams.size() && !parameters.normParams[normIdx].gamma.empty()) {
+        normIdx++;
         break;
       }
 
-      // Ensure bnParams vector is large enough
-      if (bnIdx >= parameters.bnParams.size()) {
-        parameters.bnParams.resize(bnIdx + 1);
+      // Ensure normParams vector is large enough
+      if (normIdx >= parameters.normParams.size()) {
+        parameters.normParams.resize(normIdx + 1);
       }
 
-      BatchNormParameters<T>& bp = parameters.bnParams[bnIdx];
-      bp.numChannels = numChannels;
-      bp.gamma.assign(numChannels, static_cast<T>(1)); // Initialize scale to 1
-      bp.beta.assign(numChannels, static_cast<T>(0)); // Initialize shift to 0
-      bp.runningMean.assign(numChannels, static_cast<T>(0));
-      bp.runningVar.assign(numChannels, static_cast<T>(1));
-      bnIdx++;
+      NormParameters<T>& np = parameters.normParams[normIdx];
+      np.numChannels = numChannels;
+      np.gamma.assign(numChannels, static_cast<T>(1)); // Initialize scale to 1
+      np.beta.assign(numChannels, static_cast<T>(0)); // Initialize shift to 0
+      np.runningMean.assign(numChannels, static_cast<T>(0));
+      np.runningVar.assign(numChannels, static_cast<T>(1));
+      normIdx++;
       break;
     }
 

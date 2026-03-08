@@ -3,12 +3,10 @@
 #include <ANN_Core.hpp>
 
 #include <QDebug>
-#include <QMutex>
 #include <QThreadPool>
 #include <QtConcurrent>
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
 #include <numeric>
 #include <random>
@@ -24,8 +22,8 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
   // Initialize conv parameters if not loaded
   Worker<T>::initializeConvParams(this->layersConfig, this->inputShape, this->parameters);
 
-  // Initialize batch norm parameters if not loaded
-  Worker<T>::initializeBatchNormParams(this->layersConfig, this->inputShape, this->parameters);
+  // Initialize normalization parameters if not loaded
+  Worker<T>::initializeNormParams(this->layersConfig, this->inputShape, this->parameters);
 
   // Create the step worker (used for predict and single-threaded paths)
   bool allocateTraining = (this->modeType == ModeType::TRAIN);
@@ -41,16 +39,16 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
       this->accumDConvBiases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
     }
 
-    this->accumDBNGamma.resize(this->parameters.bnParams.size());
-    this->accumDBNBeta.resize(this->parameters.bnParams.size());
-    this->accumBNMean.resize(this->parameters.bnParams.size());
-    this->accumBNVar.resize(this->parameters.bnParams.size());
+    this->accumDNormGamma.resize(this->parameters.normParams.size());
+    this->accumDNormBeta.resize(this->parameters.normParams.size());
+    this->accumNormMean.resize(this->parameters.normParams.size());
+    this->accumNormVar.resize(this->parameters.normParams.size());
 
-    for (ulong i = 0; i < this->parameters.bnParams.size(); i++) {
-      this->accumDBNGamma[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
-      this->accumDBNBeta[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
-      this->accumBNMean[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
-      this->accumBNVar[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
+    for (ulong i = 0; i < this->parameters.normParams.size(); i++) {
+      this->accumDNormGamma[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+      this->accumDNormBeta[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+      this->accumNormMean[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+      this->accumNormVar[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
     }
 
     if (this->trainingConfig.optimizer.type == OptimizerType::ADAM) {
@@ -77,11 +75,11 @@ void CoreCPU<T>::resetGlobalCNNAccumulators()
     std::fill(this->accumDConvBiases[i].begin(), this->accumDConvBiases[i].end(), static_cast<T>(0));
   }
 
-  for (ulong i = 0; i < this->accumDBNGamma.size(); i++) {
-    std::fill(this->accumDBNGamma[i].begin(), this->accumDBNGamma[i].end(), static_cast<T>(0));
-    std::fill(this->accumDBNBeta[i].begin(), this->accumDBNBeta[i].end(), static_cast<T>(0));
-    std::fill(this->accumBNMean[i].begin(), this->accumBNMean[i].end(), static_cast<T>(0));
-    std::fill(this->accumBNVar[i].begin(), this->accumBNVar[i].end(), static_cast<T>(0));
+  for (ulong i = 0; i < this->accumDNormGamma.size(); i++) {
+    std::fill(this->accumDNormGamma[i].begin(), this->accumDNormGamma[i].end(), static_cast<T>(0));
+    std::fill(this->accumDNormBeta[i].begin(), this->accumDNormBeta[i].end(), static_cast<T>(0));
+    std::fill(this->accumNormMean[i].begin(), this->accumNormMean[i].end(), static_cast<T>(0));
+    std::fill(this->accumNormVar[i].begin(), this->accumNormVar[i].end(), static_cast<T>(0));
   }
 }
 
@@ -101,55 +99,53 @@ void CoreCPU<T>::mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker)
       this->accumDConvBiases[i][j] += wBiases[i][j];
   }
 
-  const auto& wBNGamma = worker.getAccumBNGamma();
-  const auto& wBNBeta = worker.getAccumBNBeta();
+  const auto& wNormGamma = worker.getAccumNormGamma();
+  const auto& wNormBeta = worker.getAccumNormBeta();
 
-  for (ulong i = 0; i < wBNGamma.size(); i++) {
-    for (ulong j = 0; j < wBNGamma[i].size(); j++)
-      this->accumDBNGamma[i][j] += wBNGamma[i][j];
+  for (ulong i = 0; i < wNormGamma.size(); i++) {
+    for (ulong j = 0; j < wNormGamma[i].size(); j++)
+      this->accumDNormGamma[i][j] += wNormGamma[i][j];
 
-    for (ulong j = 0; j < wBNBeta[i].size(); j++)
-      this->accumDBNBeta[i][j] += wBNBeta[i][j];
+    for (ulong j = 0; j < wNormBeta[i].size(); j++)
+      this->accumDNormBeta[i][j] += wNormBeta[i][j];
   }
 
-  const auto& wBNMean = worker.getAccumBNMean();
-  const auto& wBNVar = worker.getAccumBNVar();
+  const auto& wNormMean = worker.getAccumNormMean();
+  const auto& wNormVar = worker.getAccumNormVar();
 
-  for (ulong i = 0; i < wBNMean.size(); i++) {
-    for (ulong j = 0; j < wBNMean[i].size(); j++)
-      this->accumBNMean[i][j] += wBNMean[i][j];
+  for (ulong i = 0; i < wNormMean.size(); i++) {
+    for (ulong j = 0; j < wNormMean[i].size(); j++)
+      this->accumNormMean[i][j] += wNormMean[i][j];
 
-    for (ulong j = 0; j < wBNVar[i].size(); j++)
-      this->accumBNVar[i][j] += wBNVar[i][j];
+    for (ulong j = 0; j < wNormVar[i].size(); j++)
+      this->accumNormVar[i][j] += wNormVar[i][j];
   }
 }
 
 //===================================================================================================================//
 
 template <typename T>
-void CoreCPU<T>::updateBNRunningStats(ulong numSamples)
+void CoreCPU<T>::updateNormRunningStats(ulong numSamples)
 {
-  T momentum = static_cast<T>(0.1); // Default momentum
-
-  // Get momentum from the first BN layer config
-  for (const auto& layerConfig : this->layersConfig.cnnLayers) {
-    if (layerConfig.type == LayerType::BATCHNORM) {
-      const auto& bn = std::get<BatchNormLayerConfig>(layerConfig.config);
-      momentum = static_cast<T>(bn.momentum);
-      break;
-    }
-  }
-
   T n = static_cast<T>(numSamples);
 
-  for (ulong i = 0; i < this->parameters.bnParams.size(); i++) {
-    for (ulong j = 0; j < this->parameters.bnParams[i].numChannels; j++) {
-      T avgMean = this->accumBNMean[i][j] / n;
-      T avgVar = this->accumBNVar[i][j] / n;
-      this->parameters.bnParams[i].runningMean[j] =
-        (static_cast<T>(1) - momentum) * this->parameters.bnParams[i].runningMean[j] + momentum * avgMean;
-      this->parameters.bnParams[i].runningVar[j] =
-        (static_cast<T>(1) - momentum) * this->parameters.bnParams[i].runningVar[j] + momentum * avgVar;
+  ulong normIdx = 0;
+
+  for (const auto& layerConfig : this->layersConfig.cnnLayers) {
+    if (layerConfig.type == LayerType::BATCHNORM || layerConfig.type == LayerType::INSTANCENORM) {
+      const auto& normConfig = std::get<NormLayerConfig>(layerConfig.config);
+      T momentum = static_cast<T>(normConfig.momentum);
+
+      for (ulong j = 0; j < this->parameters.normParams[normIdx].numChannels; j++) {
+        T avgMean = this->accumNormMean[normIdx][j] / n;
+        T avgVar = this->accumNormVar[normIdx][j] / n;
+        this->parameters.normParams[normIdx].runningMean[j] =
+          (static_cast<T>(1) - momentum) * this->parameters.normParams[normIdx].runningMean[j] + momentum * avgMean;
+        this->parameters.normParams[normIdx].runningVar[j] =
+          (static_cast<T>(1) - momentum) * this->parameters.normParams[normIdx].runningVar[j] + momentum * avgVar;
+      }
+
+      normIdx++;
     }
   }
 }
@@ -173,18 +169,18 @@ void CoreCPU<T>::allocateAdamState()
     this->adam_v_biases[i].resize(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
   }
 
-  ulong numBNLayers = this->parameters.bnParams.size();
+  ulong numNormLayers = this->parameters.normParams.size();
 
-  this->adam_m_bn_gamma.resize(numBNLayers);
-  this->adam_v_bn_gamma.resize(numBNLayers);
-  this->adam_m_bn_beta.resize(numBNLayers);
-  this->adam_v_bn_beta.resize(numBNLayers);
+  this->adam_m_norm_gamma.resize(numNormLayers);
+  this->adam_v_norm_gamma.resize(numNormLayers);
+  this->adam_m_norm_beta.resize(numNormLayers);
+  this->adam_v_norm_beta.resize(numNormLayers);
 
-  for (ulong i = 0; i < numBNLayers; i++) {
-    this->adam_m_bn_gamma[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
-    this->adam_v_bn_gamma[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
-    this->adam_m_bn_beta[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
-    this->adam_v_bn_beta[i].resize(this->parameters.bnParams[i].numChannels, static_cast<T>(0));
+  for (ulong i = 0; i < numNormLayers; i++) {
+    this->adam_m_norm_gamma[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+    this->adam_v_norm_gamma[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+    this->adam_m_norm_beta[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+    this->adam_v_norm_beta[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
   }
 
   this->adam_t = 0;
@@ -229,23 +225,23 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples)
       }
     }
 
-    for (ulong i = 0; i < this->parameters.bnParams.size(); i++) {
-      for (ulong j = 0; j < this->parameters.bnParams[i].numChannels; j++) {
-        T g = this->accumDBNGamma[i][j] / n;
-        this->adam_m_bn_gamma[i][j] = beta1 * this->adam_m_bn_gamma[i][j] + (static_cast<T>(1) - beta1) * g;
-        this->adam_v_bn_gamma[i][j] = beta2 * this->adam_v_bn_gamma[i][j] + (static_cast<T>(1) - beta2) * g * g;
-        T m_hat = this->adam_m_bn_gamma[i][j] / bc1;
-        T v_hat = this->adam_v_bn_gamma[i][j] / bc2;
-        this->parameters.bnParams[i].gamma[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
+    for (ulong i = 0; i < this->parameters.normParams.size(); i++) {
+      for (ulong j = 0; j < this->parameters.normParams[i].numChannels; j++) {
+        T g = this->accumDNormGamma[i][j] / n;
+        this->adam_m_norm_gamma[i][j] = beta1 * this->adam_m_norm_gamma[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_norm_gamma[i][j] = beta2 * this->adam_v_norm_gamma[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        T m_hat = this->adam_m_norm_gamma[i][j] / bc1;
+        T v_hat = this->adam_v_norm_gamma[i][j] / bc2;
+        this->parameters.normParams[i].gamma[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
       }
 
-      for (ulong j = 0; j < this->parameters.bnParams[i].numChannels; j++) {
-        T g = this->accumDBNBeta[i][j] / n;
-        this->adam_m_bn_beta[i][j] = beta1 * this->adam_m_bn_beta[i][j] + (static_cast<T>(1) - beta1) * g;
-        this->adam_v_bn_beta[i][j] = beta2 * this->adam_v_bn_beta[i][j] + (static_cast<T>(1) - beta2) * g * g;
-        T m_hat = this->adam_m_bn_beta[i][j] / bc1;
-        T v_hat = this->adam_v_bn_beta[i][j] / bc2;
-        this->parameters.bnParams[i].beta[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
+      for (ulong j = 0; j < this->parameters.normParams[i].numChannels; j++) {
+        T g = this->accumDNormBeta[i][j] / n;
+        this->adam_m_norm_beta[i][j] = beta1 * this->adam_m_norm_beta[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_norm_beta[i][j] = beta2 * this->adam_v_norm_beta[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        T m_hat = this->adam_m_norm_beta[i][j] / bc1;
+        T v_hat = this->adam_v_norm_beta[i][j] / bc2;
+        this->parameters.normParams[i].beta[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
       }
     }
   } else {
@@ -260,13 +256,13 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples)
       }
     }
 
-    for (ulong i = 0; i < this->parameters.bnParams.size(); i++) {
-      for (ulong j = 0; j < this->parameters.bnParams[i].numChannels; j++) {
-        this->parameters.bnParams[i].gamma[j] -= lr * (this->accumDBNGamma[i][j] / n);
+    for (ulong i = 0; i < this->parameters.normParams.size(); i++) {
+      for (ulong j = 0; j < this->parameters.normParams[i].numChannels; j++) {
+        this->parameters.normParams[i].gamma[j] -= lr * (this->accumDNormGamma[i][j] / n);
       }
 
-      for (ulong j = 0; j < this->parameters.bnParams[i].numChannels; j++) {
-        this->parameters.bnParams[i].beta[j] -= lr * (this->accumDBNBeta[i][j] / n);
+      for (ulong j = 0; j < this->parameters.normParams[i].numChannels; j++) {
+        this->parameters.normParams[i].beta[j] -= lr * (this->accumDNormBeta[i][j] / n);
       }
     }
   }
@@ -282,26 +278,11 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   if (numSamples == 0)
     throw std::runtime_error("No training samples provided");
 
-  int numThreads = this->numThreads;
-
-  if (numThreads <= 0)
-    numThreads = QThreadPool::globalInstance()->maxThreadCount();
-
   ulong batchSize = this->trainingConfig.batchSize;
   this->trainingStart(numSamples);
 
   if (this->logLevel >= CNN::LogLevel::INFO)
-    qDebug() << "CNN Training:" << numEpochs << "epochs," << numSamples << "samples," << numThreads
-             << "threads, batch size" << batchSize;
-
-  // Create per-thread CoreCPUWorkers (each owns its own ANN core)
-  std::vector<std::unique_ptr<CoreCPUWorker<T>>> workers;
-
-  for (int i = 0; i < numThreads; i++) {
-    workers.push_back(std::make_unique<CoreCPUWorker<T>>(this->coreConfig, this->layersConfig, this->parameters, true));
-  }
-
-  QMutex callbackMutex;
+    qDebug() << "CNN Training:" << numEpochs << "epochs," << numSamples << "samples, batch size" << batchSize;
 
   // Sample index indirection for shuffling
   std::vector<ulong> sampleIndices(numSamples);
@@ -316,7 +297,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 
   for (ulong e = 0; e < numEpochs; e++) {
     T epochLoss = static_cast<T>(0);
-    std::atomic<ulong> completedSamples{0};
+    ulong completedSamples = 0;
 
     if (this->trainingConfig.shuffleSamples) {
       std::shuffle(sampleIndices.begin(), sampleIndices.end(), rng);
@@ -330,110 +311,41 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 
       Samples<T> batchSamples = sampleProvider(sampleIndices, batchSize, batchIndex);
 
-      // Per-worker sample counts (extras distributed to first workers)
-      std::vector<ulong> workerSampleCounts(numThreads);
+      // Batch processing: single worker processes entire batch layer-by-layer.
+      // This handles all layer types uniformly — BatchNorm uses batch-wide stats,
+      // while Conv/ReLU/Pool/InstanceNorm process each sample independently.
+      this->stepWorker->resetAccumulators();
+      this->stepWorker->resetAccumLoss();
 
-      for (int i = 0; i < numThreads; i++)
-        workerSampleCounts[i] = currentBatchSize / static_cast<ulong>(numThreads) +
-                                (static_cast<ulong>(i) < currentBatchSize % static_cast<ulong>(numThreads) ? 1 : 0);
+      std::vector<std::pair<Input<T>, Output<T>>> batchPairs(currentBatchSize);
 
-      // Sync worker ANN cores with main parameters and reset all accumulators
-      ANN::Parameters<T> mainANNParams = this->stepWorker->getANNCore()->getParameters();
+      for (ulong s = 0; s < currentBatchSize; s++)
+        batchPairs[s] = {batchSamples[s].input, batchSamples[s].output};
 
-      for (int i = 0; i < numThreads; i++) {
-        workers[i]->getANNCore()->setParameters(mainANNParams);
-        workers[i]->resetAccumulators();
-        workers[i]->resetAccumLoss();
+      T batchLoss = this->stepWorker->processBatch(batchPairs);
+
+      completedSamples += currentBatchSize;
+
+      if (this->trainingCallback) {
+        TrainingProgress<T> progress;
+        progress.currentEpoch = e + 1;
+        progress.totalEpochs = numEpochs;
+        progress.currentSample = completedSamples;
+        progress.totalSamples = numSamples;
+        progress.sampleLoss = batchLoss / static_cast<T>(currentBatchSize);
+        progress.epochLoss = 0;
+        this->trainingCallback(progress);
       }
 
-      // Each worker processes its chunk of the batch end-to-end (fully parallel)
-      QVector<int> workerIndices(numThreads);
+      // Update ANN
+      this->stepWorker->getANNCore()->update(currentBatchSize);
 
-      for (int i = 0; i < numThreads; i++)
-        workerIndices[i] = i;
-
-      QtConcurrent::blockingMap(workerIndices, [&](int workerIdx) {
-        CoreCPUWorker<T>& worker = *workers[workerIdx];
-
-        ulong workerLocalStart = 0;
-
-        for (int i = 0; i < workerIdx; i++)
-          workerLocalStart += workerSampleCounts[i];
-        ulong workerLocalEnd = workerLocalStart + workerSampleCounts[workerIdx];
-
-        for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
-          const Sample<T>& sample = batchSamples[s];
-          T sampleLoss = worker.processSample(sample.input, sample.output);
-
-          ulong completed = ++completedSamples;
-
-          if (this->trainingCallback) {
-            QMutexLocker locker(&callbackMutex);
-            TrainingProgress<T> progress;
-            progress.currentEpoch = e + 1;
-            progress.totalEpochs = numEpochs;
-            progress.currentSample = completed;
-            progress.totalSamples = numSamples;
-            progress.sampleLoss = sampleLoss;
-            progress.epochLoss = 0;
-            this->trainingCallback(progress);
-          }
-        }
-      });
-
-      // Merge: update each worker's ANN, then weighted-average their parameters
-      for (int i = 0; i < numThreads; i++)
-
-        if (workerSampleCounts[i] > 0)
-          workers[i]->getANNCore()->update(workerSampleCounts[i]);
-
-      ANN::Parameters<T> mergedParams;
-      const ANN::Parameters<T>& ref = workers[0]->getANNCore()->getParameters();
-      mergedParams.weights.resize(ref.weights.size());
-
-      for (ulong l = 0; l < ref.weights.size(); l++) {
-        mergedParams.weights[l].resize(ref.weights[l].size());
-
-        for (ulong j = 0; j < ref.weights[l].size(); j++)
-          mergedParams.weights[l][j].assign(ref.weights[l][j].size(), static_cast<T>(0));
-      }
-
-      mergedParams.biases.resize(ref.biases.size());
-
-      for (ulong l = 0; l < ref.biases.size(); l++)
-        mergedParams.biases[l].assign(ref.biases[l].size(), static_cast<T>(0));
-
-      for (int i = 0; i < numThreads; i++) {
-        if (workerSampleCounts[i] == 0)
-          continue;
-        T w = static_cast<T>(workerSampleCounts[i]) / static_cast<T>(currentBatchSize);
-        const ANN::Parameters<T>& wp = workers[i]->getANNCore()->getParameters();
-
-        for (ulong l = 0; l < wp.weights.size(); l++)
-
-          for (ulong j = 0; j < wp.weights[l].size(); j++)
-
-            for (ulong k = 0; k < wp.weights[l][j].size(); k++)
-              mergedParams.weights[l][j][k] += wp.weights[l][j][k] * w;
-
-        for (ulong l = 0; l < wp.biases.size(); l++)
-
-          for (ulong j = 0; j < wp.biases[l].size(); j++)
-            mergedParams.biases[l][j] += wp.biases[l][j] * w;
-      }
-
-      this->stepWorker->getANNCore()->setParameters(mergedParams);
-
-      // Merge worker CNN accumulators and update CNN parameters
+      // Merge CNN accumulators and update parameters
       this->resetGlobalCNNAccumulators();
-
-      for (int i = 0; i < numThreads; i++) {
-        this->mergeWorkerCNNAccumulators(*workers[i]);
-        epochLoss += workers[i]->getAccumLoss();
-      }
-
+      this->mergeWorkerCNNAccumulators(*this->stepWorker);
+      epochLoss += this->stepWorker->getAccumLoss();
       this->updateCNNParameters(currentBatchSize);
-      this->updateBNRunningStats(currentBatchSize);
+      this->updateNormRunningStats(currentBatchSize);
     }
 
     // Sync ANN parameters for checkpoint saves

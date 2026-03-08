@@ -36,8 +36,8 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
   // Initialize conv parameters (He initialization if not loaded)
   Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
 
-  // Initialize batch norm parameters if not loaded
-  Worker<T>::initializeBatchNormParams(config.layersConfig, config.inputShape, this->parameters);
+  // Initialize normalization parameters if not loaded
+  Worker<T>::initializeNormParams(config.layersConfig, config.inputShape, this->parameters);
 
   // Create buffer manager
   this->bufferManager =
@@ -53,7 +53,7 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
   this->bufferManager->buildANNWorker();
 
   // Allocate CNN GPU buffers and write initial parameters
-  this->bufferManager->allocateBuffers();
+  this->bufferManager->allocateBuffers(config.trainingConfig.batchSize);
 
   // Create kernel builder
   this->kernelBuilder =
@@ -74,8 +74,8 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config, OpenCLWrapper::Core
   // Initialize conv parameters (He initialization if not loaded)
   Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
 
-  // Initialize batch norm parameters if not loaded
-  Worker<T>::initializeBatchNormParams(config.layersConfig, config.inputShape, this->parameters);
+  // Initialize normalization parameters if not loaded
+  Worker<T>::initializeNormParams(config.layersConfig, config.inputShape, this->parameters);
 
   // Create buffer manager
   this->bufferManager =
@@ -124,41 +124,56 @@ template <typename T>
 T CoreGPUWorker<T>::trainSubset(const Samples<T>& batchSamples, ulong totalSamples, ulong epoch, ulong totalEpochs,
                                 const TrainingCallback<T>& callback)
 {
-  ulong numSamplesInSubset = batchSamples.size();
-
-  T subsetLoss = static_cast<T>(0);
+  ulong batchSize = batchSamples.size();
+  ulong sampleStride = this->bufferManager->totalActvSize;
+  bool useCache = (batchSize == this->cachedBatchSize);
 
   // Reset CNN and ANN accumulators
   this->bufferManager->resetAccumulators();
 
-  // Set up training kernels once (full propagate + backpropagate + accumulate pipeline)
-  if (!this->kernelBuilder->trainingKernelsSetup) {
-    this->kernelBuilder->setupTrainingKernels();
-  }
-
-  // Zero the GPU loss accumulator once per subset
+  // Zero the GPU loss accumulator
   T zeroVal = static_cast<T>(0);
   this->core->template fillBuffer<T>("accum_loss", zeroVal, 1);
 
-  for (ulong s = 0; s < numSamplesInSubset; s++) {
-    const Sample<T>& sample = batchSamples[s];
+  // Phase 1: Write all N inputs to GPU at sample-specific offsets
+  for (ulong s = 0; s < batchSize; s++) {
+    ulong writeOffset = s * sampleStride;
+    std::vector<T> inputVec(batchSamples[s].input.data.begin(), batchSamples[s].input.data.end());
+    this->core->template writeBuffer<T>("cnn_actvs", inputVec, writeOffset);
+  }
 
-    // Write CNN input to GPU
-    std::vector<T> inputVec(sample.input.data.begin(), sample.input.data.end());
-    this->core->template writeBuffer<T>("cnn_actvs", inputVec, 0);
+  // Phase 2: CNN forward for all N samples (layer-by-layer, batch-aware)
+  if (useCache) {
+    this->core->restoreKernels(this->cachedForwardKernels);
+  } else {
+    this->kernelBuilder->setupBatchForwardKernels();
+    this->cachedForwardKernels = this->core->saveKernels();
+    this->cachedANNKernels.resize(batchSize);
+  }
 
-    // Write ANN expected output to GPU (for loss computation in backpropagation)
-    std::vector<T> expectedVec(sample.output.begin(), sample.output.end());
+  this->core->run();
+
+  // Phase 3: Per-sample ANN forward + backward + reverse bridge + accumulate + loss
+  for (ulong s = 0; s < batchSize; s++) {
+    // Write ANN expected output for this sample
+    std::vector<T> expectedVec(batchSamples[s].output.begin(), batchSamples[s].output.end());
     this->core->template writeBuffer<T>("outputs", expectedVec, 0);
 
     // Generate and upload dropout mask for ANN dense layers (different mask per sample)
     if (this->bufferManager->annGPUWorker->bufferManager->hasDropout)
       this->bufferManager->annGPUWorker->bufferManager->generateAndUploadDropoutMask();
 
-    // Single run: CNN propagate → bridge → ANN propagate → ANN backpropagate → reverse bridge → CNN backpropagate → accumulate → loss
+    // Set up and run per-sample ANN pipeline
+    if (useCache) {
+      this->core->restoreKernels(this->cachedANNKernels[s]);
+    } else {
+      this->kernelBuilder->setupPerSampleANNKernels(s);
+      this->cachedANNKernels[s] = this->core->saveKernels();
+    }
+
     this->core->run();
 
-    // Report progress (no per-sample loss — accumulated on GPU)
+    // Report progress
     if (callback) {
       TrainingProgress<T> progress;
       progress.currentEpoch = epoch;
@@ -171,12 +186,22 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& batchSamples, ulong totalSampl
     }
   }
 
-  // Read accumulated loss from GPU once per subset
+  // Phase 4: CNN backward for all N samples + accumulate
+  if (useCache) {
+    this->core->restoreKernels(this->cachedBackwardKernels);
+  } else {
+    this->kernelBuilder->setupBatchBackwardKernels();
+    this->cachedBackwardKernels = this->core->saveKernels();
+    this->cachedBatchSize = batchSize;
+  }
+
+  this->core->run();
+
+  // Read accumulated loss from GPU
   std::vector<T> lossVec(1);
   this->core->template readBuffer<T>("accum_loss", lossVec, 0);
-  subsetLoss = lossVec[0];
 
-  return subsetLoss;
+  return lossVec[0];
 }
 
 //===================================================================================================================//
@@ -212,25 +237,9 @@ std::pair<T, ulong> CoreGPUWorker<T>::testSubset(const Samples<T>& samples, ulon
 template <typename T>
 void CoreGPUWorker<T>::backpropagateSample(const Input<T>& input, const Output<T>& expected)
 {
-  // Set up full training pipeline if needed
-  if (!this->kernelBuilder->trainingKernelsSetup) {
-    this->kernelBuilder->setupTrainingKernels();
-  }
-
-  // Write CNN input to GPU
-  std::vector<T> inputVec(input.data.begin(), input.data.end());
-  this->core->template writeBuffer<T>("cnn_actvs", inputVec, 0);
-
-  // Write ANN expected output to GPU
-  std::vector<T> expectedVec(expected.begin(), expected.end());
-  this->core->template writeBuffer<T>("outputs", expectedVec, 0);
-
-  // Generate and upload dropout mask for ANN dense layers (different mask per sample)
-  if (this->bufferManager->annGPUWorker->bufferManager->hasDropout)
-    this->bufferManager->annGPUWorker->bufferManager->generateAndUploadDropoutMask();
-
-  // Single run: full propagate + backpropagate + accumulate
-  this->core->run();
+  // Process a single sample as a batch of size 1
+  Samples<T> singleSample = {{Sample<T>{input, expected}}};
+  this->trainSubset(singleSample, 1, 1, 1, nullptr);
 }
 
 //===================================================================================================================//
@@ -260,23 +269,13 @@ void CoreGPUWorker<T>::update(ulong numSamples)
 //===================================================================================================================//
 
 template <typename T>
-std::vector<std::vector<OpenCLWrapper::Kernel>> CoreGPUWorker<T>::saveKernels()
+void CoreGPUWorker<T>::invalidateKernelCache()
 {
-  return this->core->saveKernels();
-}
-
-template <typename T>
-void CoreGPUWorker<T>::restoreKernels(const std::vector<std::vector<OpenCLWrapper::Kernel>>& kernels)
-{
-  this->core->restoreKernels(kernels);
-}
-
-template <typename T>
-void CoreGPUWorker<T>::setTrainingKernelsReady(bool ready)
-{
-  this->kernelBuilder->trainingKernelsSetup = ready;
-  this->kernelBuilder->updateKernelsSetup = false;
-  this->kernelBuilder->predictKernelsSetup = false;
+  this->cachedBatchSize = 0;
+  this->cachedForwardKernels.clear();
+  this->cachedANNKernels.clear();
+  this->cachedBackwardKernels.clear();
+  this->kernelBuilder->invalidateAllKernelFlags();
 }
 
 //===================================================================================================================//

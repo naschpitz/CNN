@@ -11,6 +11,7 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
 //===================================================================================================================//
 
@@ -45,10 +46,8 @@ namespace CNN
       //-- Weight update --//
       void update(ulong numSamples);
 
-      //-- Kernel save/restore (delegates to OpenCL core) --//
-      std::vector<std::vector<OpenCLWrapper::Kernel>> saveKernels();
-      void restoreKernels(const std::vector<std::vector<OpenCLWrapper::Kernel>>& kernels);
-      void setTrainingKernelsReady(bool ready);
+      //-- Kernel cache management --//
+      void invalidateKernelCache();
 
       //-- Parameter access --//
       const Parameters<T>& getParameters() const
@@ -68,6 +67,8 @@ namespace CNN
       std::unique_ptr<GPUKernelBuilder<T>> kernelBuilder;
 
     private:
+      using SavedKernels = std::vector<std::vector<OpenCLWrapper::Kernel>>;
+
       //-- Configuration --//
       CoreConfig<T> coreConfig;
       Parameters<T> parameters;
@@ -75,7 +76,13 @@ namespace CNN
 
       //-- OpenCL state --//
       std::unique_ptr<OpenCLWrapper::Core> ownedCore; // Owned core (standalone mode)
-      OpenCLWrapper::Core* core = nullptr; // Pointer to active core (owned or shared);
+      OpenCLWrapper::Core* core = nullptr; // Pointer to active core (owned or shared)
+
+      //-- Kernel cache (avoids expensive recompilation when batch size unchanged) --//
+      ulong cachedBatchSize = 0;
+      SavedKernels cachedForwardKernels;
+      std::vector<SavedKernels> cachedANNKernels; // [sampleIdx]
+      SavedKernels cachedBackwardKernels;
   };
 }
 

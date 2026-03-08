@@ -47,7 +47,7 @@ add_library(CNN STATIC
   CNN_TrainingConfig.hpp
   CNN_Parameters.hpp
   CNN_Conv2DParameters.hpp
-  CNN_BatchNormParameters.hpp
+  CNN_NormParameters.hpp
   CNN_Sample.hpp
   CNN_TrainingProgress.hpp
   CNN_TrainingMetadata.hpp
@@ -58,6 +58,7 @@ add_library(CNN STATIC
   CNN_Pool.hpp CNN_Pool.cpp
   CNN_Flatten.hpp CNN_Flatten.cpp
   CNN_BatchNorm.hpp CNN_BatchNorm.cpp
+  CNN_InstanceNorm.hpp CNN_InstanceNorm.cpp
 )
 
 # PUBLIC: Consumers of CNN need access to CNN headers

@@ -26,6 +26,9 @@ namespace CNN
       //-- Full propagate+backpropagate+accumulate for one training sample --//
       T processSample(const Input<T>& input, const Output<T>& expected);
 
+      //-- Full batch processing with true BatchNorm: layer-by-layer forward/backward --//
+      T processBatch(const std::vector<std::pair<Input<T>, Output<T>>>& batch);
+
       //-- Accumulator management --//
       void resetAccumulators();
 
@@ -56,29 +59,29 @@ namespace CNN
         return accumDConvBiases;
       }
 
-      const std::vector<std::vector<T>>& getAccumBNGamma() const
+      const std::vector<std::vector<T>>& getAccumNormGamma() const
       {
-        return accumDBNGamma;
+        return accumDNormGamma;
       }
 
-      const std::vector<std::vector<T>>& getAccumBNBeta() const
+      const std::vector<std::vector<T>>& getAccumNormBeta() const
       {
-        return accumDBNBeta;
+        return accumDNormBeta;
       }
 
-      const std::vector<std::vector<T>>& getAccumBNMean() const
+      const std::vector<std::vector<T>>& getAccumNormMean() const
       {
-        return accumBNMean;
+        return accumNormMean;
       }
 
-      const std::vector<std::vector<T>>& getAccumBNVar() const
+      const std::vector<std::vector<T>>& getAccumNormVar() const
       {
-        return accumBNVar;
+        return accumNormVar;
       }
 
-      ulong getBNSampleCount() const
+      ulong getNormSampleCount() const
       {
-        return bnSampleCount;
+        return normSampleCount;
       }
 
       //-- ANN sub-core access (for parameter sync/merge by CoreCPU) --//
@@ -107,17 +110,22 @@ namespace CNN
       //-- Per-worker CNN gradient accumulators --//
       std::vector<std::vector<T>> accumDConvFilters;
       std::vector<std::vector<T>> accumDConvBiases;
-      std::vector<std::vector<T>> accumDBNGamma;
-      std::vector<std::vector<T>> accumDBNBeta;
-      std::vector<std::vector<T>> accumBNMean;
-      std::vector<std::vector<T>> accumBNVar;
-      ulong bnSampleCount = 0;
+      std::vector<std::vector<T>> accumDNormGamma;
+      std::vector<std::vector<T>> accumDNormBeta;
+      std::vector<std::vector<T>> accumNormMean;
+      std::vector<std::vector<T>> accumNormVar;
+      ulong normSampleCount = 0;
       T accum_loss = static_cast<T>(0);
 
-      //-- Per-worker batch norm training intermediates --//
-      std::vector<std::vector<T>> bnBatchMeans;
-      std::vector<std::vector<T>> bnBatchVars;
-      std::vector<Tensor3D<T>> bnXNormalized;
+      //-- Per-worker norm training intermediates --//
+      std::vector<std::vector<T>> normBatchMeans; // [normLayerIdx][channel]
+      std::vector<std::vector<T>> normBatchVars; // [normLayerIdx][channel]
+      std::vector<Tensor3D<T>> normXNormalized; // [normLayerIdx] (single-sample intermediates)
+
+      //-- Per-worker true batch norm intermediates (batch-wide, for processBatch) --//
+      std::vector<std::vector<T>> trueBNMeans; // [normLayerIdx][channel]
+      std::vector<std::vector<T>> trueBNVars; // [normLayerIdx][channel]
+      std::vector<std::vector<Tensor3D<T>>> trueBNXNorm; // [normLayerIdx][sampleIdx]
 
       //-- Propagate --//
       Tensor3D<T> propagateCNN(const Input<T>& input, bool training = false,
@@ -128,7 +136,7 @@ namespace CNN
       void backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::vector<Tensor3D<T>>& intermediates,
                             const std::vector<std::vector<ulong>>& poolMaxIndices,
                             std::vector<std::vector<T>>& dConvFilters, std::vector<std::vector<T>>& dConvBiases,
-                            std::vector<std::vector<T>>& dBNGamma, std::vector<std::vector<T>>& dBNBeta);
+                            std::vector<std::vector<T>>& dNormGamma, std::vector<std::vector<T>>& dNormBeta);
 
       //-- Initialization --//
       static ANN::CoreConfig<T> buildANNConfig(const CoreConfig<T>& cnnConfig, ulong flattenSize);
