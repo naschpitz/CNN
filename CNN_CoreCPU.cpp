@@ -1,6 +1,7 @@
 #include "CNN_CoreCPU.hpp"
 
 #include <ANN_Core.hpp>
+#include <ANN_Utils.hpp>
 
 #include <QDebug>
 #include <QThreadPool>
@@ -20,7 +21,7 @@ template <typename T>
 CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
 {
   // Initialize conv parameters if not loaded
-  Worker<T>::initializeConvParams(this->layersConfig, this->inputShape, this->parameters);
+  Worker<T>::initializeConvParams(this->layersConfig, this->inputShape, this->parameters, this->seed);
 
   // Initialize normalization parameters if not loaded
   Worker<T>::initializeNormParams(this->layersConfig, this->inputShape, this->parameters);
@@ -287,7 +288,7 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   // Sample index indirection for shuffling
   std::vector<ulong> sampleIndices(numSamples);
   std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
-  std::mt19937 rng(this->seed > 0 ? static_cast<unsigned>(this->seed) : std::random_device{}());
+  std::mt19937 rng(ANN::Utils<T>::getSeed(this->seed));
 
   // Emit initial 0% progress callback
   if (this->trainingCallback) {

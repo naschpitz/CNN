@@ -18,7 +18,7 @@ namespace CNN
 
       //-- Parameter initialization (shared by CPU and GPU workers) --//
       static void initializeConvParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
-                                       Parameters<T>& parameters);
+                                       Parameters<T>& parameters, ulong seed);
       static void initializeNormParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
                                        Parameters<T>& parameters);
 

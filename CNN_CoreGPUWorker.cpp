@@ -34,7 +34,7 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
   this->core->setVerbose(this->logLevel >= CNN::LogLevel::DEBUG);
 
   // Initialize conv parameters (He initialization if not loaded)
-  Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
+  Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters, config.seed);
 
   // Initialize normalization parameters if not loaded
   Worker<T>::initializeNormParams(config.layersConfig, config.inputShape, this->parameters);
@@ -72,7 +72,7 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config, OpenCLWrapper::Core
   this->costFunctionConfig = config.costFunctionConfig;
 
   // Initialize conv parameters (He initialization if not loaded)
-  Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
+  Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters, config.seed);
 
   // Initialize normalization parameters if not loaded
   Worker<T>::initializeNormParams(config.layersConfig, config.inputShape, this->parameters);

@@ -1,6 +1,8 @@
 #include "CNN_Worker.hpp"
 #include "CNN_SlidingStrategy.hpp"
 
+#include <ANN_Utils.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <random>
@@ -12,7 +14,7 @@ using namespace CNN;
 
 template <typename T>
 void Worker<T>::initializeConvParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
-                                     Parameters<T>& parameters)
+                                     Parameters<T>& parameters, ulong seed)
 {
   ulong convIdx = 0;
   Shape3D currentShape = inputShape;
@@ -62,7 +64,7 @@ void Worker<T>::initializeConvParams(const LayersConfig& layersConfig, const Sha
     T fanIn = static_cast<T>(cp.inputC * cp.filterH * cp.filterW);
     T stddev = std::sqrt(static_cast<T>(2) / fanIn);
 
-    std::mt19937 gen(42 + convIdx);
+    std::mt19937 gen(ANN::Utils<T>::getSeed(seed, convIdx));
     std::normal_distribution<double> dist(0.0, static_cast<double>(stddev));
 
     for (ulong i = 0; i < filterSize; i++) {
