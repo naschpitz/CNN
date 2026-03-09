@@ -757,6 +757,143 @@ static void testShuffleSamplesTraining()
 
 //===================================================================================================================//
 
+static void testCrossEntropyTraining()
+{
+  std::cout << "--- testCrossEntropyTraining (CNN) ---" << std::endl;
+
+  // 1x5x5 → Conv(1,3x3) → ReLU → Flatten(9) → Dense(3, softmax) with cross-entropy
+  CNN::CoreConfig<double> config;
+  config.modeType = CNN::ModeType::TRAIN;
+  config.deviceType = CNN::DeviceType::CPU;
+  config.inputShape = {1, 5, 5};
+  config.logLevel = CNN::LogLevel::ERROR;
+
+  CNN::CNNLayerConfig convLayer;
+  convLayer.type = CNN::LayerType::CONV;
+  convLayer.config = CNN::ConvLayerConfig{1, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+  CNN::CNNLayerConfig reluLayer;
+  reluLayer.type = CNN::LayerType::RELU;
+  reluLayer.config = CNN::ReLULayerConfig{};
+
+  CNN::CNNLayerConfig flattenLayer;
+  flattenLayer.type = CNN::LayerType::FLATTEN;
+  flattenLayer.config = CNN::FlattenLayerConfig{};
+
+  config.layersConfig.cnnLayers = {convLayer, reluLayer, flattenLayer};
+  config.layersConfig.denseLayers = {{3, ANN::ActvFuncType::SOFTMAX}};
+
+  CNN::ConvParameters<double> initConv;
+  initConv.numFilters = 1;
+  initConv.inputC = 1;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
+  initConv.filters.assign(9, 0.1);
+  initConv.biases.assign(1, 0.0);
+  config.parameters.convParams = {initConv};
+
+  config.costFunctionConfig.type = CNN::CostFunctionType::CROSS_ENTROPY;
+  config.trainingConfig.numEpochs = 200;
+  config.trainingConfig.learningRate = 0.5f;
+  config.progressReports = 0;
+
+  // 3-class classification
+  CNN::Samples<double> samples(3);
+  samples[0].input = makeGradientInput<double>({1, 5, 5}, 0.8, 1.0);
+  samples[0].output = {1.0, 0.0, 0.0};
+  samples[1].input = makeGradientInput<double>({1, 5, 5}, 0.0, 0.2);
+  samples[1].output = {0.0, 1.0, 0.0};
+  samples[2].input = makeGradientInput<double>({1, 5, 5}, 0.4, 0.6);
+  samples[2].output = {0.0, 0.0, 1.0};
+
+  auto core = CNN::Core<double>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+
+  CNN::TestResult<double> result = core->test(samples.size(), CNN::makeSampleProvider(samples));
+
+  CHECK(result.averageLoss >= 0.0, "CNN cross-entropy loss non-negative");
+  CHECK(std::isfinite(result.averageLoss), "CNN cross-entropy loss is finite");
+  CHECK(result.numSamples == 3, "CNN cross-entropy: 3 samples");
+
+  // Softmax outputs should sum to 1
+  auto out0 = core->predict(samples[0].input);
+  double sum0 = out0[0] + out0[1] + out0[2];
+  CHECK_NEAR(sum0, 1.0, 1e-5, "CNN cross-entropy: softmax sums to 1");
+
+  // Verify config preserved
+  const auto& cfc = core->getCostFunctionConfig();
+  CHECK(cfc.type == CNN::CostFunctionType::CROSS_ENTROPY, "CNN CE: type preserved");
+
+  std::cout << "  CNN CE avgLoss=" << result.averageLoss << " accuracy=" << result.accuracy << "%" << std::endl;
+}
+
+//===================================================================================================================//
+
+static void testWeightedCrossEntropyTraining()
+{
+  std::cout << "--- testWeightedCrossEntropyTraining (CNN) ---" << std::endl;
+
+  // Cross-entropy with per-class weights
+  CNN::CoreConfig<double> config;
+  config.modeType = CNN::ModeType::TRAIN;
+  config.deviceType = CNN::DeviceType::CPU;
+  config.inputShape = {1, 5, 5};
+  config.logLevel = CNN::LogLevel::ERROR;
+
+  CNN::CNNLayerConfig convLayer;
+  convLayer.type = CNN::LayerType::CONV;
+  convLayer.config = CNN::ConvLayerConfig{1, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+  CNN::CNNLayerConfig reluLayer;
+  reluLayer.type = CNN::LayerType::RELU;
+  reluLayer.config = CNN::ReLULayerConfig{};
+
+  CNN::CNNLayerConfig flattenLayer;
+  flattenLayer.type = CNN::LayerType::FLATTEN;
+  flattenLayer.config = CNN::FlattenLayerConfig{};
+
+  config.layersConfig.cnnLayers = {convLayer, reluLayer, flattenLayer};
+  config.layersConfig.denseLayers = {{2, ANN::ActvFuncType::SOFTMAX}};
+
+  CNN::ConvParameters<double> initConv;
+  initConv.numFilters = 1;
+  initConv.inputC = 1;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
+  initConv.filters.assign(9, 0.1);
+  initConv.biases.assign(1, 0.0);
+  config.parameters.convParams = {initConv};
+
+  config.costFunctionConfig.type = CNN::CostFunctionType::CROSS_ENTROPY;
+  config.costFunctionConfig.weights = {5.0, 1.0};
+  config.trainingConfig.numEpochs = 100;
+  config.trainingConfig.learningRate = 0.5f;
+  config.progressReports = 0;
+
+  CNN::Samples<double> samples(2);
+  samples[0].input = makeGradientInput<double>({1, 5, 5});
+  samples[0].output = {1.0, 0.0};
+  samples[1].input = CNN::Tensor3D<double>({1, 5, 5}, 0.0);
+  samples[1].output = {0.0, 1.0};
+
+  auto core = CNN::Core<double>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+
+  CNN::TestResult<double> result = core->test(samples.size(), CNN::makeSampleProvider(samples));
+
+  CHECK(result.averageLoss >= 0.0, "CNN weighted CE: loss non-negative");
+  CHECK(std::isfinite(result.averageLoss), "CNN weighted CE: loss is finite");
+
+  const auto& cfc = core->getCostFunctionConfig();
+  CHECK(cfc.type == CNN::CostFunctionType::CROSS_ENTROPY, "CNN weighted CE: type preserved");
+  CHECK(cfc.weights.size() == 2, "CNN weighted CE: weights preserved");
+  CHECK_NEAR(cfc.weights[0], 5.0, 1e-10, "CNN weighted CE: weight[0] = 5.0");
+
+  std::cout << "  CNN weighted CE avgLoss=" << result.averageLoss << std::endl;
+}
+
+//===================================================================================================================//
+
 void runIntegrationTests()
 {
   testEndToEnd();
@@ -768,6 +905,8 @@ void runIntegrationTests()
   testMultipleOutputNeurons();
   testCostFunctionConfigGetter();
   testWeightedLossTraining();
+  testCrossEntropyTraining();
+  testWeightedCrossEntropyTraining();
   testShuffleSamplesDefault();
   testShuffleSamplesTraining();
 }

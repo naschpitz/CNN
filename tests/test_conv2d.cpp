@@ -295,6 +295,92 @@ static void testConv2DFullPadding()
 
 //===================================================================================================================//
 
+static void testConv2DNumericalGradient()
+{
+  std::cout << "--- testConv2DNumericalGradient ---" << std::endl;
+
+  // Verify backprop gradients match numerical (finite-difference) gradients
+  CNN::Tensor3D<double> input({1, 4, 4});
+
+  for (ulong i = 0; i < 16; i++)
+    input.data[i] = static_cast<double>(i + 1) * 0.1;
+
+  CNN::ConvLayerConfig config{1, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+  CNN::ConvParameters<double> params;
+  params.numFilters = 1;
+  params.inputC = 1;
+  params.filterH = 3;
+  params.filterW = 3;
+  params.filters = {0.1, -0.2, 0.3, -0.1, 0.4, -0.3, 0.2, -0.1, 0.5};
+  params.biases = {0.1};
+
+  // Non-uniform upstream gradient
+  CNN::Tensor3D<double> dOut({1, 2, 2});
+  dOut.data = {0.1, 0.2, 0.3, 0.4};
+
+  // Analytical gradients
+  std::vector<double> dFilters, dBiases;
+  CNN::Tensor3D<double> dInput = CNN::Conv2D<double>::backpropagate(dOut, input, config, params, dFilters, dBiases);
+
+  double eps = 1e-5;
+
+  // Check input gradients via finite differences
+  for (ulong i = 0; i < input.data.size(); i++) {
+    CNN::Tensor3D<double> inputPlus({1, 4, 4});
+    inputPlus.data = input.data;
+    inputPlus.data[i] += eps;
+    CNN::Tensor3D<double> outPlus = CNN::Conv2D<double>::propagate(inputPlus, config, params);
+
+    CNN::Tensor3D<double> inputMinus({1, 4, 4});
+    inputMinus.data = input.data;
+    inputMinus.data[i] -= eps;
+    CNN::Tensor3D<double> outMinus = CNN::Conv2D<double>::propagate(inputMinus, config, params);
+
+    double numGrad = 0.0;
+
+    for (ulong j = 0; j < dOut.data.size(); j++)
+      numGrad += dOut.data[j] * (outPlus.data[j] - outMinus.data[j]) / (2.0 * eps);
+
+    CHECK_NEAR(dInput.data[i], numGrad, 1e-4, "conv2d input numerical gradient");
+  }
+
+  // Check filter gradients via finite differences
+  for (ulong i = 0; i < params.filters.size(); i++) {
+    CNN::ConvParameters<double> paramsPlus = params;
+    paramsPlus.filters[i] += eps;
+    CNN::Tensor3D<double> outPlus = CNN::Conv2D<double>::propagate(input, config, paramsPlus);
+
+    CNN::ConvParameters<double> paramsMinus = params;
+    paramsMinus.filters[i] -= eps;
+    CNN::Tensor3D<double> outMinus = CNN::Conv2D<double>::propagate(input, config, paramsMinus);
+
+    double numGrad = 0.0;
+
+    for (ulong j = 0; j < dOut.data.size(); j++)
+      numGrad += dOut.data[j] * (outPlus.data[j] - outMinus.data[j]) / (2.0 * eps);
+
+    CHECK_NEAR(dFilters[i], numGrad, 1e-4, "conv2d filter numerical gradient");
+  }
+
+  // Check bias gradient via finite differences
+  CNN::ConvParameters<double> paramsPlus = params;
+  paramsPlus.biases[0] += eps;
+  CNN::Tensor3D<double> outPlus = CNN::Conv2D<double>::propagate(input, config, paramsPlus);
+
+  CNN::ConvParameters<double> paramsMinus = params;
+  paramsMinus.biases[0] -= eps;
+  CNN::Tensor3D<double> outMinus = CNN::Conv2D<double>::propagate(input, config, paramsMinus);
+
+  double numBiasGrad = 0.0;
+
+  for (ulong j = 0; j < dOut.data.size(); j++)
+    numBiasGrad += dOut.data[j] * (outPlus.data[j] - outMinus.data[j]) / (2.0 * eps);
+
+  CHECK_NEAR(dBiases[0], numBiasGrad, 1e-4, "conv2d bias numerical gradient");
+}
+
+//===================================================================================================================//
+
 void runConv2DTests()
 {
   testConv2DPropagate();
@@ -306,4 +392,5 @@ void runConv2DTests()
   testConv2DStride();
   testConv2DSamePadding();
   testConv2DFullPadding();
+  testConv2DNumericalGradient();
 }

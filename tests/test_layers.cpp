@@ -530,6 +530,12 @@ static void testCostFunctionNameToType()
   CHECK(CNN::CostFunction::typeToName(CNN::CostFunctionType::WEIGHTED_SQUARED_DIFFERENCE) ==
           "weightedSquaredDifference",
         "WEIGHTED_SQUARED_DIFFERENCE → weightedSquaredDifference");
+
+  // Cross-entropy
+  CHECK(CNN::CostFunction::nameToType("crossEntropy") == CNN::CostFunctionType::CROSS_ENTROPY,
+        "crossEntropy → CROSS_ENTROPY");
+  CHECK(CNN::CostFunction::typeToName(CNN::CostFunctionType::CROSS_ENTROPY) == "crossEntropy",
+        "CROSS_ENTROPY → crossEntropy");
 }
 
 //===================================================================================================================//
