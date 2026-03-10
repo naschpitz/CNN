@@ -20,10 +20,27 @@ Tensor3D<T> BatchNorm<T>::propagate(const Tensor3D<T>& input, const Shape3D& inp
   Tensor3D<T> output(inputShape);
 
   if (!training) {
-    // Inference: use running mean/var
+    // Inference: compute per-sample spatial mean/var (same as training).
+    // Because each sample is normalised independently over (H,W) during
+    // training, inference must do the same to stay consistent.
     for (ulong c = 0; c < C; c++) {
-      T mean = params.runningMean[c];
-      T var = params.runningVar[c];
+      T mean = static_cast<T>(0);
+
+      for (ulong s = 0; s < spatialSize; s++) {
+        mean += input.data[c * spatialSize + s];
+      }
+
+      mean /= static_cast<T>(spatialSize);
+
+      T var = static_cast<T>(0);
+
+      for (ulong s = 0; s < spatialSize; s++) {
+        T diff = input.data[c * spatialSize + s] - mean;
+        var += diff * diff;
+      }
+
+      var /= static_cast<T>(spatialSize);
+
       T gamma = params.gamma[c];
       T beta = params.beta[c];
       T invStd = static_cast<T>(1) / std::sqrt(var + eps);
