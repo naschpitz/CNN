@@ -49,6 +49,7 @@ add_library(CNN STATIC
   CNN_Conv2DParameters.hpp
   CNN_NormParameters.hpp
   CNN_Sample.hpp
+  CNN_ProgressCallback.hpp
   CNN_TrainingProgress.hpp
   CNN_TrainingMetadata.hpp
   CNN_PredictMetadata.hpp
