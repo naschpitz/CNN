@@ -1,5 +1,5 @@
-#ifndef CNN_BATCHNORMPARAMETERS_HPP
-#define CNN_BATCHNORMPARAMETERS_HPP
+#ifndef CNN_INSTANCENORMPARAMETERS_HPP
+#define CNN_INSTANCENORMPARAMETERS_HPP
 
 #include "CNN_Types.hpp"
 
@@ -13,7 +13,7 @@ namespace CNN
   // gamma (scale) and beta (shift) are learnable, per-channel
   // runningMean and runningVar are accumulated during training, used at inference
   template <typename T>
-  struct BatchNormParameters {
+  struct InstanceNormParameters {
       std::vector<T> gamma; // Scale: [numChannels]
       std::vector<T> beta; // Shift: [numChannels]
       std::vector<T> runningMean; // Running mean: [numChannels]
@@ -24,4 +24,4 @@ namespace CNN
 
 //===================================================================================================================//
 
-#endif // CNN_BATCHNORMPARAMETERS_HPP
+#endif // CNN_INSTANCENORMPARAMETERS_HPP

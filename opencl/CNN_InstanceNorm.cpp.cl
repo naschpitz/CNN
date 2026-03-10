@@ -1,5 +1,5 @@
-#ifndef CNN_BATCHNORM_CPP_CL
-#define CNN_BATCHNORM_CPP_CL
+#ifndef CNN_INSTANCENORM_CPP_CL
+#define CNN_INSTANCENORM_CPP_CL
 
 // Note: Depends on CNN_Defines.hpp.cl (TYPE)
 
@@ -7,8 +7,8 @@
 
 // Batch norm forward pass (training): compute per-channel mean over spatial dims
 // One work-group per channel. Uses tree reduction.
-kernel void calculate_batchnorm_mean(global TYPE* actvs, global TYPE* bn_batch_mean, ulong actv_in_offset,
-                                     ulong bn_param_offset, ulong C, ulong H, ulong W)
+kernel void calculate_instancenorm_mean(global TYPE* actvs, global TYPE* bn_batch_mean, ulong actv_in_offset,
+                                        ulong bn_param_offset, ulong C, ulong H, ulong W)
 {
   local TYPE partials[256];
 
@@ -44,8 +44,8 @@ kernel void calculate_batchnorm_mean(global TYPE* actvs, global TYPE* bn_batch_m
 
 // Batch norm forward pass (training): compute per-channel variance over spatial dims
 // One work-group per channel. Uses tree reduction. Requires mean already computed.
-kernel void calculate_batchnorm_var(global TYPE* actvs, global TYPE* bn_batch_mean, global TYPE* bn_batch_var,
-                                    ulong actv_in_offset, ulong bn_param_offset, ulong C, ulong H, ulong W)
+kernel void calculate_instancenorm_var(global TYPE* actvs, global TYPE* bn_batch_mean, global TYPE* bn_batch_var,
+                                       ulong actv_in_offset, ulong bn_param_offset, ulong C, ulong H, ulong W)
 {
   local TYPE partials[256];
 
@@ -85,10 +85,10 @@ kernel void calculate_batchnorm_var(global TYPE* actvs, global TYPE* bn_batch_me
 // Used for both training and inference. The mean/var buffers point to either
 // batch stats (training, computed by mean/var kernels) or running stats (inference).
 // One work-item per element. nElements = C * H * W
-kernel void calculate_batchnorm_normalize(global TYPE* actvs, global TYPE* bn_xnorm, global TYPE* bn_gamma,
-                                          global TYPE* bn_beta, global TYPE* bn_mean, global TYPE* bn_var,
-                                          ulong actv_in_offset, ulong actv_out_offset, ulong xnorm_offset,
-                                          ulong bn_param_offset, ulong C, ulong H, ulong W, float epsilon)
+kernel void calculate_instancenorm_normalize(global TYPE* actvs, global TYPE* bn_xnorm, global TYPE* bn_gamma,
+                                             global TYPE* bn_beta, global TYPE* bn_mean, global TYPE* bn_var,
+                                             ulong actv_in_offset, ulong actv_out_offset, ulong xnorm_offset,
+                                             ulong bn_param_offset, ulong C, ulong H, ulong W, float epsilon)
 {
   size_t gid = get_global_id(0);
   ulong spatialSize = H * W;
@@ -114,9 +114,9 @@ kernel void calculate_batchnorm_normalize(global TYPE* actvs, global TYPE* bn_xn
 
 // Batch norm backward: compute dGamma and dBeta per channel (reduction)
 // One work-group per channel.
-kernel void calculate_batchnorm_dGammaBeta(global TYPE* grads, global TYPE* bn_xnorm, global TYPE* bn_dGamma,
-                                           global TYPE* bn_dBeta, ulong grad_out_offset, ulong xnorm_offset,
-                                           ulong bn_param_offset, ulong C, ulong H, ulong W)
+kernel void calculate_instancenorm_dGammaBeta(global TYPE* grads, global TYPE* bn_xnorm, global TYPE* bn_dGamma,
+                                              global TYPE* bn_dBeta, ulong grad_out_offset, ulong xnorm_offset,
+                                              ulong bn_param_offset, ulong C, ulong H, ulong W)
 {
   local TYPE partials_dg[256];
   local TYPE partials_db[256];
@@ -162,10 +162,10 @@ kernel void calculate_batchnorm_dGammaBeta(global TYPE* grads, global TYPE* bn_x
 
 // Batch norm backward: compute dInput
 // One work-item per element. nElements = C * H * W
-kernel void calculate_batchnorm_dInput(global TYPE* grads, global TYPE* bn_xnorm, global TYPE* bn_gamma,
-                                       global TYPE* bn_dGamma, global TYPE* bn_dBeta, global TYPE* bn_batch_var,
-                                       ulong grad_in_offset, ulong grad_out_offset, ulong xnorm_offset,
-                                       ulong bn_param_offset, ulong C, ulong H, ulong W, float epsilon)
+kernel void calculate_instancenorm_dInput(global TYPE* grads, global TYPE* bn_xnorm, global TYPE* bn_gamma,
+                                          global TYPE* bn_dGamma, global TYPE* bn_dBeta, global TYPE* bn_batch_var,
+                                          ulong grad_in_offset, ulong grad_out_offset, ulong xnorm_offset,
+                                          ulong bn_param_offset, ulong C, ulong H, ulong W, float epsilon)
 {
   size_t gid = get_global_id(0);
   ulong spatialSize = H * W;
@@ -189,11 +189,14 @@ kernel void calculate_batchnorm_dInput(global TYPE* grads, global TYPE* bn_xnorm
 
 //===================================================================================================================//
 
-// Update running stats: running = (1 - momentum) * running + momentum * batch
+// Update running stats: running = (1 - momentum) * running + momentum * avgBatchStat
+// The accum buffers contain the sum of per-sample batch mean/var across all samples in the batch.
+// We divide by numSamples to get the average before the EMA update.
 // One work-item per channel.
-kernel void update_batchnorm_running_stats(global TYPE* bn_running_mean, global TYPE* bn_running_var,
-                                           global TYPE* bn_batch_mean, global TYPE* bn_batch_var, ulong bn_param_offset,
-                                           ulong numChannels, float momentum)
+kernel void update_instancenorm_running_stats(global TYPE* bn_running_mean, global TYPE* bn_running_var,
+                                              global TYPE* accum_bn_batch_mean, global TYPE* accum_bn_batch_var,
+                                              ulong bn_param_offset, ulong numChannels, float momentum,
+                                              ulong numSamples)
 {
   size_t gid = get_global_id(0);
 
@@ -201,10 +204,12 @@ kernel void update_batchnorm_running_stats(global TYPE* bn_running_mean, global 
     return;
 
   ulong idx = bn_param_offset + gid;
-  bn_running_mean[idx] = ((TYPE)1 - (TYPE)momentum) * bn_running_mean[idx] + (TYPE)momentum * bn_batch_mean[idx];
-  bn_running_var[idx] = ((TYPE)1 - (TYPE)momentum) * bn_running_var[idx] + (TYPE)momentum * bn_batch_var[idx];
+  TYPE avgMean = accum_bn_batch_mean[idx] / (TYPE)numSamples;
+  TYPE avgVar = accum_bn_batch_var[idx] / (TYPE)numSamples;
+  bn_running_mean[idx] = ((TYPE)1 - (TYPE)momentum) * bn_running_mean[idx] + (TYPE)momentum * avgMean;
+  bn_running_var[idx] = ((TYPE)1 - (TYPE)momentum) * bn_running_var[idx] + (TYPE)momentum * avgVar;
 }
 
 //===================================================================================================================//
 
-#endif // CNN_BATCHNORM_CPP_CL
+#endif // CNN_INSTANCENORM_CPP_CL

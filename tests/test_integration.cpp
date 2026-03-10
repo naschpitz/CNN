@@ -1322,8 +1322,8 @@ static CNN::CoreConfig<double> makeBNTestConfig(ulong denseNeurons, ANN::ActvFun
   convLayer.config = CNN::ConvLayerConfig{1, 2, 2, 1, 1, CNN::SlidingStrategyType::VALID};
 
   CNN::CNNLayerConfig bnLayer;
-  bnLayer.type = CNN::LayerType::BATCHNORM;
-  bnLayer.config = CNN::BatchNormLayerConfig{1e-5f, 0.1f};
+  bnLayer.type = CNN::LayerType::INSTANCENORM;
+  bnLayer.config = CNN::InstanceNormLayerConfig{1e-5f, 0.1f};
 
   CNN::CNNLayerConfig reluLayer;
   reluLayer.type = CNN::LayerType::RELU;
@@ -1347,13 +1347,13 @@ static CNN::CoreConfig<double> makeBNTestConfig(ulong denseNeurons, ANN::ActvFun
   config.parameters.convParams = {initConv};
 
   // Preset BN parameters: 1 channel, gamma=1, beta=0, runningMean=0, runningVar=1
-  CNN::BatchNormParameters<double> initBN;
+  CNN::InstanceNormParameters<double> initBN;
   initBN.numChannels = 1;
   initBN.gamma = {1.0};
   initBN.beta = {0.0};
   initBN.runningMean = {0.0};
   initBN.runningVar = {1.0};
-  config.parameters.bnParams = {initBN};
+  config.parameters.inParams = {initBN};
 
   config.trainingConfig.numEpochs = 1;
   config.trainingConfig.learningRate = 1.0f;
@@ -1399,11 +1399,11 @@ static void testExactBNForwardBackwardCrossEntropy()
   CHECK_NEAR(p.convParams[0].filters[3], -0.099999999999998229, 1e-14, "BN-CE conv filt[3]");
   CHECK_NEAR(p.convParams[0].biases[0], 1.7763568394002505e-15, 1e-14, "BN-CE conv bias");
 
-  // BatchNorm parameters
-  CHECK_NEAR(p.bnParams[0].gamma[0], 1.0, 1e-14, "BN-CE gamma");
-  CHECK_NEAR(p.bnParams[0].beta[0], 0.14999999999999997, 1e-14, "BN-CE beta");
-  CHECK_NEAR(p.bnParams[0].runningMean[0], 0.0060000000894069655, 1e-14, "BN-CE runningMean");
-  CHECK_NEAR(p.bnParams[0].runningVar[0], 0.90002499851025641, 1e-14, "BN-CE runningVar");
+  // InstanceNorm parameters
+  CHECK_NEAR(p.inParams[0].gamma[0], 1.0, 1e-14, "BN-CE gamma");
+  CHECK_NEAR(p.inParams[0].beta[0], 0.14999999999999997, 1e-14, "BN-CE beta");
+  CHECK_NEAR(p.inParams[0].runningMean[0], 0.0060000000894069655, 1e-14, "BN-CE runningMean");
+  CHECK_NEAR(p.inParams[0].runningVar[0], 0.90002499851025641, 1e-14, "BN-CE runningVar");
 
   // Dense weights
   CHECK_NEAR(p.denseParams.weights[1][0][0], 0.10000000000000001, 1e-14, "BN-CE dw[0][0]");
@@ -1453,11 +1453,11 @@ static void testExactBNForwardBackwardSquaredDifference()
   CHECK_NEAR(p.convParams[0].filters[3], -0.094227196181581624, 1e-14, "BN-SD conv filt[3]");
   CHECK_NEAR(p.convParams[0].biases[0], 0.0, 1e-14, "BN-SD conv bias");
 
-  // BatchNorm parameters
-  CHECK_NEAR(p.bnParams[0].gamma[0], 1.015009290292471, 1e-14, "BN-SD gamma");
-  CHECK_NEAR(p.bnParams[0].beta[0], 0.048403506759260036, 1e-14, "BN-SD beta");
-  CHECK_NEAR(p.bnParams[0].runningMean[0], 0.0060000000894069655, 1e-14, "BN-SD runningMean");
-  CHECK_NEAR(p.bnParams[0].runningVar[0], 0.90002499851025641, 1e-14, "BN-SD runningVar");
+  // InstanceNorm parameters
+  CHECK_NEAR(p.inParams[0].gamma[0], 1.015009290292471, 1e-14, "BN-SD gamma");
+  CHECK_NEAR(p.inParams[0].beta[0], 0.048403506759260036, 1e-14, "BN-SD beta");
+  CHECK_NEAR(p.inParams[0].runningMean[0], 0.0060000000894069655, 1e-14, "BN-SD runningMean");
+  CHECK_NEAR(p.inParams[0].runningVar[0], 0.90002499851025641, 1e-14, "BN-SD runningVar");
 
   // Dense weights
   CHECK_NEAR(p.denseParams.weights[1][0][0], 0.10000000000000001, 1e-14, "BN-SD dw[0][0]");
@@ -1503,11 +1503,11 @@ static void testExactBNForwardBackwardWeightedCrossEntropy()
   CHECK_NEAR(p.convParams[0].filters[3], -0.10000000000000001, 1e-14, "BN-WCE conv filt[3]");
   CHECK_NEAR(p.convParams[0].biases[0], 0.0, 1e-14, "BN-WCE conv bias");
 
-  // BatchNorm parameters
-  CHECK_NEAR(p.bnParams[0].gamma[0], 0.99999999999999989, 1e-14, "BN-WCE gamma");
-  CHECK_NEAR(p.bnParams[0].beta[0], 0.44999999999999984, 1e-14, "BN-WCE beta");
-  CHECK_NEAR(p.bnParams[0].runningMean[0], 0.0060000000894069655, 1e-14, "BN-WCE runningMean");
-  CHECK_NEAR(p.bnParams[0].runningVar[0], 0.90002499851025641, 1e-14, "BN-WCE runningVar");
+  // InstanceNorm parameters
+  CHECK_NEAR(p.inParams[0].gamma[0], 0.99999999999999989, 1e-14, "BN-WCE gamma");
+  CHECK_NEAR(p.inParams[0].beta[0], 0.44999999999999984, 1e-14, "BN-WCE beta");
+  CHECK_NEAR(p.inParams[0].runningMean[0], 0.0060000000894069655, 1e-14, "BN-WCE runningMean");
+  CHECK_NEAR(p.inParams[0].runningVar[0], 0.90002499851025641, 1e-14, "BN-WCE runningVar");
 
   // Dense weights
   CHECK_NEAR(p.denseParams.weights[1][0][0], 0.10000000000000001, 1e-14, "BN-WCE dw[0][0]");

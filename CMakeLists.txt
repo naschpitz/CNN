@@ -35,7 +35,7 @@ add_library(CNN STATIC
   opencl/CNN_Backpropagate.cpp.cl
   opencl/CNN_Update.cpp.cl
   opencl/CNN_Bridge.cpp.cl
-  opencl/CNN_BatchNorm.cpp.cl
+  opencl/CNN_InstanceNorm.cpp.cl
   CNN_Types.hpp
   CNN_Device.hpp CNN_Device.cpp
   CNN_Mode.hpp CNN_Mode.cpp
@@ -47,7 +47,7 @@ add_library(CNN STATIC
   CNN_TrainingConfig.hpp
   CNN_Parameters.hpp
   CNN_Conv2DParameters.hpp
-  CNN_BatchNormParameters.hpp
+  CNN_InstanceNormParameters.hpp
   CNN_Sample.hpp
   CNN_TrainingProgress.hpp
   CNN_TrainingMetadata.hpp
@@ -57,7 +57,7 @@ add_library(CNN STATIC
   CNN_ReLU.hpp CNN_ReLU.cpp
   CNN_Pool.hpp CNN_Pool.cpp
   CNN_Flatten.hpp CNN_Flatten.cpp
-  CNN_BatchNorm.hpp CNN_BatchNorm.cpp
+  CNN_InstanceNorm.hpp CNN_InstanceNorm.cpp
 )
 
 # PUBLIC: Consumers of CNN need access to CNN headers

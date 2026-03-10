@@ -1636,8 +1636,8 @@ static CNN::CoreConfig<float> makeGPUBNTestConfig(ulong denseNeurons, ANN::ActvF
   convLayer.config = CNN::ConvLayerConfig{1, 2, 2, 1, 1, CNN::SlidingStrategyType::VALID};
 
   CNN::CNNLayerConfig bnLayer;
-  bnLayer.type = CNN::LayerType::BATCHNORM;
-  bnLayer.config = CNN::BatchNormLayerConfig{1e-5f, 0.1f};
+  bnLayer.type = CNN::LayerType::INSTANCENORM;
+  bnLayer.config = CNN::InstanceNormLayerConfig{1e-5f, 0.1f};
 
   CNN::CNNLayerConfig reluLayer;
   reluLayer.type = CNN::LayerType::RELU;
@@ -1659,13 +1659,13 @@ static CNN::CoreConfig<float> makeGPUBNTestConfig(ulong denseNeurons, ANN::ActvF
   initConv.biases = {0.0f};
   config.parameters.convParams = {initConv};
 
-  CNN::BatchNormParameters<float> initBN;
+  CNN::InstanceNormParameters<float> initBN;
   initBN.numChannels = 1;
   initBN.gamma = {1.0f};
   initBN.beta = {0.0f};
   initBN.runningMean = {0.0f};
   initBN.runningVar = {1.0f};
-  config.parameters.bnParams = {initBN};
+  config.parameters.inParams = {initBN};
 
   config.trainingConfig.numEpochs = 1;
   config.trainingConfig.learningRate = 1.0f;
@@ -1708,11 +1708,11 @@ static void testGPUExactBNForwardBackwardCrossEntropy()
   CHECK_NEAR(p.convParams[0].filters[3], -0.09999809414f, 1e-6, "GPU BN-CE filt[3]");
   CHECK_NEAR(p.convParams[0].biases[0], 9.536743164e-07f, 1e-5, "GPU BN-CE conv bias");
 
-  // BatchNorm parameters
-  CHECK_NEAR(p.bnParams[0].gamma[0], 0.9999999404f, 1e-6, "GPU BN-CE gamma");
-  CHECK_NEAR(p.bnParams[0].beta[0], 0.150000006f, 1e-6, "GPU BN-CE beta");
-  CHECK_NEAR(p.bnParams[0].runningMean[0], 0.006000000052f, 1e-6, "GPU BN-CE runningMean");
-  CHECK_NEAR(p.bnParams[0].runningVar[0], 0.9000249505f, 1e-6, "GPU BN-CE runningVar");
+  // InstanceNorm parameters
+  CHECK_NEAR(p.inParams[0].gamma[0], 0.9999999404f, 1e-6, "GPU BN-CE gamma");
+  CHECK_NEAR(p.inParams[0].beta[0], 0.150000006f, 1e-6, "GPU BN-CE beta");
+  CHECK_NEAR(p.inParams[0].runningMean[0], 0.006000000052f, 1e-6, "GPU BN-CE runningMean");
+  CHECK_NEAR(p.inParams[0].runningVar[0], 0.9000249505f, 1e-6, "GPU BN-CE runningVar");
 
   // Dense weights
   CHECK_NEAR(p.denseParams.weights[1][0][0], 0.1000000015f, 1e-6, "GPU BN-CE dw[0][0]");
@@ -1762,11 +1762,11 @@ static void testGPUExactBNForwardBackwardSquaredDifference()
   CHECK_NEAR(p.convParams[0].filters[3], -0.09422717243f, 1e-6, "GPU BN-SD filt[3]");
   CHECK_NEAR(p.convParams[0].biases[0], 0.0f, 1e-6, "GPU BN-SD conv bias");
 
-  // BatchNorm parameters
-  CHECK_NEAR(p.bnParams[0].gamma[0], 1.015009284f, 1e-6, "GPU BN-SD gamma");
-  CHECK_NEAR(p.bnParams[0].beta[0], 0.04840351269f, 1e-6, "GPU BN-SD beta");
-  CHECK_NEAR(p.bnParams[0].runningMean[0], 0.006000000052f, 1e-6, "GPU BN-SD runningMean");
-  CHECK_NEAR(p.bnParams[0].runningVar[0], 0.9000249505f, 1e-6, "GPU BN-SD runningVar");
+  // InstanceNorm parameters
+  CHECK_NEAR(p.inParams[0].gamma[0], 1.015009284f, 1e-6, "GPU BN-SD gamma");
+  CHECK_NEAR(p.inParams[0].beta[0], 0.04840351269f, 1e-6, "GPU BN-SD beta");
+  CHECK_NEAR(p.inParams[0].runningMean[0], 0.006000000052f, 1e-6, "GPU BN-SD runningMean");
+  CHECK_NEAR(p.inParams[0].runningVar[0], 0.9000249505f, 1e-6, "GPU BN-SD runningVar");
 
   // Dense weights
   CHECK_NEAR(p.denseParams.weights[1][0][0], 0.1000000015f, 1e-6, "GPU BN-SD dw[0][0]");
@@ -1812,11 +1812,11 @@ static void testGPUExactBNForwardBackwardWeightedCrossEntropy()
   CHECK_NEAR(p.convParams[0].filters[3], -0.1000000015f, 1e-6, "GPU BN-WCE filt[3]");
   CHECK_NEAR(p.convParams[0].biases[0], 0.0f, 1e-6, "GPU BN-WCE conv bias");
 
-  // BatchNorm parameters
-  CHECK_NEAR(p.bnParams[0].gamma[0], 0.9999998808f, 1e-6, "GPU BN-WCE gamma");
-  CHECK_NEAR(p.bnParams[0].beta[0], 0.4500000179f, 1e-6, "GPU BN-WCE beta");
-  CHECK_NEAR(p.bnParams[0].runningMean[0], 0.006000000052f, 1e-6, "GPU BN-WCE runningMean");
-  CHECK_NEAR(p.bnParams[0].runningVar[0], 0.9000249505f, 1e-6, "GPU BN-WCE runningVar");
+  // InstanceNorm parameters
+  CHECK_NEAR(p.inParams[0].gamma[0], 0.9999998808f, 1e-6, "GPU BN-WCE gamma");
+  CHECK_NEAR(p.inParams[0].beta[0], 0.4500000179f, 1e-6, "GPU BN-WCE beta");
+  CHECK_NEAR(p.inParams[0].runningMean[0], 0.006000000052f, 1e-6, "GPU BN-WCE runningMean");
+  CHECK_NEAR(p.inParams[0].runningVar[0], 0.9000249505f, 1e-6, "GPU BN-WCE runningVar");
 
   // Dense weights
   CHECK_NEAR(p.denseParams.weights[1][0][0], 0.1000000015f, 1e-6, "GPU BN-WCE dw[0][0]");
