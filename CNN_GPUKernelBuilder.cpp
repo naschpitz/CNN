@@ -224,8 +224,10 @@ void GPUKernelBuilder<T>::addPropagateKernels(bool training)
       ulong size = currentShape.size();
       ulong bnParamOffset = this->bufferManager.bnInfos[bnIdx].paramOffset;
 
-      if (training) {
-        // Compute batch mean and variance before normalizing
+      // Always compute per-sample spatial mean/var before normalizing.
+      // Since each sample is normalised independently over (H,W) during training,
+      // inference must do the same to stay consistent.
+      {
         ulong localWS = 256;
         ulong meanGlobalWS = currentShape.c * localWS;
 
@@ -251,9 +253,9 @@ void GPUKernelBuilder<T>::addPropagateKernels(bool training)
         this->core->template addArgument<ulong>(varId, currentShape.w);
       }
 
-      // Same normalize kernel for both paths — only the mean/var source differs
-      std::string meanBuf = training ? "cnn_bn_batch_mean" : "cnn_bn_running_mean";
-      std::string varBuf = training ? "cnn_bn_batch_var" : "cnn_bn_running_var";
+      // Always use per-sample spatial stats for normalization
+      std::string meanBuf = "cnn_bn_batch_mean";
+      std::string varBuf = "cnn_bn_batch_var";
 
       std::string normId = "calculate_batchnorm_normalize_layer" + layerStr;
       this->core->addKernel(normId, "calculate_batchnorm_normalize", size, 0);
