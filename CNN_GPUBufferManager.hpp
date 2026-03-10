@@ -62,7 +62,7 @@ namespace CNN
       };
 
       struct InstanceNormInfo {
-          ulong paramOffset; // Offset into flat bn_gamma/bn_beta/bn_running_mean/bn_running_var buffers
+          ulong paramOffset; // Offset into flat norm_gamma/norm_beta/norm_running_mean/norm_running_var buffers
           ulong numChannels;
       };
 

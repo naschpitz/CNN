@@ -276,14 +276,14 @@ void GPUBufferManager<T>::allocateBuffers()
     }
 
     if (this->totalNormParamSize > 0) {
-      this->core->template allocateBuffer<T>("cnn_adam_m_bn_gamma", this->totalNormParamSize);
-      this->core->template allocateBuffer<T>("cnn_adam_v_bn_gamma", this->totalNormParamSize);
-      this->core->template allocateBuffer<T>("cnn_adam_m_bn_beta", this->totalNormParamSize);
-      this->core->template allocateBuffer<T>("cnn_adam_v_bn_beta", this->totalNormParamSize);
-      this->core->template fillBuffer<T>("cnn_adam_m_bn_gamma", zero, this->totalNormParamSize);
-      this->core->template fillBuffer<T>("cnn_adam_v_bn_gamma", zero, this->totalNormParamSize);
-      this->core->template fillBuffer<T>("cnn_adam_m_bn_beta", zero, this->totalNormParamSize);
-      this->core->template fillBuffer<T>("cnn_adam_v_bn_beta", zero, this->totalNormParamSize);
+      this->core->template allocateBuffer<T>("cnn_adam_m_norm_gamma", this->totalNormParamSize);
+      this->core->template allocateBuffer<T>("cnn_adam_v_norm_gamma", this->totalNormParamSize);
+      this->core->template allocateBuffer<T>("cnn_adam_m_norm_beta", this->totalNormParamSize);
+      this->core->template allocateBuffer<T>("cnn_adam_v_norm_beta", this->totalNormParamSize);
+      this->core->template fillBuffer<T>("cnn_adam_m_norm_gamma", zero, this->totalNormParamSize);
+      this->core->template fillBuffer<T>("cnn_adam_v_norm_gamma", zero, this->totalNormParamSize);
+      this->core->template fillBuffer<T>("cnn_adam_m_norm_beta", zero, this->totalNormParamSize);
+      this->core->template fillBuffer<T>("cnn_adam_v_norm_beta", zero, this->totalNormParamSize);
     }
   }
 

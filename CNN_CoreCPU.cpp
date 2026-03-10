@@ -175,16 +175,16 @@ void CoreCPU<T>::allocateAdamState()
 
   ulong numBNLayers = this->parameters.normParams.size();
 
-  this->adam_m_bn_gamma.resize(numBNLayers);
-  this->adam_v_bn_gamma.resize(numBNLayers);
-  this->adam_m_bn_beta.resize(numBNLayers);
-  this->adam_v_bn_beta.resize(numBNLayers);
+  this->adam_m_norm_gamma.resize(numBNLayers);
+  this->adam_v_norm_gamma.resize(numBNLayers);
+  this->adam_m_norm_beta.resize(numBNLayers);
+  this->adam_v_norm_beta.resize(numBNLayers);
 
   for (ulong i = 0; i < numBNLayers; i++) {
-    this->adam_m_bn_gamma[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
-    this->adam_v_bn_gamma[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
-    this->adam_m_bn_beta[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
-    this->adam_v_bn_beta[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+    this->adam_m_norm_gamma[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+    this->adam_v_norm_gamma[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+    this->adam_m_norm_beta[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+    this->adam_v_norm_beta[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
   }
 
   this->adam_t = 0;
@@ -232,19 +232,19 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples)
     for (ulong i = 0; i < this->parameters.normParams.size(); i++) {
       for (ulong j = 0; j < this->parameters.normParams[i].numChannels; j++) {
         T g = this->accumDBNGamma[i][j] / n;
-        this->adam_m_bn_gamma[i][j] = beta1 * this->adam_m_bn_gamma[i][j] + (static_cast<T>(1) - beta1) * g;
-        this->adam_v_bn_gamma[i][j] = beta2 * this->adam_v_bn_gamma[i][j] + (static_cast<T>(1) - beta2) * g * g;
-        T m_hat = this->adam_m_bn_gamma[i][j] / bc1;
-        T v_hat = this->adam_v_bn_gamma[i][j] / bc2;
+        this->adam_m_norm_gamma[i][j] = beta1 * this->adam_m_norm_gamma[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_norm_gamma[i][j] = beta2 * this->adam_v_norm_gamma[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        T m_hat = this->adam_m_norm_gamma[i][j] / bc1;
+        T v_hat = this->adam_v_norm_gamma[i][j] / bc2;
         this->parameters.normParams[i].gamma[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
       }
 
       for (ulong j = 0; j < this->parameters.normParams[i].numChannels; j++) {
         T g = this->accumDBNBeta[i][j] / n;
-        this->adam_m_bn_beta[i][j] = beta1 * this->adam_m_bn_beta[i][j] + (static_cast<T>(1) - beta1) * g;
-        this->adam_v_bn_beta[i][j] = beta2 * this->adam_v_bn_beta[i][j] + (static_cast<T>(1) - beta2) * g * g;
-        T m_hat = this->adam_m_bn_beta[i][j] / bc1;
-        T v_hat = this->adam_v_bn_beta[i][j] / bc2;
+        this->adam_m_norm_beta[i][j] = beta1 * this->adam_m_norm_beta[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_norm_beta[i][j] = beta2 * this->adam_v_norm_beta[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        T m_hat = this->adam_m_norm_beta[i][j] / bc1;
+        T v_hat = this->adam_v_norm_beta[i][j] / bc2;
         this->parameters.normParams[i].beta[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
       }
     }

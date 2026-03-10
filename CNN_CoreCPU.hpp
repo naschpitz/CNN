@@ -40,10 +40,10 @@ namespace CNN
       std::vector<std::vector<T>> adam_v_filters;
       std::vector<std::vector<T>> adam_m_biases;
       std::vector<std::vector<T>> adam_v_biases;
-      std::vector<std::vector<T>> adam_m_bn_gamma;
-      std::vector<std::vector<T>> adam_v_bn_gamma;
-      std::vector<std::vector<T>> adam_m_bn_beta;
-      std::vector<std::vector<T>> adam_v_bn_beta;
+      std::vector<std::vector<T>> adam_m_norm_gamma;
+      std::vector<std::vector<T>> adam_v_norm_gamma;
+      std::vector<std::vector<T>> adam_m_norm_beta;
+      std::vector<std::vector<T>> adam_v_norm_beta;
       ulong adam_t = 0;
 
       //-- Training helpers --//
