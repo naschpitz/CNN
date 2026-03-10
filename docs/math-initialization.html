@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Weight Initialization — CNN Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['\\[','\\]']]}};</script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+</head>
+<body>
+<header class="site-header">
+  <button class="hamburger" aria-label="Menu">☰</button>
+  <h1>CNN</h1><span class="subtitle">Convolutional Neural Network Library</span>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav>
+  <div class="section-title">Getting Started</div>
+  <a href="index.html">Home</a>
+  <a href="quickstart.html">Quick Start &amp; Build</a>
+  <a href="examples.html">Code Examples</a>
+  <div class="section-title">Reference</div>
+  <a href="api.html">API Reference</a>
+  <a href="architecture.html">Architecture</a>
+  <div class="section-title">Deep Dive</div>
+  <a href="layers.html">Layer Documentation</a>
+  <a href="gpu.html">GPU Implementation</a>
+  <div class="section-title">Math Foundations</div>
+  <a href="math.html">Overview</a>
+  <a href="math-convolution.html">Convolution</a>
+  <a href="math-pooling.html">Pooling</a>
+  <a href="math-activations.html">Activations</a>
+  <a href="math-instancenorm.html">Instance Normalization</a>
+  <a href="math-initialization.html" class="active">Weight Initialization</a>
+  <a href="math-optimizers.html">Optimizers</a>
+  <a href="math-gradient-flow.html">Gradient Flow</a>
+</nav></aside>
+<main class="main">
+
+<h1>Weight Initialization</h1>
+<p>Proper weight initialization is critical for training deep networks. Poor initialization can lead to vanishing or exploding gradients, preventing the network from learning.</p>
+
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#he-init">He Initialization</a></li>
+  </ol>
+</div>
+
+<h2 id="he-init">He Initialization</h2>
+<p>He initialization (also known as Kaiming initialization) is designed for layers followed by ReLU activations. Weights are drawn from a normal distribution with zero mean and variance scaled by the fan-in:</p>
+
+<div class="math-block">
+\[W \sim \mathcal{N}\left(0, \frac{2}{n_{\text{in}}}\right)\]
+</div>
+
+<p>For convolutional layers, the fan-in is:</p>
+
+<div class="math-block">
+\[n_{\text{in}} = C_{\text{in}} \times K_H \times K_W\]
+</div>
+
+<p>where \(C_{\text{in}}\) is the number of input channels and \(K_H \times K_W\) is the kernel size.</p>
+
+<h3>Why factor of 2?</h3>
+<p>ReLU zeroes out approximately half of the activations. The factor of 2 compensates for this, keeping the variance of activations stable across layers. Without it, the signal would shrink by half at each layer, leading to vanishing gradients in deep networks.</p>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>Worker&lt;T&gt;::initializeConvParams()</code> in <code>CNN_Worker.cpp</code> uses <code>std::normal_distribution&lt;T&gt;(0, std::sqrt(2.0 / fanIn))</code> to initialise filter weights. Biases are initialised to zero.
+</div>
+
+</main>
+</div>
+<footer class="site-footer">CNN Library Documentation</footer>
+</body>
+</html>
+

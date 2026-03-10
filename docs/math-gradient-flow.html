@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Gradient Flow — CNN Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['\\[','\\]']]}};</script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+</head>
+<body>
+<header class="site-header">
+  <button class="hamburger" aria-label="Menu">☰</button>
+  <h1>CNN</h1><span class="subtitle">Convolutional Neural Network Library</span>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav>
+  <div class="section-title">Getting Started</div>
+  <a href="index.html">Home</a>
+  <a href="quickstart.html">Quick Start &amp; Build</a>
+  <a href="examples.html">Code Examples</a>
+  <div class="section-title">Reference</div>
+  <a href="api.html">API Reference</a>
+  <a href="architecture.html">Architecture</a>
+  <div class="section-title">Deep Dive</div>
+  <a href="layers.html">Layer Documentation</a>
+  <a href="gpu.html">GPU Implementation</a>
+  <div class="section-title">Math Foundations</div>
+  <a href="math.html">Overview</a>
+  <a href="math-convolution.html">Convolution</a>
+  <a href="math-pooling.html">Pooling</a>
+  <a href="math-activations.html">Activations</a>
+  <a href="math-instancenorm.html">Instance Normalization</a>
+  <a href="math-initialization.html">Weight Initialization</a>
+  <a href="math-optimizers.html">Optimizers</a>
+  <a href="math-gradient-flow.html" class="active">Gradient Flow</a>
+</nav></aside>
+<main class="main">
+
+<h1>End-to-End Gradient Flow</h1>
+<p>In a complete CNN pipeline, gradients flow through multiple layers in reverse. Understanding this flow is essential for debugging training issues.</p>
+
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#architecture">Typical Architecture</a></li>
+    <li><a href="#backprop">Backpropagation Order</a></li>
+    <li><a href="#considerations">Key Considerations</a></li>
+    <li><a href="#example">Practical Example</a></li>
+  </ol>
+</div>
+
+<h2 id="architecture">Typical Architecture</h2>
+<p>A standard CNN followed by an ANN classifier has this structure:</p>
+<ol>
+  <li><strong>Input:</strong> Raw image tensor \(X \in \mathbb{R}^{C \times H \times W}\)</li>
+  <li><strong>Conv2D layers:</strong> Extract spatial features</li>
+  <li><strong>Instance Normalization:</strong> Stabilise activations per channel</li>
+  <li><strong>ReLU activations:</strong> Introduce non-linearity</li>
+  <li><strong>Pooling layers:</strong> Reduce spatial dimensions</li>
+  <li><strong>Flatten:</strong> Convert 3D tensor to 1D vector</li>
+  <li><strong>ANN layers:</strong> Dense layers for classification</li>
+  <li><strong>Output:</strong> Logits or probabilities</li>
+</ol>
+
+<h2 id="backprop">Backpropagation Order</h2>
+<p>Gradients flow in reverse order:</p>
+<div class="math-block">
+\[
+\text{Loss} \to \text{ANN output} \to \text{ANN hidden} \to \text{ANN input} \to \text{Unflatten} \to \text{Pool} \to \text{ReLU} \to \text{InstanceNorm} \to \text{Conv2D} \to \text{Input}
+\]
+</div>
+
+<h2 id="considerations">Key Considerations</h2>
+<ul>
+  <li><strong>Gradient magnitude:</strong> Each layer's backpropagation can amplify or attenuate gradients. Deep networks are prone to vanishing gradients (exponentially small) or exploding gradients (exponentially large).</li>
+  <li><strong>Instance Normalization:</strong> Often inserted between Conv2D and ReLU to stabilise gradient flow and allow higher learning rates. Normalises each sample independently over spatial dimensions.</li>
+  <li><strong>Skip connections:</strong> Residual networks use skip connections to provide direct gradient paths, mitigating vanishing gradients in very deep networks.</li>
+  <li><strong>Gradient clipping:</strong> Useful for preventing exploding gradients, especially in recurrent architectures.</li>
+</ul>
+
+<div class="info-box">
+The input gradient from the first Conv2D layer is typically discarded since there are no learnable parameters in the input. However, it can be useful for visualising which input regions are most important for the network's predictions.
+</div>
+
+<h2 id="example">Practical Example: 3-Layer CNN</h2>
+<p>Consider a simple architecture: Conv2D → InstanceNorm → ReLU → MaxPool → Conv2D → InstanceNorm → ReLU → MaxPool → Flatten → Dense → Softmax.</p>
+<p>During backpropagation:</p>
+<ol>
+  <li>Softmax backpropagation computes gradient w.r.t. Dense input</li>
+  <li>Dense backpropagation computes gradient w.r.t. flattened features and updates Dense weights</li>
+  <li>Unflatten reshapes gradient back to 3D</li>
+  <li>MaxPool backpropagation routes gradients to max positions</li>
+  <li>ReLU backpropagation zeroes out gradients for negative activations</li>
+  <li>InstanceNorm backpropagation computes dGamma, dBeta, and input gradients</li>
+  <li>Conv2D backpropagation computes filter gradients and input gradients</li>
+  <li>Filter and InstanceNorm gradients are accumulated and used to update parameters</li>
+  <li>Input gradients from the first Conv2D are discarded (no parameters to update)</li>
+</ol>
+
+<div class="tip-box">
+<strong>Code:</strong> <strong>Propagation:</strong> <code>CoreCPUWorker&lt;T&gt;::propagateCNN(input)</code> iterates Conv2D/ReLU/Pool/InstanceNorm layers, then <code>Flatten&lt;T&gt;::propagate()</code> converts the 3D tensor to a 1D vector, and the ANN's <code>annCore-&gt;predict()</code> runs the dense layers.
+<strong>Backpropagation:</strong> ANN's <code>annCore-&gt;backpropagate()</code> returns the input gradient, <code>Flatten&lt;T&gt;::backpropagate()</code> reshapes it back to 3D, then <code>CoreCPUWorker&lt;T&gt;::backpropagateCNN()</code> iterates CNN layers in reverse, dispatching to <code>Conv2D::backpropagate()</code>, <code>ReLU::backpropagate()</code>, <code>Pool::backpropagate()</code>, and <code>InstanceNorm::backpropagate()</code>.
+</div>
+
+</main>
+</div>
+<footer class="site-footer">CNN Library Documentation</footer>
+</body>
+</html>
+

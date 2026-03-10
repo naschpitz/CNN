@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Convolution — CNN Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['\\[','\\]']]}};</script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+</head>
+<body>
+<header class="site-header">
+  <button class="hamburger" aria-label="Menu">☰</button>
+  <h1>CNN</h1><span class="subtitle">Convolutional Neural Network Library</span>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav>
+  <div class="section-title">Getting Started</div>
+  <a href="index.html">Home</a>
+  <a href="quickstart.html">Quick Start &amp; Build</a>
+  <a href="examples.html">Code Examples</a>
+  <div class="section-title">Reference</div>
+  <a href="api.html">API Reference</a>
+  <a href="architecture.html">Architecture</a>
+  <div class="section-title">Deep Dive</div>
+  <a href="layers.html">Layer Documentation</a>
+  <a href="gpu.html">GPU Implementation</a>
+  <div class="section-title">Math Foundations</div>
+  <a href="math.html">Overview</a>
+  <a href="math-convolution.html" class="active">Convolution</a>
+  <a href="math-pooling.html">Pooling</a>
+  <a href="math-activations.html">Activations</a>
+  <a href="math-instancenorm.html">Instance Normalization</a>
+  <a href="math-initialization.html">Weight Initialization</a>
+  <a href="math-optimizers.html">Optimizers</a>
+  <a href="math-gradient-flow.html">Gradient Flow</a>
+</nav></aside>
+<main class="main">
+
+<h1>Convolution</h1>
+<p>The 2D convolution operation is the fundamental building block of CNNs. This page covers the forward pass, padding &amp; stride, and backpropagation through convolutional layers.</p>
+
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#conv2d">2D Convolution</a></li>
+    <li><a href="#padding-stride">Padding &amp; Stride</a></li>
+    <li><a href="#conv-backprop">Backpropagation through Conv2D</a></li>
+  </ol>
+</div>
+
+<h2 id="conv2d">2D Convolution</h2>
+<p>Given an input tensor and a set of learnable filters, convolution produces an output by sliding each filter across the input and computing element-wise products.</p>
+
+<h3>Mathematical Definition</h3>
+<div class="math-block">
+\[
+\text{output}[f, o_h, o_w] = \text{bias}[f] + \sum_{c=0}^{C-1} \sum_{k_h=0}^{K_H-1} \sum_{k_w=0}^{K_W-1} \text{input}[c, o_h \cdot s_y + k_h - p_y, o_w \cdot s_x + k_w - p_x] \cdot \text{filter}[f, c, k_h, k_w]
+\]
+</div>
+
+<h3>Index Notation</h3>
+<ul>
+  <li><strong>f</strong> — Filter index (0 to F-1), determines the output channel</li>
+  <li><strong>c</strong> — Input channel index (0 to C-1)</li>
+  <li><strong>o_h, o_w</strong> — Output spatial position (height, width)</li>
+  <li><strong>k_h, k_w</strong> — Filter kernel position (height, width)</li>
+  <li><strong>s_y, s_x</strong> — Stride in vertical and horizontal directions</li>
+  <li><strong>p_y, p_x</strong> — Padding applied to input (height, width)</li>
+  <li><strong>K_H, K_W</strong> — Filter kernel dimensions</li>
+  <li><strong>C</strong> — Number of input channels</li>
+  <li><strong>F</strong> — Number of filters (output channels)</li>
+</ul>
+
+<div class="info-box">
+The input is padded with zeros before convolution. The term <code>o_h · s_y + k_h - p_y</code> computes the actual input index by accounting for stride, kernel position, and padding offset.
+</div>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>Conv2D&lt;T&gt;::propagate(input, config, params)</code> in <code>CNN_Conv2D.cpp</code> implements the full 6-nested-loop convolution.
+On GPU: the <code>calculate_conv2d</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code> parallelises over output elements (one work-item per <em>(f, o_h, o_w)</em>).
+</div>
+
+<h2 id="padding-stride">Padding &amp; Stride</h2>
+<p>Padding and stride control the spatial dimensions of the output. The output size formula is:</p>
+
+<div class="math-block">
+\[
+O_H = \left\lfloor \frac{H + 2P_Y - K_H}{S_Y} \right\rfloor + 1
+\]
+</div>
+
+<p>Similarly for width: \(O_W = \left\lfloor \frac{W + 2P_X - K_W}{S_X} \right\rfloor + 1\)</p>
+
+<h3>Padding Modes</h3>
+<table>
+  <thead>
+    <tr><th>Mode</th><th>Padding Value</th><th>Formula</th><th>Effect</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>VALID</strong></td><td>P = 0</td><td>\(O_H = \lfloor \frac{H - K_H}{S_Y} \rfloor + 1\)</td><td>Output shrinks; no padding</td></tr>
+    <tr><td><strong>SAME</strong></td><td>P = ⌊K/2⌋</td><td>\(O_H = \lceil \frac{H}{S_Y} \rceil\)</td><td>Preserves spatial dims when stride=1</td></tr>
+    <tr><td><strong>FULL</strong></td><td>P = K - 1</td><td>\(O_H = H + K_H - 1\)</td><td>Output expands; maximum padding</td></tr>
+  </tbody>
+</table>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>SlidingStrategy::computePadding(kernelSize, strategy)</code> in <code>CNN_SlidingStrategy.hpp</code> returns 0 (VALID), ⌊K/2⌋ (SAME), or K−1 (FULL). The output dimensions are computed inside <code>Conv2D&lt;T&gt;::propagate()</code> using the formula above.
+</div>
+
+<h2 id="conv-backprop">Backpropagation through Conv2D</h2>
+<p>During backpropagation, gradients flow through the convolution layer in reverse. Given the upstream gradient \(\frac{\partial L}{\partial O[f,o_h,o_w]}\), we compute gradients with respect to filters, biases, and inputs.</p>
+
+<h3>Filter Gradient</h3>
+<div class="math-block">
+\[
+\frac{\partial L}{\partial W[f,c,k_h,k_w]} = \sum_{o_h} \sum_{o_w} \frac{\partial L}{\partial O[f,o_h,o_w]} \cdot X[c, o_h \cdot s_y + k_h - p_y, o_w \cdot s_x + k_w - p_x]
+\]
+</div>
+
+<div class="tip-box">
+<strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> in <code>CNN_Conv2D.cpp</code> — the line <code>dFilters[filterIdx] += dOutVal * input.at(c, ih, iw)</code>.
+On GPU: <code>calculate_dCost_dFilters</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code>.
+</div>
+
+<h3>Bias Gradient</h3>
+<div class="math-block">
+\[\frac{\partial L}{\partial b[f]} = \sum_{o_h} \sum_{o_w} \frac{\partial L}{\partial O[f,o_h,o_w]}\]
+</div>
+
+<div class="tip-box">
+<strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> — the line <code>dBiases[f] += dOutVal</code>.
+On GPU: <code>calculate_dCost_dBiases</code> kernel.
+</div>
+
+<h3>Input Gradient</h3>
+<div class="math-block">
+\[\frac{\partial L}{\partial X[c,i_h,i_w]} = \sum_f \sum_{k_h} \sum_{k_w} \frac{\partial L}{\partial O[f,o_h,o_w]} \cdot W[f,c,k_h,k_w]\]
+</div>
+<p>where \(o_h = \frac{i_h + p_y - k_h}{s_y}\) (only when evenly divisible).</p>
+
+<div class="tip-box">
+<strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> — the line <code>dInput.at(c, ih, iw) += dOutVal * params.filterAt(f, c, kh, kw)</code>.
+On GPU: <code>calculate_dCost_dInput</code> kernel.
+</div>
+
+<div class="info-box">
+The input gradient is essential when stacking multiple convolutional layers, since it propagates the error signal to previous layers.
+</div>
+
+</main>
+</div>
+<footer class="site-footer">CNN Library Documentation</footer>
+</body>
+</html>
+

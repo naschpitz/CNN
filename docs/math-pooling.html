@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Pooling — CNN Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['\\[','\\]']]}};</script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+</head>
+<body>
+<header class="site-header">
+  <button class="hamburger" aria-label="Menu">☰</button>
+  <h1>CNN</h1><span class="subtitle">Convolutional Neural Network Library</span>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav>
+  <div class="section-title">Getting Started</div>
+  <a href="index.html">Home</a>
+  <a href="quickstart.html">Quick Start &amp; Build</a>
+  <a href="examples.html">Code Examples</a>
+  <div class="section-title">Reference</div>
+  <a href="api.html">API Reference</a>
+  <a href="architecture.html">Architecture</a>
+  <div class="section-title">Deep Dive</div>
+  <a href="layers.html">Layer Documentation</a>
+  <a href="gpu.html">GPU Implementation</a>
+  <div class="section-title">Math Foundations</div>
+  <a href="math.html">Overview</a>
+  <a href="math-convolution.html">Convolution</a>
+  <a href="math-pooling.html" class="active">Pooling</a>
+  <a href="math-activations.html">Activations</a>
+  <a href="math-instancenorm.html">Instance Normalization</a>
+  <a href="math-initialization.html">Weight Initialization</a>
+  <a href="math-optimizers.html">Optimizers</a>
+  <a href="math-gradient-flow.html">Gradient Flow</a>
+</nav></aside>
+<main class="main">
+
+<h1>Pooling Backpropagation</h1>
+<p>Pooling layers reduce spatial dimensions by aggregating values. During backpropagation, gradients must be routed back to the input elements that contributed to the pooling operation.</p>
+
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#max-pooling">Max Pooling</a></li>
+    <li><a href="#avg-pooling">Average Pooling</a></li>
+  </ol>
+</div>
+
+<h2 id="max-pooling">Max Pooling</h2>
+<p>In max pooling, only the maximum value in each pool window contributes to the output. During backpropagation, the gradient flows entirely to the position of the maximum value:</p>
+
+<div class="math-block">
+\[
+\frac{\partial L}{\partial X[c,i_h,i_w]} = \begin{cases} \frac{\partial L}{\partial O[c,o_h,o_w]} & \text{if } (i_h, i_w) = \text{argmax} \\ 0 & \text{otherwise} \end{cases}
+\]
+</div>
+
+<h2 id="avg-pooling">Average Pooling</h2>
+<p>In average pooling, the output is the mean of all values in the pool window. The gradient is distributed equally among all input elements:</p>
+
+<div class="math-block">
+\[
+\frac{\partial L}{\partial X[c,i_h,i_w]} = \frac{1}{P_H \cdot P_W} \cdot \frac{\partial L}{\partial O[c,o_h,o_w]}
+\]
+</div>
+
+<p>where \(P_H\) and \(P_W\) are the pool window dimensions.</p>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>Pool&lt;T&gt;::propagate(input, config, maxIndices)</code> in <code>CNN_Pool.cpp</code> implements both modes. For max pooling, it stores the flat index of each maximum in <code>maxIndices</code>. <code>Pool&lt;T&gt;::backpropagate()</code> routes the gradient to <code>dInput.data[maxIdx]</code> (max) or distributes <code>dOutVal / count</code> evenly (avg).
+On GPU: <code>calculate_maxpool</code> records indices, <code>calculate_dCost_dMaxpool</code> routes gradients (both in <code>opencl/CNN_Kernels.cpp.cl</code>).
+</div>
+
+<div class="info-box">
+Max pooling is more commonly used in practice because it preserves sharp features and provides implicit regularization. Average pooling is sometimes used in the final layers for global feature aggregation.
+</div>
+
+</main>
+</div>
+<footer class="site-footer">CNN Library Documentation</footer>
+</body>
+</html>
+

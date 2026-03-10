@@ -22,7 +22,15 @@
   <a href="architecture.html">Architecture</a>
   <div class="section-title">Deep Dive</div>
   <a href="layers.html">Layer Documentation</a>
-  <a href="math.html">Mathematical Foundations</a>
+  <div class="section-title">Math Foundations</div>
+  <a href="math.html">Overview</a>
+  <a href="math-convolution.html">Convolution</a>
+  <a href="math-pooling.html">Pooling</a>
+  <a href="math-activations.html">Activations</a>
+  <a href="math-instancenorm.html">Instance Normalization</a>
+  <a href="math-initialization.html">Weight Initialization</a>
+  <a href="math-optimizers.html">Optimizers</a>
+  <a href="math-gradient-flow.html">Gradient Flow</a>
   <a href="gpu.html">GPU Implementation</a>
 </nav></aside>
 <main class="main">
@@ -227,7 +235,7 @@
   <tr><td><code>strideX</code></td><td><code>ulong</code></td><td>Horizontal stride</td></tr>
 </table>
 
-<h3>BatchNormLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
+<h3>NormLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
   <tr><td><code>epsilon</code></td><td><code>float</code></td><td>1e-5</td><td>Small constant added to variance for numerical stability</td></tr>
@@ -256,7 +264,7 @@
   <tr><td><code>filterAt(f,c,h,w)</code></td><td><code>T&amp;</code></td><td>Access filter weight at [f][c][h][w]</td></tr>
 </table>
 
-<h3>BatchNormParameters&lt;T&gt; <span class="badge badge-blue">CNN_BatchNormParameters.hpp</span></h3>
+<h3>NormParameters&lt;T&gt; <span class="badge badge-blue">CNN_NormParameters.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
   <tr><td><code>numChannels</code></td><td><code>ulong</code></td><td>Number of channels (one γ, β, μ, σ² per channel)</td></tr>
@@ -340,10 +348,10 @@
   <tr><td><code>backpropagate(dOut, inputShape, config, maxIndices)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Route/distribute gradient back through pool</td></tr>
 </table>
 
-<h3>BatchNorm&lt;T&gt;</h3>
+<h3>InstanceNorm&lt;T&gt;</h3>
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-  <tr><td><code>propagate(input, inputShape, params, config, training, batchMean*, batchVar*, xNormalized*)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Normalize per channel; inference uses running stats, training computes batch stats and updates running stats</td></tr>
+  <tr><td><code>propagate(input, inputShape, params, config, training, batchMean*, batchVar*, xNormalized*)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Normalize per channel per sample over spatial dimensions; computes per-sample spatial stats for both training and inference</td></tr>
   <tr><td><code>backpropagate(dOut, inputShape, params, config, batchMean, batchVar, xNormalized, dGamma, dBeta)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Compute gradients for γ, β, and input</td></tr>
 </table>
 

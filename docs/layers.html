@@ -23,13 +23,21 @@
   <a href="architecture.html">Architecture</a>
   <div class="section-title">Deep Dive</div>
   <a href="layers.html" class="active">Layer Documentation</a>
-  <a href="math.html">Mathematical Foundations</a>
+  <div class="section-title">Math Foundations</div>
+  <a href="math.html">Overview</a>
+  <a href="math-convolution.html">Convolution</a>
+  <a href="math-pooling.html">Pooling</a>
+  <a href="math-activations.html">Activations</a>
+  <a href="math-instancenorm.html">Instance Normalization</a>
+  <a href="math-initialization.html">Weight Initialization</a>
+  <a href="math-optimizers.html">Optimizers</a>
+  <a href="math-gradient-flow.html">Gradient Flow</a>
   <a href="gpu.html">GPU Implementation</a>
 </nav></aside>
 <main class="main">
 
 <h1>Layer Documentation</h1>
-<p>Detailed reference for all layer types in the CNN library: Conv2D, ReLU, Pool (Max &amp; Average), Batch Normalization, and Flatten. Each section covers the mathematical operation, propagation, backpropagation, and implementation details.</p>
+<p>Detailed reference for all layer types in the CNN library: Conv2D, ReLU, Pool (Max &amp; Average), Instance Normalization, and Flatten. Each section covers the mathematical operation, propagation, backpropagation, and implementation details.</p>
 
 <div class="toc">
   <h4>Contents</h4>
@@ -37,7 +45,7 @@
     <li><a href="#conv2d">Conv2D Layer</a></li>
     <li><a href="#relu">ReLU Layer</a></li>
     <li><a href="#pool">Pool Layer</a></li>
-    <li><a href="#batchnorm">BatchNorm Layer</a></li>
+    <li><a href="#instancenorm">InstanceNorm Layer</a></li>
     <li><a href="#flatten">Flatten Layer</a></li>
     <li><a href="#pipeline">Layer Pipeline Example</a></li>
   </ol>
@@ -361,8 +369,8 @@
 <h3>Parameters</h3>
 <p><strong>No learnable parameters.</strong> Pooling is a fixed operation.</p>
 
-<h2 id="batchnorm">BatchNorm Layer</h2>
-<p>Batch Normalization normalizes activations per channel, reducing internal covariate shift. It stabilizes training, allows higher learning rates, and acts as a mild regularizer. It is typically placed after Conv2D and before ReLU.</p>
+<h2 id="instancenorm">InstanceNorm Layer</h2>
+<p>Instance Normalization normalises activations per channel per sample over spatial dimensions (H × W). It stabilises training, allows higher learning rates, and acts as a mild regulariser. It is typically placed after Conv2D and before ReLU.</p>
 
 <h3>Purpose</h3>
 <ul>
@@ -428,18 +436,18 @@ y_{c,h,w} = \gamma_c \, \frac{x_{c,h,w} - \bar{\mu}_c}{\sqrt{\bar{\sigma}^2_c + 
 </table>
 
 <h3>JSON Configuration</h3>
-<pre><code>{ <span class="string">"type"</span>: <span class="string">"batchnorm"</span> }
-{ <span class="string">"type"</span>: <span class="string">"batchnorm"</span>, <span class="string">"epsilon"</span>: <span class="number">1e-5</span>, <span class="string">"momentum"</span>: <span class="number">0.1</span> }</code></pre>
+<pre><code>{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
+{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span>, <span class="string">"epsilon"</span>: <span class="number">1e-5</span>, <span class="string">"momentum"</span>: <span class="number">0.1</span> }</code></pre>
 
 <h3>Parameters</h3>
-<p>A BatchNorm layer with \(C\) input channels has:</p>
+<p>An InstanceNorm layer with \(C\) input channels has:</p>
 <div class="math-block">
 \[ \text{Total parameters} = 2C \text{ (learnable: } \gamma, \beta\text{)} + 2C \text{ (running: } \bar{\mu}, \bar{\sigma}^2\text{)} \]
 </div>
-<p>The output shape is identical to the input shape — BatchNorm does not change spatial dimensions or channel count.</p>
+<p>The output shape is identical to the input shape — InstanceNorm does not change spatial dimensions or channel count.</p>
 
 <div class="info-box">
-  <strong>Typical placement:</strong> Conv2D → <strong>BatchNorm</strong> → ReLU. Placing BatchNorm before the activation ensures the normalized distribution is passed to ReLU, which improves gradient flow.
+  <strong>Typical placement:</strong> Conv2D → <strong>InstanceNorm</strong> → ReLU. Placing InstanceNorm before the activation ensures the normalized distribution is passed to ReLU, which improves gradient flow.
 </div>
 
 <h2 id="flatten">Flatten Layer</h2>
@@ -482,7 +490,7 @@ y_{c,h,w} = \gamma_c \, \frac{x_{c,h,w} - \bar{\mu}_c}{\sqrt{\bar{\sigma}^2_c + 
   </div>
   <p><strong>Parameters:</strong> \(2 \times 1 \times 3 \times 3 + 2 = 20\) (18 weights + 2 biases)</p>
 
-  <h4>Step 2: BatchNorm</h4>
+  <h4>Step 2: InstanceNorm</h4>
   <p>Normalize per channel, scale by \(\gamma\), shift by \(\beta\). Shape unchanged</p>
   <div class="math-block">
     \[ \text{Shape: } 2 \times 4 \times 4 \]
@@ -515,7 +523,7 @@ y_{c,h,w} = \gamma_c \, \frac{x_{c,h,w} - \bar{\mu}_c}{\sqrt{\bar{\sigma}^2_c + 
     <tr><th>Layer</th><th>Type</th><th>Output Shape</th><th>Parameters</th></tr>
     <tr><td>Input</td><td>—</td><td>1×6×6</td><td>—</td></tr>
     <tr><td>Conv2D</td><td>2 filters, 3×3</td><td>2×4×4</td><td>20</td></tr>
-    <tr><td>BatchNorm</td><td>Normalization</td><td>2×4×4</td><td>4 + 4 running</td></tr>
+    <tr><td>InstanceNorm</td><td>Normalization</td><td>2×4×4</td><td>4 + 4 running</td></tr>
     <tr><td>ReLU</td><td>Activation</td><td>2×4×4</td><td>0</td></tr>
     <tr><td>MaxPool</td><td>2×2, stride 2</td><td>2×2×2</td><td>0</td></tr>
     <tr><td>Flatten</td><td>Reshape</td><td>8</td><td>0</td></tr>

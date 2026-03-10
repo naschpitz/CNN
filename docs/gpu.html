@@ -24,7 +24,15 @@
   <a href="architecture.html">Architecture</a>
   <div class="section-title">Deep Dive</div>
   <a href="layers.html">Layer Documentation</a>
-  <a href="math.html">Mathematical Foundations</a>
+  <div class="section-title">Math Foundations</div>
+  <a href="math.html">Overview</a>
+  <a href="math-convolution.html">Convolution</a>
+  <a href="math-pooling.html">Pooling</a>
+  <a href="math-activations.html">Activations</a>
+  <a href="math-instancenorm.html">Instance Normalization</a>
+  <a href="math-initialization.html">Weight Initialization</a>
+  <a href="math-optimizers.html">Optimizers</a>
+  <a href="math-gradient-flow.html">Gradient Flow</a>
   <a href="gpu.html" class="active">GPU Implementation</a>
 </nav></aside>
 <main class="main">
@@ -147,7 +155,7 @@
       <td>Accumulate, update, and utility kernels (SGD, Adam, zero_buffer)</td>
     </tr>
     <tr>
-      <td><code>opencl/CNN_BatchNorm.cpp.cl</code></td>
+      <td><code>opencl/CNN_InstanceNorm.cpp.cl</code></td>
       <td>Batch normalization kernels (mean, variance, normalize, gradient, running stats update)</td>
     </tr>
     <tr>
@@ -253,10 +261,10 @@
   actvs[out_offset + gid] = (val > 0) ? val : 0
 }</code></pre>
 
-<h3>calculate_batchnorm_normalize</h3>
+<h3>calculate_norm_propagate</h3>
 <p><strong>Work distribution:</strong> One work-item per element. Total work-items = layer tensor size.</p>
 <p>Used for both inference and training. The mean/var buffer arguments point to either running stats (inference) or batch-computed stats (training).</p>
-<pre><code>kernel void calculate_batchnorm_normalize(...) {
+<pre><code>kernel void calculate_norm_propagate(...) {
   gid = get_global_id(0)
 
   // Determine channel from gid
@@ -269,8 +277,8 @@
   actvs[out_offset + gid] = gamma[c] * xhat + beta[c]
 }</code></pre>
 
-<h3>calculate_batchnorm_mean / calculate_batchnorm_var</h3>
-<p><strong>Training only:</strong> Two kernels executed before <code>calculate_batchnorm_normalize</code>. <code>calculate_batchnorm_mean</code> computes per-channel means (one work-group per channel with local reduction), <code>calculate_batchnorm_var</code> computes per-channel variances. Their outputs are passed as the mean/var arguments to the normalize kernel.</p>
+<h3>calculate_norm_mean / calculate_norm_var</h3>
+<p><strong>Training only:</strong> Two kernels executed before <code>calculate_norm_propagate</code>. <code>calculate_norm_mean</code> computes per-channel means (one work-group per channel with local reduction), <code>calculate_norm_var</code> computes per-channel variances. Their outputs are passed as the mean/var arguments to the normalize kernel.</p>
 
 <h3>calculate_maxpool</h3>
 <p><strong>Work distribution:</strong> One work-item per output element. Total work-items = \(\text{channels} \times \text{outH} \times \text{outW}\).</p>
@@ -397,8 +405,8 @@
   grads[maxIdx] += dOutVal
 }</code></pre>
 
-<h3>calculate_batchnorm_dGammaBeta / calculate_batchnorm_dInput</h3>
-<p><strong>Work distribution:</strong> <code>calculate_batchnorm_dGammaBeta</code> uses one work-item per channel to compute \(\partial L / \partial \gamma_c\) and \(\partial L / \partial \beta_c\) by summing over spatial dimensions. <code>calculate_batchnorm_dInput</code> uses one work-item per element to compute the input gradient using the full batch normalization gradient formula.</p>
+<h3>calculate_norm_dGamma / calculate_norm_dBeta / calculate_norm_dInput</h3>
+<p><strong>Work distribution:</strong> <code>calculate_norm_dGamma / calculate_norm_dBeta</code> uses one work-item per channel to compute \(\partial L / \partial \gamma_c\) and \(\partial L / \partial \beta_c\) by summing over spatial dimensions. <code>calculate_norm_dInput</code> uses one work-item per element to compute the input gradient using the full instance normalization gradient formula.</p>
 
 <h2 id="utility-kernels">Utility Kernels</h2>
 
@@ -476,7 +484,7 @@ for each GPU worker:
 <p>Kernels are compiled only when first needed, not at initialization. This reduces startup time and memory usage.</p>
 
 <div class="info-box">
-  <strong>Predict mode:</strong> Compiles only propagation kernels (calculate_conv2d, calculate_relu, calculate_maxpool, calculate_batchnorm_normalize).
+  <strong>Predict mode:</strong> Compiles only propagation kernels (calculate_conv2d, calculate_relu, calculate_maxpool, calculate_norm_propagate).
 </div>
 
 <div class="info-box">
