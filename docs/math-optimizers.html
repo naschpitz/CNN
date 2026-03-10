@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Optimizers — CNN Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['\\[','\\]']]}};</script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+</head>
+<body>
+<header class="site-header">
+  <button class="hamburger" aria-label="Menu">☰</button>
+  <h1>CNN</h1><span class="subtitle">Convolutional Neural Network Library</span>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav>
+  <div class="section-title">Getting Started</div>
+  <a href="index.html">Home</a>
+  <a href="quickstart.html">Quick Start &amp; Build</a>
+  <a href="examples.html">Code Examples</a>
+  <div class="section-title">Reference</div>
+  <a href="api.html">API Reference</a>
+  <a href="architecture.html">Architecture</a>
+  <div class="section-title">Deep Dive</div>
+  <a href="layers.html">Layer Documentation</a>
+  <a href="gpu.html">GPU Implementation</a>
+  <div class="section-title">Math Foundations</div>
+  <a href="math.html">Overview</a>
+  <a href="math-convolution.html">Convolution</a>
+  <a href="math-pooling.html">Pooling</a>
+  <a href="math-activations.html">Activations</a>
+  <a href="math-instancenorm.html">Instance Normalization</a>
+  <a href="math-initialization.html">Weight Initialization</a>
+  <a href="math-optimizers.html" class="active">Optimizers</a>
+  <a href="math-gradient-flow.html">Gradient Flow</a>
+</nav></aside>
+<main class="main">
+
+<h1>Optimizers</h1>
+<p>Optimizers update the network parameters using the computed gradients. Different optimizers use different strategies to control the step size and direction.</p>
+
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#sgd">SGD</a></li>
+    <li><a href="#adam">Adam</a></li>
+  </ol>
+</div>
+
+<h2 id="sgd">SGD (Stochastic Gradient Descent)</h2>
+<p>The simplest optimizer. Each parameter is updated by subtracting the gradient scaled by the learning rate:</p>
+
+<div class="math-block">
+\[\theta_{t+1} = \theta_t - \eta \cdot \frac{\partial L}{\partial \theta_t}\]
+</div>
+
+<p>where \(\eta\) is the learning rate.</p>
+
+<div class="tip-box">
+<strong>Code:</strong> The SGD update is applied in <code>CoreCPU&lt;T&gt;::update()</code> in <code>CNN_CoreCPU.cpp</code> when <code>optimizer.type == SGD</code>.
+On GPU: <code>update_weights_sgd</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code>.
+</div>
+
+<h2 id="adam">Adam (Adaptive Moment Estimation)</h2>
+<p>Adam maintains per-parameter running averages of the first moment (mean) and second moment (uncentred variance) of the gradients:</p>
+
+<h3>Moment Updates</h3>
+<div class="math-block">
+\[m_t = \beta_1 \cdot m_{t-1} + (1 - \beta_1) \cdot g_t\]
+\[v_t = \beta_2 \cdot v_{t-1} + (1 - \beta_2) \cdot g_t^2\]
+</div>
+
+<h3>Bias Correction</h3>
+<div class="math-block">
+\[\hat{m}_t = \frac{m_t}{1 - \beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1 - \beta_2^t}\]
+</div>
+
+<h3>Parameter Update</h3>
+<div class="math-block">
+\[\theta_{t+1} = \theta_t - \eta \cdot \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon}\]
+</div>
+
+<p>Default hyperparameters: \(\beta_1 = 0.9\), \(\beta_2 = 0.999\), \(\epsilon = 10^{-8}\).</p>
+
+<div class="tip-box">
+<strong>Code:</strong> <code>CoreCPU&lt;T&gt;::update()</code> in <code>CNN_CoreCPU.cpp</code> when <code>optimizer.type == ADAM</code>. The Adam state (m, v vectors and timestep t) is stored in <code>Parameters&lt;T&gt;::adamState</code>.
+On GPU: <code>update_weights_adam</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code>.
+</div>
+
+<div class="info-box">
+Adam is generally recommended as the default optimizer. It adapts the learning rate per parameter, which helps with sparse gradients and varying gradient magnitudes across layers.
+</div>
+
+</main>
+</div>
+<footer class="site-footer">CNN Library Documentation</footer>
+</body>
+</html>
+
