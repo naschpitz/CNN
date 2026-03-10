@@ -81,10 +81,10 @@ void Worker<T>::initializeConvParams(const LayersConfig& layersConfig, const Sha
 //===================================================================================================================//
 
 template <typename T>
-void Worker<T>::initializeInstanceNormParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
-                                             Parameters<T>& parameters)
+void Worker<T>::initializeNormParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
+                                     Parameters<T>& parameters)
 {
-  ulong inIdx = 0;
+  ulong normIdx = 0;
   Shape3D currentShape = inputShape;
 
   for (const auto& layerConfig : layersConfig.cnnLayers) {
@@ -111,23 +111,23 @@ void Worker<T>::initializeInstanceNormParams(const LayersConfig& layersConfig, c
       ulong numChannels = currentShape.c;
 
       // Check if parameters already loaded
-      if (inIdx < parameters.inParams.size() && !parameters.inParams[inIdx].gamma.empty()) {
-        inIdx++;
+      if (normIdx < parameters.normParams.size() && !parameters.normParams[normIdx].gamma.empty()) {
+        normIdx++;
         break;
       }
 
-      // Ensure inParams vector is large enough
-      if (inIdx >= parameters.inParams.size()) {
-        parameters.inParams.resize(inIdx + 1);
+      // Ensure normParams vector is large enough
+      if (normIdx >= parameters.normParams.size()) {
+        parameters.normParams.resize(normIdx + 1);
       }
 
-      InstanceNormParameters<T>& bp = parameters.inParams[inIdx];
+      NormParameters<T>& bp = parameters.normParams[normIdx];
       bp.numChannels = numChannels;
       bp.gamma.assign(numChannels, static_cast<T>(1)); // Initialize scale to 1
       bp.beta.assign(numChannels, static_cast<T>(0)); // Initialize shift to 0
       bp.runningMean.assign(numChannels, static_cast<T>(0));
       bp.runningVar.assign(numChannels, static_cast<T>(1));
-      inIdx++;
+      normIdx++;
       break;
     }
 
