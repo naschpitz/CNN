@@ -189,11 +189,13 @@ kernel void calculate_batchnorm_dInput(global TYPE* grads, global TYPE* bn_xnorm
 
 //===================================================================================================================//
 
-// Update running stats: running = (1 - momentum) * running + momentum * batch
+// Update running stats: running = (1 - momentum) * running + momentum * avgBatchStat
+// The accum buffers contain the sum of per-sample batch mean/var across all samples in the batch.
+// We divide by numSamples to get the average before the EMA update.
 // One work-item per channel.
 kernel void update_batchnorm_running_stats(global TYPE* bn_running_mean, global TYPE* bn_running_var,
-                                           global TYPE* bn_batch_mean, global TYPE* bn_batch_var, ulong bn_param_offset,
-                                           ulong numChannels, float momentum)
+                                           global TYPE* accum_bn_batch_mean, global TYPE* accum_bn_batch_var,
+                                           ulong bn_param_offset, ulong numChannels, float momentum, ulong numSamples)
 {
   size_t gid = get_global_id(0);
 
@@ -201,8 +203,10 @@ kernel void update_batchnorm_running_stats(global TYPE* bn_running_mean, global 
     return;
 
   ulong idx = bn_param_offset + gid;
-  bn_running_mean[idx] = ((TYPE)1 - (TYPE)momentum) * bn_running_mean[idx] + (TYPE)momentum * bn_batch_mean[idx];
-  bn_running_var[idx] = ((TYPE)1 - (TYPE)momentum) * bn_running_var[idx] + (TYPE)momentum * bn_batch_var[idx];
+  TYPE avgMean = accum_bn_batch_mean[idx] / (TYPE)numSamples;
+  TYPE avgVar = accum_bn_batch_var[idx] / (TYPE)numSamples;
+  bn_running_mean[idx] = ((TYPE)1 - (TYPE)momentum) * bn_running_mean[idx] + (TYPE)momentum * avgMean;
+  bn_running_var[idx] = ((TYPE)1 - (TYPE)momentum) * bn_running_var[idx] + (TYPE)momentum * avgVar;
 }
 
 //===================================================================================================================//
