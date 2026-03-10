@@ -270,6 +270,11 @@ TestResult<T> CoreGPU<T>::test(ulong numSamples, const SampleProvider<T>& sample
       totalLoss += gpuResults[i].first;
       totalCorrect += gpuResults[i].second;
     }
+
+    if (this->progressCallback) {
+      ulong samplesProcessed = std::min((b + 1) * batchSize, numSamples);
+      this->progressCallback(samplesProcessed, numSamples);
+    }
   }
 
   TestResult<T> result;

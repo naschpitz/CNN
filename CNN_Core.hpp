@@ -7,6 +7,7 @@
 #include "CNN_TrainingProgress.hpp"
 #include "CNN_TrainingMetadata.hpp"
 #include "CNN_PredictMetadata.hpp"
+#include "CNN_ProgressCallback.hpp"
 #include "CNN_TestResult.hpp"
 
 #include <chrono>
@@ -93,6 +94,11 @@ namespace CNN
         trainingCallback = callback;
       }
 
+      void setProgressCallback(ProgressCallback callback)
+      {
+        progressCallback = callback;
+      }
+
       //-- Log level --//
       void setLogLevel(LogLevel level)
       {
@@ -135,6 +141,7 @@ namespace CNN
 
       //-- Internal state --//
       TrainingCallback<T> trainingCallback;
+      ProgressCallback progressCallback;
 
     private:
       //-- Timing state --//
