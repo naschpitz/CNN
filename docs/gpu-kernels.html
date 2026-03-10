@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>GPU Implementation — CNN Documentation</title>
+  <title>Kernel Reference — CNN Documentation</title>
   <link rel="stylesheet" href="style.css">
   <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['\\[','\\]']]}};</script>
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
@@ -46,35 +46,15 @@
   <a href="math-optimizers.html">Optimizers</a>
   <a href="math-gradient-flow.html">Gradient Flow</a>
   <div class="section-title">GPU Implementation</div>
-  <a href="gpu.html" class="active">Overview</a>
+  <a href="gpu.html">Overview</a>
   <a href="gpu-architecture.html">Architecture &amp; Kernels</a>
   <a href="gpu-buffers.html">Buffer Layout</a>
-  <a href="gpu-kernels.html">Kernel Reference</a>
+  <a href="gpu-kernels.html" class="active">Kernel Reference</a>
   <a href="gpu-multi-gpu.html">Multi-GPU &amp; Compilation</a>
 </nav></aside>
 <main class="main">
 
-<h1>GPU Implementation Deep Dive</h1>
-<p>This section explores the architecture, memory layout, and kernel implementations that power CNN's GPU acceleration via OpenCL.</p>
 
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;">
-  <a href="gpu-architecture.html" class="card" style="text-decoration:none;color:inherit;">
-    <h3 style="color:var(--primary);">🏗️ Architecture &amp; Kernel Files</h3>
-    <p style="font-size:.9rem;">GPU architecture overview, worker model, and kernel file organization.</p>
-  </a>
-  <a href="gpu-buffers.html" class="card" style="text-decoration:none;color:inherit;">
-    <h3 style="color:var(--primary);">💾 Buffer Layout</h3>
-    <p style="font-size:.9rem;">Activation, gradient, filter, and pool index buffer layout on GPU.</p>
-  </a>
-  <a href="gpu-kernels.html" class="card" style="text-decoration:none;color:inherit;">
-    <h3 style="color:var(--primary);">⚡ Kernel Reference</h3>
-    <p style="font-size:.9rem;">Propagation, backpropagation, and utility kernel pseudocode.</p>
-  </a>
-  <a href="gpu-multi-gpu.html" class="card" style="text-decoration:none;color:inherit;">
-    <h3 style="color:var(--primary);">🔀 Multi-GPU &amp; Compilation</h3>
-    <p style="font-size:.9rem;">Multi-GPU gradient merging and lazy kernel compilation.</p>
-  </a>
-</div>
 
 </main>
 </div>

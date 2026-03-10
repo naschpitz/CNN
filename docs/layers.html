@@ -4,8 +4,9 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>Layer Documentation — CNN Documentation</title>
   <link rel="stylesheet" href="style.css">
+  <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['\\[','\\]']]}};</script>
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
-  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')})});</script>
+  <script>document.addEventListener('DOMContentLoaded',()=>{document.querySelector('.hamburger')?.addEventListener('click',()=>{document.querySelector('.sidebar').classList.toggle('open')});});</script>
 </head>
 <body>
 <header class="site-header">
@@ -20,9 +21,21 @@
   <a href="examples.html">Code Examples</a>
   <div class="section-title">Reference</div>
   <a href="api.html">API Reference</a>
-  <a href="architecture.html">Architecture</a>
-  <div class="section-title">Deep Dive</div>
-  <a href="layers.html" class="active">Layer Documentation</a>
+  <div class="section-title">Architecture</div>
+  <a href="architecture.html">Overview</a>
+  <a href="architecture-classes.html">Class Hierarchy</a>
+  <a href="architecture-patterns.html">Design Patterns</a>
+  <a href="architecture-pipeline.html">CNN + ANN Pipeline</a>
+  <a href="architecture-training.html">Training Pipeline</a>
+  <a href="architecture-memory.html">Memory Layout</a>
+  <div class="section-title">Layers</div>
+  <a href="layers.html" class="active">Overview</a>
+  <a href="layers-conv2d.html">Conv2D</a>
+  <a href="layers-relu.html">ReLU</a>
+  <a href="layers-pool.html">Pool</a>
+  <a href="layers-instancenorm.html">InstanceNorm</a>
+  <a href="layers-flatten.html">Flatten</a>
+  <a href="layers-pipeline.html">Pipeline Example</a>
   <div class="section-title">Math Foundations</div>
   <a href="math.html">Overview</a>
   <a href="math-convolution.html">Convolution</a>
@@ -32,508 +45,43 @@
   <a href="math-initialization.html">Weight Initialization</a>
   <a href="math-optimizers.html">Optimizers</a>
   <a href="math-gradient-flow.html">Gradient Flow</a>
-  <a href="gpu.html">GPU Implementation</a>
+  <div class="section-title">GPU Implementation</div>
+  <a href="gpu.html">Overview</a>
+  <a href="gpu-architecture.html">Architecture &amp; Kernels</a>
+  <a href="gpu-buffers.html">Buffer Layout</a>
+  <a href="gpu-kernels.html">Kernel Reference</a>
+  <a href="gpu-multi-gpu.html">Multi-GPU &amp; Compilation</a>
 </nav></aside>
 <main class="main">
 
 <h1>Layer Documentation</h1>
-<p>Detailed reference for all layer types in the CNN library: Conv2D, ReLU, Pool (Max &amp; Average), Instance Normalization, and Flatten. Each section covers the mathematical operation, propagation, backpropagation, and implementation details.</p>
-
-<div class="toc">
-  <h4>Contents</h4>
-  <ol>
-    <li><a href="#conv2d">Conv2D Layer</a></li>
-    <li><a href="#relu">ReLU Layer</a></li>
-    <li><a href="#pool">Pool Layer</a></li>
-    <li><a href="#instancenorm">InstanceNorm Layer</a></li>
-    <li><a href="#flatten">Flatten Layer</a></li>
-    <li><a href="#pipeline">Layer Pipeline Example</a></li>
-  </ol>
-</div>
-
-<h2 id="conv2d">Conv2D Layer</h2>
-<p>The convolutional layer is the core building block of CNNs. It applies learned filters (kernels) to extract spatial features from the input. Each filter slides across the input, computing dot products to produce feature maps.</p>
-
-<h3>Purpose</h3>
-<p>Conv2D layers learn to detect local patterns (edges, textures, shapes) by applying multiple filters. The layer is parameterized by:</p>
-<ul>
-  <li><strong>Number of filters</strong> — how many feature maps to produce</li>
-  <li><strong>Filter size</strong> — typically 3×3 or 5×5</li>
-  <li><strong>Stride</strong> — how many pixels the filter moves each step</li>
-  <li><strong>Padding</strong> — how to handle boundaries (VALID, SAME, FULL)</li>
-</ul>
-
-<h3>Propagation</h3>
-<p>For each filter, propagation computes:</p>
-<div class="math-block">
-\[ \text{output}[f, h, w] = \text{bias}[f] + \sum_{c=0}^{C-1} \sum_{kh=0}^{K_h-1} \sum_{kw=0}^{K_w-1} \text{input}[c, h \cdot s_y + kh - p_y, w \cdot s_x + kw - p_x] \times \text{filter}[f, c, kh, kw] \]
-</div>
-
-<p>Where \(f\) is the filter index, \((h, w)\) is the output position, \(s_y, s_x\) are strides, and \(p_y, p_x\) are padding offsets.</p>
-
-<div class="diagram">
-  <svg viewBox="0 0 600 280" xmlns="http://www.w3.org/2000/svg">
-    <!-- Input feature map -->
-    <g id="input">
-      <text x="20" y="20" font-size="14" font-weight="bold" fill="#202124">Input (5×5)</text>
-      <rect x="20" y="30" width="120" height="120" fill="none" stroke="#1a73e8" stroke-width="2"/>
-      <g stroke="#dadce0" stroke-width="1" fill="none">
-        <line x1="44" y1="30" x2="44" y2="150"/><line x1="68" y1="30" x2="68" y2="150"/><line x1="92" y1="30" x2="92" y2="150"/><line x1="116" y1="30" x2="116" y2="150"/>
-        <line x1="20" y1="54" x2="140" y2="54"/><line x1="20" y1="78" x2="140" y2="78"/><line x1="20" y1="102" x2="140" y2="102"/><line x1="20" y1="126" x2="140" y2="126"/>
-      </g>
-      <!-- Highlight 3x3 window -->
-      <rect x="44" y="54" width="72" height="72" fill="none" stroke="#f9ab00" stroke-width="3" stroke-dasharray="5,5"/>
-    </g>
-
-    <!-- Filter -->
-    <g id="filter">
-      <text x="200" y="20" font-size="14" font-weight="bold" fill="#202124">Filter (3×3)</text>
-      <rect x="200" y="30" width="90" height="90" fill="none" stroke="#34a853" stroke-width="2"/>
-      <g stroke="#dadce0" stroke-width="1" fill="none">
-        <line x1="230" y1="30" x2="230" y2="120"/><line x1="260" y1="30" x2="260" y2="120"/>
-        <line x1="200" y1="60" x2="290" y2="60"/><line x1="200" y1="90" x2="290" y2="90"/>
-      </g>
-      <text x="215" y="75" font-size="12" fill="#202124" text-anchor="middle">w₀₀</text>
-      <text x="245" y="75" font-size="12" fill="#202124" text-anchor="middle">w₀₁</text>
-      <text x="275" y="75" font-size="12" fill="#202124" text-anchor="middle">w₀₂</text>
-    </g>
-
-    <!-- Multiply-accumulate -->
-    <g id="mac">
-      <text x="340" y="20" font-size="14" font-weight="bold" fill="#202124">Multiply &amp; Sum</text>
-      <rect x="340" y="30" width="120" height="90" fill="#e8f0fe" stroke="#1a73e8" stroke-width="1" rx="4"/>
-      <text x="400" y="60" font-size="12" fill="#202124" text-anchor="middle">input × filter</text>
-      <text x="400" y="80" font-size="12" fill="#202124" text-anchor="middle">+ bias</text>
-      <text x="400" y="100" font-size="12" fill="#202124" text-anchor="middle">= output</text>
-    </g>
-
-    <!-- Output -->
-    <g id="output">
-      <text x="500" y="20" font-size="14" font-weight="bold" fill="#202124">Output (3×3)</text>
-      <rect x="500" y="30" width="90" height="90" fill="none" stroke="#c5221f" stroke-width="2"/>
-      <g stroke="#dadce0" stroke-width="1" fill="none">
-        <line x1="530" y1="30" x2="530" y2="120"/><line x1="560" y1="30" x2="560" y2="120"/>
-        <line x1="500" y1="60" x2="590" y2="60"/><line x1="500" y1="90" x2="590" y2="90"/>
-      </g>
-      <circle cx="515" cy="45" r="3" fill="#c5221f"/>
-      <text x="515" y="75" font-size="12" fill="#202124" text-anchor="middle">y₀₀</text>
-    </g>
-
-    <!-- Arrows -->
-    <path d="M 140 90 L 200 75" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-    <path d="M 290 75 L 340 75" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-    <path d="M 460 75 L 500 75" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-
-    <defs>
-      <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-        <polygon points="0 0, 10 3, 0 6" fill="#666"/>
-      </marker>
-    </defs>
-  </svg>
-  <figcaption>Conv2D propagation: filter slides over input, computing dot products at each position</figcaption>
-</div>
-
-<h3>Output Shape Formula</h3>
-<p>The output spatial dimensions are computed as:</p>
-<div class="math-block">
-\[ \text{outH} = \left\lfloor \frac{\text{inputH} + 2 \cdot p_y - k_h}{s_y} \right\rfloor + 1 \]
-\[ \text{outW} = \left\lfloor \frac{\text{inputW} + 2 \cdot p_x - k_w}{s_x} \right\rfloor + 1 \]
-</div>
-
-<p>The output has \(\text{numFilters}\) channels.</p>
-
-<h3>Padding Strategies</h3>
-<p>The library supports three padding modes:</p>
-<table>
-  <tr><th>Mode</th><th>Padding</th><th>Use Case</th><th>Output Size</th></tr>
-  <tr><td><strong>VALID</strong></td><td>\(p = 0\)</td><td>Reduce spatial dimensions</td><td>\(\lfloor (H - k) / s \rfloor + 1\)</td></tr>
-  <tr><td><strong>SAME</strong></td><td>\(p = \lfloor k / 2 \rfloor\)</td><td>Preserve spatial size (stride=1)</td><td>\(H\) (if stride=1)</td></tr>
-  <tr><td><strong>FULL</strong></td><td>\(p = k - 1\)</td><td>Expand output (transposed conv)</td><td>\(H + k - 1\)</td></tr>
-</table>
-
-<div class="diagram">
-  <svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg">
-    <!-- VALID padding -->
-    <g id="valid">
-      <text x="20" y="20" font-size="13" font-weight="bold" fill="#202124">VALID (p=0)</text>
-      <rect x="20" y="30" width="100" height="100" fill="none" stroke="#1a73e8" stroke-width="2"/>
-      <g stroke="#dadce0" stroke-width="1" fill="none">
-        <line x1="45" y1="30" x2="45" y2="130"/><line x1="70" y1="30" x2="70" y2="130"/><line x1="95" y1="30" x2="95" y2="130"/>
-        <line x1="20" y1="55" x2="120" y2="55"/><line x1="20" y1="80" x2="120" y2="80"/><line x1="20" y1="105" x2="120" y2="105"/>
-      </g>
-      <text x="70" y="155" font-size="11" fill="#202124" text-anchor="middle">4×4 input</text>
-    </g>
-
-    <!-- SAME padding -->
-    <g id="same">
-      <text x="200" y="20" font-size="13" font-weight="bold" fill="#202124">SAME (p=1)</text>
-      <rect x="200" y="30" width="120" height="120" fill="none" stroke="#dadce0" stroke-width="1" stroke-dasharray="3,3"/>
-      <rect x="210" y="40" width="100" height="100" fill="none" stroke="#34a853" stroke-width="2"/>
-      <g stroke="#dadce0" stroke-width="1" fill="none">
-        <line x1="235" y1="40" x2="235" y2="140"/><line x1="260" y1="40" x2="260" y2="140"/><line x1="285" y1="40" x2="285" y2="140"/>
-        <line x1="210" y1="65" x2="310" y2="65"/><line x1="210" y1="90" x2="310" y2="90"/><line x1="210" y1="115" x2="310" y2="115"/>
-      </g>
-      <text x="260" y="175" font-size="11" fill="#202124" text-anchor="middle">4×4 padded</text>
-    </g>
-
-    <!-- FULL padding -->
-    <g id="full">
-      <text x="420" y="20" font-size="13" font-weight="bold" fill="#202124">FULL (p=2)</text>
-      <rect x="420" y="30" width="140" height="140" fill="none" stroke="#dadce0" stroke-width="1" stroke-dasharray="3,3"/>
-      <rect x="435" y="45" width="100" height="100" fill="none" stroke="#c5221f" stroke-width="2"/>
-      <g stroke="#dadce0" stroke-width="1" fill="none">
-        <line x1="460" y1="45" x2="460" y2="145"/><line x1="485" y1="45" x2="485" y2="145"/><line x1="510" y1="45" x2="510" y2="145"/>
-        <line x1="435" y1="70" x2="535" y2="70"/><line x1="435" y1="95" x2="535" y2="95"/><line x1="435" y1="120" x2="535" y2="120"/>
-      </g>
-      <text x="490" y="195" font-size="11" fill="#202124" text-anchor="middle">6×6 padded</text>
-    </g>
-  </svg>
-  <figcaption>Padding strategies: VALID (no padding), SAME (preserve size), FULL (expand)</figcaption>
-</div>
-
-<h3>Backpropagation</h3>
-<p>Backpropagation computes three gradients simultaneously:</p>
-<ul>
-  <li><strong>dFilters</strong> — gradient w.r.t. filter weights: \(\frac{\partial L}{\partial w_{f,c,kh,kw}}\)</li>
-  <li><strong>dBiases</strong> — gradient w.r.t. biases: \(\frac{\partial L}{\partial b_f}\)</li>
-  <li><strong>dInput</strong> — gradient w.r.t. input: \(\frac{\partial L}{\partial x}\) (passed to previous layer)</li>
-</ul>
-
-<div class="info-box">
-  <strong>Implementation Detail:</strong> Backpropagation uses transposed convolution to compute dInput, allowing efficient gradient computation through the layer.
-</div>
-
-<h3>Parameters</h3>
-<p>A Conv2D layer with \(F\) filters, \(C\) input channels, and \(K_h \times K_w\) kernel size has:</p>
-<div class="math-block">
-\[ \text{Total parameters} = F \times C \times K_h \times K_w + F \]
-</div>
-<p>The first term is filter weights, the second is biases (one per filter).</p>
-
-<h2 id="relu">ReLU Layer</h2>
-<p>Rectified Linear Unit (ReLU) is a simple but powerful non-linear activation function. It introduces non-linearity, allowing the network to learn complex patterns.</p>
-
-<h3>Purpose</h3>
-<p>ReLU breaks the linearity of the network. Without activation functions, stacking multiple linear layers would be equivalent to a single linear transformation. ReLU is computationally efficient and works well with gradient-based optimization.</p>
-
-<h3>Propagation</h3>
-<p>Element-wise operation:</p>
-<div class="math-block">
-\[ \text{output}[i] = \max(0, \text{input}[i]) \]
-</div>
-
-<div class="diagram">
-  <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
-    <!-- Axes -->
-    <line x1="50" y1="250" x2="350" y2="250" stroke="#202124" stroke-width="2"/>
-    <line x1="50" y1="50" x2="50" y2="250" stroke="#202124" stroke-width="2"/>
-    <text x="360" y="255" font-size="12" fill="#202124">x</text>
-    <text x="45" y="40" font-size="12" fill="#202124">f(x)</text>
-
-    <!-- Grid -->
-    <g stroke="#dadce0" stroke-width="1">
-      <line x1="50" y1="150" x2="350" y2="150"/><line x1="50" y1="200" x2="350" y2="200"/>
-      <line x1="150" y1="50" x2="150" y2="250"/><line x1="250" y1="50" x2="250" y2="250"/>
-    </g>
-
-    <!-- ReLU curve -->
-    <polyline points="50,250 150,250 350,50" stroke="#1a73e8" stroke-width="3" fill="none"/>
-
-    <!-- Labels -->
-    <text x="140" y="270" font-size="11" fill="#202124" text-anchor="middle">0</text>
-    <text x="35" y="255" font-size="11" fill="#202124" text-anchor="end">0</text>
-
-    <!-- Annotations -->
-    <text x="100" y="230" font-size="11" fill="#34a853" font-weight="bold">f(x) = 0</text>
-    <text x="280" y="100" font-size="11" fill="#34a853" font-weight="bold">f(x) = x</text>
-  </svg>
-  <figcaption>ReLU function: zero for negative inputs, identity for positive inputs</figcaption>
-</div>
-
-<h3>Backpropagation</h3>
-<p>Gradient flows only where input was positive:</p>
-<div class="math-block">
-\[ \frac{\partial L}{\partial x_i} = \begin{cases} \frac{\partial L}{\partial y_i} & \text{if } x_i > 0 \\ 0 & \text{otherwise} \end{cases} \]
-</div>
-
-<div class="tip-box">
-  <strong>Dying ReLU Problem:</strong> If a neuron's input is always negative during training, its gradient becomes zero and it never updates. This is rare in practice but can occur with poor initialization or high learning rates.
-</div>
-
-<h3>Parameters</h3>
-<p><strong>No learnable parameters.</strong> ReLU is a fixed non-linearity.</p>
-
-<h2 id="pool">Pool Layer</h2>
-<p>Pooling layers reduce spatial dimensions while preserving important features. The library supports Max Pooling and Average Pooling.</p>
-
-<h3>Purpose</h3>
-<ul>
-  <li><strong>Spatial downsampling</strong> — reduce computation and memory</li>
-  <li><strong>Translation invariance</strong> — small shifts in input don't change output much</li>
-  <li><strong>Feature aggregation</strong> — combine local information</li>
-</ul>
-
-<h3>Max Pooling</h3>
-<p>Takes the maximum value in each pooling window:</p>
-<div class="math-block">
-\[ \text{output}[c, h, w] = \max_{kh, kw} \text{input}[c, h \cdot s_y + kh, w \cdot s_x + kw] \]
-</div>
-
-<p>The index of the maximum element is stored for backpropagation.</p>
-
-<h3>Average Pooling</h3>
-<p>Computes the mean of each pooling window:</p>
-<div class="math-block">
-\[ \text{output}[c, h, w] = \frac{1}{K_h \times K_w} \sum_{kh, kw} \text{input}[c, h \cdot s_y + kh, w \cdot s_x + kw] \]
-</div>
-
-<div class="diagram">
-  <svg viewBox="0 0 600 280" xmlns="http://www.w3.org/2000/svg">
-    <!-- Input -->
-    <g id="pool-input">
-      <text x="20" y="20" font-size="13" font-weight="bold" fill="#202124">Input (4×4)</text>
-      <rect x="20" y="30" width="120" height="120" fill="none" stroke="#1a73e8" stroke-width="2"/>
-      <g stroke="#dadce0" stroke-width="1" fill="none">
-        <line x1="50" y1="30" x2="50" y2="150"/><line x1="80" y1="30" x2="80" y2="150"/><line x1="110" y1="30" x2="110" y2="150"/>
-        <line x1="20" y1="60" x2="140" y2="60"/><line x1="20" y1="90" x2="140" y2="90"/><line x1="20" y1="120" x2="140" y2="120"/>
-      </g>
-      <!-- Values -->
-      <text x="35" y="50" font-size="11" fill="#202124" text-anchor="middle">1</text>
-      <text x="65" y="50" font-size="11" fill="#202124" text-anchor="middle">2</text>
-      <text x="95" y="50" font-size="11" fill="#202124" text-anchor="middle">3</text>
-      <text x="125" y="50" font-size="11" fill="#202124" text-anchor="middle">4</text>
-      <text x="35" y="80" font-size="11" fill="#202124" text-anchor="middle">5</text>
-      <text x="65" y="80" font-size="11" fill="#202124" text-anchor="middle">6</text>
-      <text x="95" y="80" font-size="11" fill="#202124" text-anchor="middle">7</text>
-      <text x="125" y="80" font-size="11" fill="#202124" text-anchor="middle">8</text>
-      <text x="35" y="110" font-size="11" fill="#202124" text-anchor="middle">9</text>
-      <text x="65" y="110" font-size="11" fill="#202124" text-anchor="middle">10</text>
-      <text x="95" y="110" font-size="11" fill="#202124" text-anchor="middle">11</text>
-      <text x="125" y="110" font-size="11" fill="#202124" text-anchor="middle">12</text>
-      <text x="35" y="140" font-size="11" fill="#202124" text-anchor="middle">13</text>
-      <text x="65" y="140" font-size="11" fill="#202124" text-anchor="middle">14</text>
-      <text x="95" y="140" font-size="11" fill="#202124" text-anchor="middle">15</text>
-      <text x="125" y="140" font-size="11" fill="#202124" text-anchor="middle">16</text>
-
-      <!-- Highlight first 2x2 window -->
-      <rect x="20" y="30" width="60" height="60" fill="none" stroke="#f9ab00" stroke-width="3" stroke-dasharray="5,5"/>
-    </g>
-
-    <!-- Arrow -->
-    <path d="M 140 90 L 200 90" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-
-    <!-- Output -->
-    <g id="pool-output">
-      <text x="200" y="20" font-size="13" font-weight="bold" fill="#202124">Output (2×2)</text>
-      <rect x="200" y="30" width="80" height="80" fill="none" stroke="#c5221f" stroke-width="2"/>
-      <g stroke="#dadce0" stroke-width="1" fill="none">
-        <line x1="240" y1="30" x2="240" y2="110"/>
-        <line x1="200" y1="70" x2="280" y2="70"/>
-      </g>
-      <!-- Values -->
-      <text x="220" y="55" font-size="11" fill="#202124" text-anchor="middle">6</text>
-      <text x="260" y="55" font-size="11" fill="#202124" text-anchor="middle">8</text>
-      <text x="220" y="95" font-size="11" fill="#202124" text-anchor="middle">14</text>
-      <text x="260" y="95" font-size="11" fill="#202124" text-anchor="middle">16</text>
-    </g>
-
-    <!-- Legend -->
-    <g id="legend">
-      <text x="320" y="50" font-size="12" font-weight="bold" fill="#202124">Max Pooling (2×2, stride 2)</text>
-      <text x="320" y="75" font-size="11" fill="#202124">Window [1,2,5,6] → max = 6</text>
-      <text x="320" y="95" font-size="11" fill="#202124">Window [3,4,7,8] → max = 8</text>
-      <text x="320" y="115" font-size="11" fill="#202124">Window [9,10,13,14] → max = 14</text>
-      <text x="320" y="135" font-size="11" fill="#202124">Window [11,12,15,16] → max = 16</text>
-    </g>
-
-    <defs>
-      <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-        <polygon points="0 0, 10 3, 0 6" fill="#666"/>
-      </marker>
-    </defs>
-  </svg>
-  <figcaption>Max pooling: 2×2 window on 4×4 input produces 2×2 output</figcaption>
-</div>
-
-<h3>Backpropagation</h3>
-<p><strong>Max Pooling:</strong> Gradient flows only to the position that had the maximum value:</p>
-<div class="math-block">
-\[ \frac{\partial L}{\partial x_{max}} = \frac{\partial L}{\partial y}, \quad \frac{\partial L}{\partial x_{other}} = 0 \]
-</div>
-
-<p><strong>Average Pooling:</strong> Gradient is distributed evenly across all positions in the window:</p>
-<div class="math-block">
-\[ \frac{\partial L}{\partial x_{i,j}} = \frac{1}{K_h \times K_w} \frac{\partial L}{\partial y} \]
-</div>
-
-<h3>Parameters</h3>
-<p><strong>No learnable parameters.</strong> Pooling is a fixed operation.</p>
-
-<h2 id="instancenorm">InstanceNorm Layer</h2>
-<p>Instance Normalization normalises activations per channel per sample over spatial dimensions (H × W). It stabilises training, allows higher learning rates, and acts as a mild regulariser. It is typically placed after Conv2D and before ReLU.</p>
-
-<h3>Purpose</h3>
-<ul>
-  <li><strong>Training stability</strong> — normalizing activations prevents them from growing or shrinking across layers</li>
-  <li><strong>Higher learning rates</strong> — the normalized distribution is less sensitive to parameter scale</li>
-  <li><strong>Mild regularization</strong> — batch statistics introduce noise that can reduce overfitting</li>
-</ul>
-
-<h3>Propagation (Training)</h3>
-<p>For each channel \(c\), compute mean and variance over the spatial dimensions, normalize, then scale and shift with learnable parameters \(\gamma_c\) and \(\beta_c\):</p>
-<div class="math-block">
-\[
-\mu_c = \frac{1}{HW} \sum_{h,w} x_{c,h,w}
-\qquad
-\sigma^2_c = \frac{1}{HW} \sum_{h,w} (x_{c,h,w} - \mu_c)^2
-\]
-\[
-\hat{x}_{c,h,w} = \frac{x_{c,h,w} - \mu_c}{\sqrt{\sigma^2_c + \epsilon}}
-\qquad
-y_{c,h,w} = \gamma_c \, \hat{x}_{c,h,w} + \beta_c
-\]
-</div>
-
-<p>Running statistics are updated with exponential moving averages for use during inference:</p>
-<div class="math-block">
-\[
-\bar{\mu}_c \leftarrow (1 - m)\,\bar{\mu}_c + m\,\mu_c
-\qquad
-\bar{\sigma}^2_c \leftarrow (1 - m)\,\bar{\sigma}^2_c + m\,\sigma^2_c
-\]
-</div>
-
-<h3>Propagation (Inference)</h3>
-<p>During inference, the fixed running statistics replace the batch statistics:</p>
-<div class="math-block">
-\[
-y_{c,h,w} = \gamma_c \, \frac{x_{c,h,w} - \bar{\mu}_c}{\sqrt{\bar{\sigma}^2_c + \epsilon}} + \beta_c
-\]
-</div>
-
-<h3>Backpropagation</h3>
-<p>Gradients for the learnable parameters:</p>
-<div class="math-block">
-\[
-\frac{\partial L}{\partial \gamma_c} = \sum_{h,w} \frac{\partial L}{\partial y_{c,h,w}} \, \hat{x}_{c,h,w}
-\qquad
-\frac{\partial L}{\partial \beta_c} = \sum_{h,w} \frac{\partial L}{\partial y_{c,h,w}}
-\]
-</div>
-
-<p>Input gradient (with \(N = H \times W\)):</p>
-<div class="math-block">
-\[
-\frac{\partial L}{\partial x_{c,i}} = \frac{\gamma_c}{N \sqrt{\sigma^2_c + \epsilon}} \left( N \, \frac{\partial L}{\partial y_{c,i}} - \frac{\partial L}{\partial \beta_c} - \hat{x}_{c,i} \, \frac{\partial L}{\partial \gamma_c} \right)
-\]
-</div>
-
-<h3>Configuration</h3>
-<table>
-  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
-  <tr><td><strong>epsilon</strong> (\(\epsilon\))</td><td>1×10⁻⁵</td><td>Numerical stability constant added to variance</td></tr>
-  <tr><td><strong>momentum</strong> (\(m\))</td><td>0.1</td><td>EMA factor for running statistics</td></tr>
-</table>
-
-<h3>JSON Configuration</h3>
-<pre><code>{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
-{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span>, <span class="string">"epsilon"</span>: <span class="number">1e-5</span>, <span class="string">"momentum"</span>: <span class="number">0.1</span> }</code></pre>
-
-<h3>Parameters</h3>
-<p>An InstanceNorm layer with \(C\) input channels has:</p>
-<div class="math-block">
-\[ \text{Total parameters} = 2C \text{ (learnable: } \gamma, \beta\text{)} + 2C \text{ (running: } \bar{\mu}, \bar{\sigma}^2\text{)} \]
-</div>
-<p>The output shape is identical to the input shape — InstanceNorm does not change spatial dimensions or channel count.</p>
-
-<div class="info-box">
-  <strong>Typical placement:</strong> Conv2D → <strong>InstanceNorm</strong> → ReLU. Placing InstanceNorm before the activation ensures the normalized distribution is passed to ReLU, which improves gradient flow.
-</div>
-
-<h2 id="flatten">Flatten Layer</h2>
-<p>Converts a 3D tensor (channels, height, width) into a 1D vector for input to dense layers.</p>
-
-<h3>Purpose</h3>
-<p>Dense layers expect 1D input. Flatten reshapes the 3D feature maps from convolutional layers into a single vector while preserving the data order (NCHW layout).</p>
-
-<h3>Propagation</h3>
-<p>Returns the underlying 1D data vector. Since the CNN library uses NCHW layout internally, the data is already stored contiguously in memory:</p>
-<div class="math-block">
-\[ \text{output} = \text{input.data} \]
-</div>
-
-<p>This is a <strong>zero-copy operation</strong> — no data movement occurs.</p>
-
-<h3>Backpropagation</h3>
-<p>Reshapes the 1D gradient back to the original 3D shape:</p>
-<div class="math-block">
-\[ \frac{\partial L}{\partial x} = \text{reshape}\left(\frac{\partial L}{\partial y}, \text{inputShape}\right) \]
-</div>
-
-<h3>Parameters</h3>
-<p><strong>No learnable parameters.</strong> Flatten is a pure reshape operation.</p>
-
-<h2 id="pipeline">Layer Pipeline Example</h2>
-<p>Here's a concrete numeric example showing how data flows through a sequence of layers:</p>
-
-<div class="card">
-  <h3>Example: Image Classification Pipeline</h3>
-  <p><strong>Input:</strong> 1 channel, 6×6 image (e.g., grayscale)</p>
-  <div class="math-block">
-    \[ \text{Shape: } 1 \times 6 \times 6 \]
-  </div>
-
-  <h4>Step 1: Conv2D (2 filters, 3×3, stride 1, VALID)</h4>
-  <p>Output shape: \(\text{outH} = (6 + 0 - 3) / 1 + 1 = 4\), \(\text{outW} = 4\)</p>
-  <div class="math-block">
-    \[ \text{Shape: } 2 \times 4 \times 4 \]
-  </div>
-  <p><strong>Parameters:</strong> \(2 \times 1 \times 3 \times 3 + 2 = 20\) (18 weights + 2 biases)</p>
-
-  <h4>Step 2: InstanceNorm</h4>
-  <p>Normalize per channel, scale by \(\gamma\), shift by \(\beta\). Shape unchanged</p>
-  <div class="math-block">
-    \[ \text{Shape: } 2 \times 4 \times 4 \]
-  </div>
-  <p><strong>Parameters:</strong> \(2 \times 2 = 4\) learnable (\(\gamma, \beta\)) + 4 running stats</p>
-
-  <h4>Step 3: ReLU</h4>
-  <p>Element-wise \(\max(0, x)\), shape unchanged</p>
-  <div class="math-block">
-    \[ \text{Shape: } 2 \times 4 \times 4 \]
-  </div>
-  <p><strong>Parameters:</strong> 0 (no learnable parameters)</p>
-
-  <h4>Step 4: MaxPool (2×2, stride 2)</h4>
-  <p>Output shape: \(\text{outH} = (4 - 2) / 2 + 1 = 2\), \(\text{outW} = 2\)</p>
-  <div class="math-block">
-    \[ \text{Shape: } 2 \times 2 \times 2 \]
-  </div>
-  <p><strong>Parameters:</strong> 0 (no learnable parameters)</p>
-
-  <h4>Step 5: Flatten</h4>
-  <p>Reshape to 1D vector: \(2 \times 2 \times 2 = 8\) elements</p>
-  <div class="math-block">
-    \[ \text{Shape: } 8 \]
-  </div>
-  <p><strong>Parameters:</strong> 0 (no learnable parameters)</p>
-
-  <h4>Summary</h4>
-  <table>
-    <tr><th>Layer</th><th>Type</th><th>Output Shape</th><th>Parameters</th></tr>
-    <tr><td>Input</td><td>—</td><td>1×6×6</td><td>—</td></tr>
-    <tr><td>Conv2D</td><td>2 filters, 3×3</td><td>2×4×4</td><td>20</td></tr>
-    <tr><td>InstanceNorm</td><td>Normalization</td><td>2×4×4</td><td>4 + 4 running</td></tr>
-    <tr><td>ReLU</td><td>Activation</td><td>2×4×4</td><td>0</td></tr>
-    <tr><td>MaxPool</td><td>2×2, stride 2</td><td>2×2×2</td><td>0</td></tr>
-    <tr><td>Flatten</td><td>Reshape</td><td>8</td><td>0</td></tr>
-  </table>
-
-  <p>The 8-element vector can now be fed to a dense layer for classification.</p>
-</div>
-
-<div class="warn-box">
-  <strong>Memory Layout:</strong> The CNN library uses NCHW (channels-first) layout. When flattening, elements are ordered as: all values in channel 0, then channel 1, etc. This differs from NHWC (channels-last) used by some frameworks.
+<p>Detailed reference for all layer types in the CNN library. Each page covers the mathematical operation, propagation, backpropagation, and implementation details.</p>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;">
+  <a href="layers-conv2d.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">🧩 Conv2D</h3>
+    <p style="font-size:.9rem;">Convolutional layer with configurable filters, strides, and padding.</p>
+  </a>
+  <a href="layers-relu.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">⚡ ReLU</h3>
+    <p style="font-size:.9rem;">Rectified Linear Unit activation function.</p>
+  </a>
+  <a href="layers-pool.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">📏 Pool</h3>
+    <p style="font-size:.9rem;">Max and average pooling for spatial downsampling.</p>
+  </a>
+  <a href="layers-instancenorm.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">📊 InstanceNorm</h3>
+    <p style="font-size:.9rem;">Per-sample normalization for training stability.</p>
+  </a>
+  <a href="layers-flatten.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">📐 Flatten</h3>
+    <p style="font-size:.9rem;">Reshape 3D tensor to 1D vector for dense layers.</p>
+  </a>
+  <a href="layers-pipeline.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">🔗 Pipeline Example</h3>
+    <p style="font-size:.9rem;">Complete layer pipeline with numeric walkthrough.</p>
+  </a>
 </div>
 
 </main>
