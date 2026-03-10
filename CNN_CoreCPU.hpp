@@ -32,8 +32,8 @@ namespace CNN
       std::vector<std::vector<T>> accumDConvBiases;
       std::vector<std::vector<T>> accumDBNGamma;
       std::vector<std::vector<T>> accumDBNBeta;
-      std::vector<std::vector<T>> accumBNMean;
-      std::vector<std::vector<T>> accumBNVar;
+      std::vector<std::vector<T>> accumINMean;
+      std::vector<std::vector<T>> accumINVar;
 
       //-- Adam optimizer state for CNN conv parameters --//
       std::vector<std::vector<T>> adam_m_filters;
@@ -50,7 +50,7 @@ namespace CNN
       void resetGlobalCNNAccumulators();
       void mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker);
       void updateCNNParameters(ulong numSamples);
-      void updateBNRunningStats(ulong numSamples);
+      void updateINRunningStats(ulong numSamples);
       void allocateAdamState();
   };
 }

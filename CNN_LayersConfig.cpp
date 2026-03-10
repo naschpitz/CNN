@@ -98,7 +98,7 @@ Shape3D LayersConfig::validateShapes(const Shape3D& inputShape) const
       break;
     }
 
-    case LayerType::BATCHNORM: {
+    case LayerType::INSTANCENORM: {
       // Batch normalization does not change shape
       break;
     }

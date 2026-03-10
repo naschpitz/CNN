@@ -1,4 +1,4 @@
-#include "CNN_BatchNorm.hpp"
+#include "CNN_InstanceNorm.hpp"
 
 #include <cmath>
 
@@ -7,9 +7,10 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> BatchNorm<T>::propagate(const Tensor3D<T>& input, const Shape3D& inputShape, BatchNormParameters<T>& params,
-                                    const BatchNormLayerConfig& config, bool training, std::vector<T>* batchMean,
-                                    std::vector<T>* batchVar, Tensor3D<T>* xNormalized)
+Tensor3D<T> InstanceNorm<T>::propagate(const Tensor3D<T>& input, const Shape3D& inputShape,
+                                       InstanceNormParameters<T>& params, const InstanceNormLayerConfig& config,
+                                       bool training, std::vector<T>* batchMean, std::vector<T>* batchVar,
+                                       Tensor3D<T>* xNormalized)
 {
   ulong C = inputShape.c;
   ulong H = inputShape.h;
@@ -103,10 +104,11 @@ Tensor3D<T> BatchNorm<T>::propagate(const Tensor3D<T>& input, const Shape3D& inp
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> BatchNorm<T>::backpropagate(const Tensor3D<T>& dOutput, const Shape3D& inputShape,
-                                        const BatchNormParameters<T>& params, const BatchNormLayerConfig& config,
-                                        const std::vector<T>& batchMean, const std::vector<T>& batchVar,
-                                        const Tensor3D<T>& xNormalized, std::vector<T>& dGamma, std::vector<T>& dBeta)
+Tensor3D<T> InstanceNorm<T>::backpropagate(const Tensor3D<T>& dOutput, const Shape3D& inputShape,
+                                           const InstanceNormParameters<T>& params,
+                                           const InstanceNormLayerConfig& config, const std::vector<T>& batchMean,
+                                           const std::vector<T>& batchVar, const Tensor3D<T>& xNormalized,
+                                           std::vector<T>& dGamma, std::vector<T>& dBeta)
 {
   ulong C = inputShape.c;
   ulong H = inputShape.h;
@@ -151,6 +153,6 @@ Tensor3D<T> BatchNorm<T>::backpropagate(const Tensor3D<T>& dOutput, const Shape3
 //===================================================================================================================//
 
 // Explicit template instantiations
-template class CNN::BatchNorm<int>;
-template class CNN::BatchNorm<double>;
-template class CNN::BatchNorm<float>;
+template class CNN::InstanceNorm<int>;
+template class CNN::InstanceNorm<double>;
+template class CNN::InstanceNorm<float>;

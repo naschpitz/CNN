@@ -37,7 +37,7 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
   Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
 
   // Initialize batch norm parameters if not loaded
-  Worker<T>::initializeBatchNormParams(config.layersConfig, config.inputShape, this->parameters);
+  Worker<T>::initializeInstanceNormParams(config.layersConfig, config.inputShape, this->parameters);
 
   // Create buffer manager
   this->bufferManager =
@@ -75,7 +75,7 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config, OpenCLWrapper::Core
   Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
 
   // Initialize batch norm parameters if not loaded
-  Worker<T>::initializeBatchNormParams(config.layersConfig, config.inputShape, this->parameters);
+  Worker<T>::initializeInstanceNormParams(config.layersConfig, config.inputShape, this->parameters);
 
   // Create buffer manager
   this->bufferManager =

@@ -68,12 +68,12 @@ namespace CNN
 
       const std::vector<std::vector<T>>& getAccumBNMean() const
       {
-        return accumBNMean;
+        return accumINMean;
       }
 
       const std::vector<std::vector<T>>& getAccumBNVar() const
       {
-        return accumBNVar;
+        return accumINVar;
       }
 
       ulong getBNSampleCount() const
@@ -109,14 +109,14 @@ namespace CNN
       std::vector<std::vector<T>> accumDConvBiases;
       std::vector<std::vector<T>> accumDBNGamma;
       std::vector<std::vector<T>> accumDBNBeta;
-      std::vector<std::vector<T>> accumBNMean;
-      std::vector<std::vector<T>> accumBNVar;
+      std::vector<std::vector<T>> accumINMean;
+      std::vector<std::vector<T>> accumINVar;
       ulong bnSampleCount = 0;
       T accum_loss = static_cast<T>(0);
 
       //-- Per-worker batch norm training intermediates --//
-      std::vector<std::vector<T>> bnBatchMeans;
-      std::vector<std::vector<T>> bnBatchVars;
+      std::vector<std::vector<T>> inBatchMeans;
+      std::vector<std::vector<T>> inBatchVars;
       std::vector<Tensor3D<T>> bnXNormalized;
 
       //-- Propagate --//
