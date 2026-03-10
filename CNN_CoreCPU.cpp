@@ -459,12 +459,25 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
 template <typename T>
 TestResult<T> CoreCPU<T>::test(ulong numSamples, const SampleProvider<T>& sampleProvider)
 {
+  int numThreads = this->numThreads;
+
+  if (numThreads <= 0)
+    numThreads = QThreadPool::globalInstance()->maxThreadCount();
+
+  if (this->logLevel >= CNN::LogLevel::INFO)
+    qDebug() << "CNN Test:" << numSamples << "samples," << numThreads << "threads";
+
+  // Create per-thread workers (predict-only, no training buffers)
+  std::vector<std::unique_ptr<CoreCPUWorker<T>>> workers;
+
+  for (int i = 0; i < numThreads; i++) {
+    workers.push_back(
+      std::make_unique<CoreCPUWorker<T>>(this->coreConfig, this->layersConfig, this->parameters, false));
+  }
+
   // Sequential index array (no shuffling for test)
   std::vector<ulong> sampleIndices(numSamples);
-
-  for (ulong i = 0; i < numSamples; i++) {
-    sampleIndices[i] = i;
-  }
+  std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
 
   ulong batchSize = this->testConfig.batchSize;
   ulong numBatches = (numSamples + batchSize - 1) / batchSize;
@@ -474,17 +487,52 @@ TestResult<T> CoreCPU<T>::test(ulong numSamples, const SampleProvider<T>& sample
 
   for (ulong b = 0; b < numBatches; b++) {
     Samples<T> batch = sampleProvider(sampleIndices, batchSize, b);
+    ulong currentBatchSize = batch.size();
 
-    for (ulong i = 0; i < batch.size(); i++) {
-      Output<T> predicted = this->stepWorker->predict(batch[i].input);
-      totalLoss += this->stepWorker->calculateLoss(predicted, batch[i].output);
+    // Distribute samples across workers
+    std::vector<ulong> workerSampleCounts(numThreads);
 
-      auto predIdx = std::distance(predicted.begin(), std::max_element(predicted.begin(), predicted.end()));
-      auto expIdx =
-        std::distance(batch[i].output.begin(), std::max_element(batch[i].output.begin(), batch[i].output.end()));
+    for (int i = 0; i < numThreads; i++)
+      workerSampleCounts[i] = currentBatchSize / static_cast<ulong>(numThreads) +
+                              (static_cast<ulong>(i) < currentBatchSize % static_cast<ulong>(numThreads) ? 1 : 0);
 
-      if (predIdx == expIdx)
-        totalCorrect++;
+    // Per-worker partial results
+    std::vector<T> workerLoss(numThreads, static_cast<T>(0));
+    std::vector<ulong> workerCorrect(numThreads, 0);
+
+    // Each worker predicts its chunk in parallel
+    QVector<int> workerIndices(numThreads);
+
+    for (int i = 0; i < numThreads; i++)
+      workerIndices[i] = i;
+
+    QtConcurrent::blockingMap(workerIndices, [&](int workerIdx) {
+      CoreCPUWorker<T>& worker = *workers[workerIdx];
+
+      ulong workerLocalStart = 0;
+
+      for (int i = 0; i < workerIdx; i++)
+        workerLocalStart += workerSampleCounts[i];
+      ulong workerLocalEnd = workerLocalStart + workerSampleCounts[workerIdx];
+
+      for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
+        const Sample<T>& sample = batch[s];
+        Output<T> predicted = worker.predict(sample.input);
+        workerLoss[workerIdx] += worker.calculateLoss(predicted, sample.output);
+
+        auto predIdx = std::distance(predicted.begin(), std::max_element(predicted.begin(), predicted.end()));
+        auto expIdx =
+          std::distance(sample.output.begin(), std::max_element(sample.output.begin(), sample.output.end()));
+
+        if (predIdx == expIdx)
+          workerCorrect[workerIdx]++;
+      }
+    });
+
+    // Aggregate worker results
+    for (int i = 0; i < numThreads; i++) {
+      totalLoss += workerLoss[i];
+      totalCorrect += workerCorrect[i];
     }
   }
 
