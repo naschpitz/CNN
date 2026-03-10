@@ -19,8 +19,8 @@ namespace CNN
       //-- Parameter initialization (shared by CPU and GPU workers) --//
       static void initializeConvParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
                                        Parameters<T>& parameters);
-      static void initializeInstanceNormParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
-                                               Parameters<T>& parameters);
+      static void initializeNormParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
+                                       Parameters<T>& parameters);
 
       //-- Loss calculation (shared by CPU and GPU workers) --//
       T calculateLoss(const Output<T>& predicted, const Output<T>& expected) const;

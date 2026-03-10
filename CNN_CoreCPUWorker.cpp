@@ -37,16 +37,16 @@ CoreCPUWorker<T>::CoreCPUWorker(const CoreConfig<T>& config, const LayersConfig&
       this->accumDConvBiases[i].resize(sharedParams.convParams[i].biases.size(), static_cast<T>(0));
     }
 
-    this->accumDBNGamma.resize(sharedParams.inParams.size());
-    this->accumDBNBeta.resize(sharedParams.inParams.size());
-    this->accumINMean.resize(sharedParams.inParams.size());
-    this->accumINVar.resize(sharedParams.inParams.size());
+    this->accumDBNGamma.resize(sharedParams.normParams.size());
+    this->accumDBNBeta.resize(sharedParams.normParams.size());
+    this->accumNormMean.resize(sharedParams.normParams.size());
+    this->accumNormVar.resize(sharedParams.normParams.size());
 
-    for (ulong i = 0; i < sharedParams.inParams.size(); i++) {
-      this->accumDBNGamma[i].resize(sharedParams.inParams[i].numChannels, static_cast<T>(0));
-      this->accumDBNBeta[i].resize(sharedParams.inParams[i].numChannels, static_cast<T>(0));
-      this->accumINMean[i].resize(sharedParams.inParams[i].numChannels, static_cast<T>(0));
-      this->accumINVar[i].resize(sharedParams.inParams[i].numChannels, static_cast<T>(0));
+    for (ulong i = 0; i < sharedParams.normParams.size(); i++) {
+      this->accumDBNGamma[i].resize(sharedParams.normParams[i].numChannels, static_cast<T>(0));
+      this->accumDBNBeta[i].resize(sharedParams.normParams[i].numChannels, static_cast<T>(0));
+      this->accumNormMean[i].resize(sharedParams.normParams[i].numChannels, static_cast<T>(0));
+      this->accumNormVar[i].resize(sharedParams.normParams[i].numChannels, static_cast<T>(0));
     }
 
     this->bnSampleCount = 0;
@@ -174,11 +174,11 @@ T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expect
     for (ulong j = 0; j < dBNBeta[i].size(); j++)
       this->accumDBNBeta[i][j] += dBNBeta[i][j];
 
-    for (ulong j = 0; j < this->inBatchMeans[i].size(); j++)
-      this->accumINMean[i][j] += this->inBatchMeans[i][j];
+    for (ulong j = 0; j < this->normBatchMeans[i].size(); j++)
+      this->accumNormMean[i][j] += this->normBatchMeans[i][j];
 
-    for (ulong j = 0; j < this->inBatchVars[i].size(); j++)
-      this->accumINVar[i][j] += this->inBatchVars[i][j];
+    for (ulong j = 0; j < this->normBatchVars[i].size(); j++)
+      this->accumNormVar[i][j] += this->normBatchVars[i][j];
   }
 
   this->bnSampleCount++;
@@ -200,8 +200,8 @@ void CoreCPUWorker<T>::resetAccumulators()
   for (ulong i = 0; i < this->accumDBNGamma.size(); i++) {
     std::fill(this->accumDBNGamma[i].begin(), this->accumDBNGamma[i].end(), static_cast<T>(0));
     std::fill(this->accumDBNBeta[i].begin(), this->accumDBNBeta[i].end(), static_cast<T>(0));
-    std::fill(this->accumINMean[i].begin(), this->accumINMean[i].end(), static_cast<T>(0));
-    std::fill(this->accumINVar[i].begin(), this->accumINVar[i].end(), static_cast<T>(0));
+    std::fill(this->accumNormMean[i].begin(), this->accumNormMean[i].end(), static_cast<T>(0));
+    std::fill(this->accumNormVar[i].begin(), this->accumNormVar[i].end(), static_cast<T>(0));
   }
 
   this->bnSampleCount = 0;
@@ -218,14 +218,14 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
   if (training) {
     intermediates->clear();
     poolMaxIndices->clear();
-    this->inBatchMeans.clear();
-    this->inBatchVars.clear();
+    this->normBatchMeans.clear();
+    this->normBatchVars.clear();
     this->bnXNormalized.clear();
   }
 
   Tensor3D<T> current = input;
   ulong convIdx = 0;
-  ulong inIdx = 0;
+  ulong normIdx = 0;
 
   for (const auto& layerConfig : this->layersConfig.cnnLayers) {
     if (training)
@@ -259,20 +259,20 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
     }
 
     case LayerType::INSTANCENORM: {
-      const auto& bn = std::get<InstanceNormLayerConfig>(layerConfig.config);
-      InstanceNormParameters<T> inParams = this->sharedParams.inParams[inIdx];
+      const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+      NormParameters<T> normParams = this->sharedParams.normParams[normIdx];
 
       if (training) {
-        this->inBatchMeans.push_back({});
-        this->inBatchVars.push_back({});
+        this->normBatchMeans.push_back({});
+        this->normBatchVars.push_back({});
         this->bnXNormalized.push_back({});
-        current = InstanceNorm<T>::propagate(current, current.shape, inParams, bn, true, &this->inBatchMeans.back(),
-                                             &this->inBatchVars.back(), &this->bnXNormalized.back());
+        current = InstanceNorm<T>::propagate(current, current.shape, normParams, bn, true, &this->normBatchMeans.back(),
+                                             &this->normBatchVars.back(), &this->bnXNormalized.back());
       } else {
-        current = InstanceNorm<T>::propagate(current, current.shape, inParams, bn);
+        current = InstanceNorm<T>::propagate(current, current.shape, normParams, bn);
       }
 
-      inIdx++;
+      normIdx++;
       break;
     }
 
@@ -296,7 +296,7 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::v
 {
   ulong numCNNLayers = this->layersConfig.cnnLayers.size();
   ulong numConvLayers = this->sharedParams.convParams.size();
-  ulong numBNLayers = this->sharedParams.inParams.size();
+  ulong numBNLayers = this->sharedParams.normParams.size();
 
   dConvFilters.resize(numConvLayers);
   dConvBiases.resize(numConvLayers);
@@ -307,7 +307,7 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::v
 
   ulong convIdx = numConvLayers;
   ulong poolIdx = poolMaxIndices.size();
-  ulong inIdx = numBNLayers;
+  ulong normIdx = numBNLayers;
 
   for (long i = static_cast<long>(numCNNLayers) - 1; i >= 0; i--) {
     const CNNLayerConfig& layerConfig = this->layersConfig.cnnLayers[static_cast<ulong>(i)];
@@ -335,11 +335,11 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::v
     }
 
     case LayerType::INSTANCENORM: {
-      inIdx--;
-      const auto& bn = std::get<InstanceNormLayerConfig>(layerConfig.config);
-      dCurrent = InstanceNorm<T>::backpropagate(dCurrent, layerInput.shape, this->sharedParams.inParams[inIdx], bn,
-                                                this->inBatchMeans[inIdx], this->inBatchVars[inIdx],
-                                                this->bnXNormalized[inIdx], dBNGamma[inIdx], dBNBeta[inIdx]);
+      normIdx--;
+      const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+      dCurrent = InstanceNorm<T>::backpropagate(dCurrent, layerInput.shape, this->sharedParams.normParams[normIdx], bn,
+                                                this->normBatchMeans[normIdx], this->normBatchVars[normIdx],
+                                                this->bnXNormalized[normIdx], dBNGamma[normIdx], dBNBeta[normIdx]);
       break;
     }
 

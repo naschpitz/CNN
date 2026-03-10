@@ -162,14 +162,14 @@ static void testInstanceNormInference()
   input.data = {1.0, 2.0, 3.0, 4.0, // channel 0
                 5.0, 6.0, 7.0, 8.0}; // channel 1
 
-  CNN::InstanceNormParameters<double> params;
+  CNN::NormParameters<double> params;
   params.numChannels = 2;
   params.gamma = {2.0, 0.5};
   params.beta = {1.0, -1.0};
   params.runningMean = {2.5, 6.5};
   params.runningVar = {1.25, 1.25};
 
-  CNN::InstanceNormLayerConfig config;
+  CNN::NormLayerConfig config;
   config.epsilon = 0.0; // zero eps for exact math
 
   CNN::Tensor3D<double> out = CNN::InstanceNorm<double>::propagate(input, shape, params, config);
@@ -206,14 +206,14 @@ static void testInstanceNormTraining()
   input.data = {1.0, 2.0, 3.0, 4.0, // channel 0
                 5.0, 6.0, 7.0, 8.0}; // channel 1
 
-  CNN::InstanceNormParameters<double> params;
+  CNN::NormParameters<double> params;
   params.numChannels = 2;
   params.gamma = {1.0, 1.0};
   params.beta = {0.0, 0.0};
   params.runningMean = {0.0, 0.0};
   params.runningVar = {1.0, 1.0};
 
-  CNN::InstanceNormLayerConfig config;
+  CNN::NormLayerConfig config;
   config.epsilon = 0.0;
   config.momentum = 0.1;
 
@@ -260,14 +260,14 @@ static void testInstanceNormBackpropagate()
   CNN::Tensor3D<double> input(shape);
   input.data = {1.0, 2.0, 3.0, 4.0};
 
-  CNN::InstanceNormParameters<double> params;
+  CNN::NormParameters<double> params;
   params.numChannels = 1;
   params.gamma = {2.0};
   params.beta = {0.5};
   params.runningMean = {0.0};
   params.runningVar = {1.0};
 
-  CNN::InstanceNormLayerConfig config;
+  CNN::NormLayerConfig config;
   config.epsilon = 0.0;
   config.momentum = 0.1;
 
@@ -314,14 +314,14 @@ static void testInstanceNormBackpropGradient()
   CNN::Tensor3D<double> input(shape);
   input.data = {1.0, 2.0, 3.0, 4.0};
 
-  CNN::InstanceNormParameters<double> params;
+  CNN::NormParameters<double> params;
   params.numChannels = 1;
   params.gamma = {1.0};
   params.beta = {0.0};
   params.runningMean = {0.0};
   params.runningVar = {1.0};
 
-  CNN::InstanceNormLayerConfig config;
+  CNN::NormLayerConfig config;
   config.epsilon = 1e-7;
   config.momentum = 0.1;
 
@@ -350,7 +350,7 @@ static void testInstanceNormBackpropGradient()
     inputPlus.data = input.data;
     inputPlus.data[i] += eps;
 
-    CNN::InstanceNormParameters<double> pPlus = params;
+    CNN::NormParameters<double> pPlus = params;
     pPlus.runningMean = {0.0};
     pPlus.runningVar = {1.0};
     std::vector<double> bmP, bvP;
@@ -363,7 +363,7 @@ static void testInstanceNormBackpropGradient()
     inputMinus.data = input.data;
     inputMinus.data[i] -= eps;
 
-    CNN::InstanceNormParameters<double> pMinus = params;
+    CNN::NormParameters<double> pMinus = params;
     pMinus.runningMean = {0.0};
     pMinus.runningVar = {1.0};
     std::vector<double> bmM, bvM;
@@ -391,14 +391,14 @@ static void testInstanceNormOutputShape()
   CNN::Shape3D shape{3, 8, 8};
   CNN::Tensor3D<double> input(shape, 1.0);
 
-  CNN::InstanceNormParameters<double> params;
+  CNN::NormParameters<double> params;
   params.numChannels = 3;
   params.gamma = {1.0, 1.0, 1.0};
   params.beta = {0.0, 0.0, 0.0};
   params.runningMean = {0.0, 0.0, 0.0};
   params.runningVar = {1.0, 1.0, 1.0};
 
-  CNN::InstanceNormLayerConfig config;
+  CNN::NormLayerConfig config;
 
   CNN::Tensor3D<double> out = CNN::InstanceNorm<double>::propagate(input, shape, params, config);
   CHECK(out.shape.c == 3, "instancenorm preserves channels");
@@ -420,7 +420,7 @@ static void testInstanceNormValidateShapes()
 
   CNN::CNNLayerConfig bn;
   bn.type = CNN::LayerType::INSTANCENORM;
-  bn.config = CNN::InstanceNormLayerConfig{};
+  bn.config = CNN::NormLayerConfig{};
 
   CNN::CNNLayerConfig relu1;
   relu1.type = CNN::LayerType::RELU;

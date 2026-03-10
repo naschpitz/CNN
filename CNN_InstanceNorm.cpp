@@ -7,10 +7,9 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-Tensor3D<T> InstanceNorm<T>::propagate(const Tensor3D<T>& input, const Shape3D& inputShape,
-                                       InstanceNormParameters<T>& params, const InstanceNormLayerConfig& config,
-                                       bool training, std::vector<T>* batchMean, std::vector<T>* batchVar,
-                                       Tensor3D<T>* xNormalized)
+Tensor3D<T> InstanceNorm<T>::propagate(const Tensor3D<T>& input, const Shape3D& inputShape, NormParameters<T>& params,
+                                       const NormLayerConfig& config, bool training, std::vector<T>* batchMean,
+                                       std::vector<T>* batchVar, Tensor3D<T>* xNormalized)
 {
   ulong C = inputShape.c;
   ulong H = inputShape.h;
@@ -105,10 +104,10 @@ Tensor3D<T> InstanceNorm<T>::propagate(const Tensor3D<T>& input, const Shape3D& 
 
 template <typename T>
 Tensor3D<T> InstanceNorm<T>::backpropagate(const Tensor3D<T>& dOutput, const Shape3D& inputShape,
-                                           const InstanceNormParameters<T>& params,
-                                           const InstanceNormLayerConfig& config, const std::vector<T>& batchMean,
-                                           const std::vector<T>& batchVar, const Tensor3D<T>& xNormalized,
-                                           std::vector<T>& dGamma, std::vector<T>& dBeta)
+                                           const NormParameters<T>& params, const NormLayerConfig& config,
+                                           const std::vector<T>& batchMean, const std::vector<T>& batchVar,
+                                           const Tensor3D<T>& xNormalized, std::vector<T>& dGamma,
+                                           std::vector<T>& dBeta)
 {
   ulong C = inputShape.c;
   ulong H = inputShape.h;

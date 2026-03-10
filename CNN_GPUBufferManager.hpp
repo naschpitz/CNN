@@ -77,8 +77,8 @@ namespace CNN
       std::vector<PoolInfo> poolInfos;
       ulong totalPoolIndexSize = 0;
 
-      std::vector<InstanceNormInfo> inInfos;
-      ulong totalINParamSize = 0;
+      std::vector<InstanceNormInfo> normInfos;
+      ulong totalNormParamSize = 0;
 
       Shape3D cnnOutputShape;
       ulong flattenSize = 0;

@@ -43,7 +43,7 @@ namespace CNN
   };
 
   // Batch normalization layer configuration
-  struct InstanceNormLayerConfig {
+  struct NormLayerConfig {
       float epsilon = 1e-5f; // Small constant for numerical stability
       float momentum = 0.1f; // Momentum for running mean/variance update
   };
@@ -53,8 +53,7 @@ namespace CNN
 
   struct CNNLayerConfig {
       LayerType type;
-      std::variant<ConvLayerConfig, ReLULayerConfig, PoolLayerConfig, FlattenLayerConfig, InstanceNormLayerConfig>
-        config;
+      std::variant<ConvLayerConfig, ReLULayerConfig, PoolLayerConfig, FlattenLayerConfig, NormLayerConfig> config;
   };
 
   // Dense layer configuration (delegates to ANN)
