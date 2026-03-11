@@ -3,8 +3,7 @@
 #include "CNN_ReLU.hpp"
 #include "CNN_Pool.hpp"
 #include "CNN_Flatten.hpp"
-#include "CNN_InstanceNorm.hpp"
-#include "CNN_BatchNorm.hpp"
+#include "CNN_Normalization.hpp"
 
 #include <ANN_Core.hpp>
 
@@ -175,11 +174,12 @@ T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expect
     for (ulong j = 0; j < dBNBeta[i].size(); j++)
       this->accumDBNBeta[i][j] += dBNBeta[i][j];
 
-    for (ulong j = 0; j < this->normBatchMeans[i].size(); j++)
-      this->accumNormMean[i][j] += this->normBatchMeans[i][j];
+    // With N=1 per-sample, statsMean/statsVar are [1*C], indexed same as [C]
+    for (ulong j = 0; j < this->normStatsMean[i].size(); j++)
+      this->accumNormMean[i][j] += this->normStatsMean[i][j];
 
-    for (ulong j = 0; j < this->normBatchVars[i].size(); j++)
-      this->accumNormVar[i][j] += this->normBatchVars[i][j];
+    for (ulong j = 0; j < this->normStatsVar[i].size(); j++)
+      this->accumNormVar[i][j] += this->normStatsVar[i][j];
   }
 
   this->bnSampleCount++;
@@ -219,9 +219,9 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
   if (training) {
     intermediates->clear();
     poolMaxIndices->clear();
-    this->normBatchMeans.clear();
-    this->normBatchVars.clear();
-    this->bnXNormalized.clear();
+    this->normXNormalized.clear();
+    this->normStatsMean.clear();
+    this->normStatsVar.clear();
   }
 
   Tensor3D<T> current = input;
@@ -259,47 +259,23 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
       break;
     }
 
-    case LayerType::INSTANCENORM: {
-      const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
-      NormParameters<T> normParams = this->sharedParams.normParams[normIdx];
-
-      if (training) {
-        this->normBatchMeans.push_back({});
-        this->normBatchVars.push_back({});
-        this->bnXNormalized.push_back({});
-        current = InstanceNorm<T>::propagate(current, current.shape, normParams, bn, true, &this->normBatchMeans.back(),
-                                             &this->normBatchVars.back(), &this->bnXNormalized.back());
-      } else {
-        current = InstanceNorm<T>::propagate(current, current.shape, normParams, bn);
-      }
-
-      normIdx++;
-      break;
-    }
-
+    case LayerType::INSTANCENORM:
     case LayerType::BATCHNORM: {
-      const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+      const auto& normConfig = std::get<NormLayerConfig>(layerConfig.config);
       NormParameters<T> normParams = this->sharedParams.normParams[normIdx];
+      LayerType normType = layerConfig.type;
+
+      std::vector<Tensor3D<T>*> batch = {&current};
 
       if (training) {
-        // In the BatchNorm-aware training path, this code is not reached
-        // (trainBatchNorm handles BN layers directly). But for safety:
-        this->normBatchMeans.push_back({});
-        this->normBatchVars.push_back({});
-        this->bnXNormalized.push_back({});
-
-        // Single-sample BN during per-sample training degenerates to instance norm
-        std::vector<Tensor3D<T>*> batch = {&current};
-        std::vector<Tensor3D<T>> tempXNorm;
-        BatchNorm<T>::propagate(batch, current.shape, normParams, bn, true, &tempXNorm, &this->normBatchMeans.back(),
-                                &this->normBatchVars.back());
-
-        if (!tempXNorm.empty())
-          this->bnXNormalized.back() = tempXNorm[0];
+        this->normXNormalized.push_back({});
+        this->normStatsMean.push_back({});
+        this->normStatsVar.push_back({});
+        Normalization<T>::propagate(batch, current.shape, normParams, normConfig, normType, true,
+                                    &this->normXNormalized.back(), &this->normStatsMean.back(),
+                                    &this->normStatsVar.back());
       } else {
-        // Inference: use running stats
-        std::vector<Tensor3D<T>*> batch = {&current};
-        BatchNorm<T>::propagate(batch, current.shape, normParams, bn, false);
+        Normalization<T>::propagate(batch, current.shape, normParams, normConfig, normType, false);
       }
 
       normIdx++;
@@ -364,27 +340,18 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::v
       break;
     }
 
-    case LayerType::INSTANCENORM: {
-      normIdx--;
-      const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
-      dCurrent = InstanceNorm<T>::backpropagate(dCurrent, layerInput.shape, this->sharedParams.normParams[normIdx], bn,
-                                                this->normBatchMeans[normIdx], this->normBatchVars[normIdx],
-                                                this->bnXNormalized[normIdx], dBNGamma[normIdx], dBNBeta[normIdx]);
-      break;
-    }
-
+    case LayerType::INSTANCENORM:
     case LayerType::BATCHNORM: {
       normIdx--;
-      const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+      const auto& normConfig = std::get<NormLayerConfig>(layerConfig.config);
+      LayerType normType = layerConfig.type;
 
-      // Single-sample backprop for BN (degenerates to instance-norm-like)
-      // In the BatchNorm-aware training path, this code is not reached.
       std::vector<Tensor3D<T>*> dBatch = {&dCurrent};
       std::vector<T> layerDGamma;
       std::vector<T> layerDBeta;
-      BatchNorm<T>::backpropagate(dBatch, layerInput.shape, this->sharedParams.normParams[normIdx], bn,
-                                  this->normBatchMeans[normIdx], this->normBatchVars[normIdx],
-                                  {this->bnXNormalized[normIdx]}, layerDGamma, layerDBeta);
+      Normalization<T>::backpropagate(dBatch, layerInput.shape, this->sharedParams.normParams[normIdx], normConfig,
+                                      normType, this->normStatsMean[normIdx], this->normStatsVar[normIdx],
+                                      this->normXNormalized[normIdx], layerDGamma, layerDBeta);
       dBNGamma[normIdx] = layerDGamma;
       dBNBeta[normIdx] = layerDBeta;
       break;

@@ -114,10 +114,10 @@ namespace CNN
       ulong bnSampleCount = 0;
       T accum_loss = static_cast<T>(0);
 
-      //-- Per-worker batch norm training intermediates --//
-      std::vector<std::vector<T>> normBatchMeans;
-      std::vector<std::vector<T>> normBatchVars;
-      std::vector<Tensor3D<T>> bnXNormalized;
+      //-- Per-worker normalization training intermediates --//
+      std::vector<std::vector<Tensor3D<T>>> normXNormalized; // [normLayerIdx][sampleIdx]
+      std::vector<std::vector<T>> normStatsMean; // [normLayerIdx][n*C+c]
+      std::vector<std::vector<T>> normStatsVar; // [normLayerIdx][n*C+c]
 
       //-- Propagate --//
       Tensor3D<T> propagateCNN(const Input<T>& input, bool training = false,

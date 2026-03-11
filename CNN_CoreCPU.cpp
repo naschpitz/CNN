@@ -1,10 +1,9 @@
 #include "CNN_CoreCPU.hpp"
-#include "CNN_BatchNorm.hpp"
 #include "CNN_Conv2D.hpp"
 #include "CNN_ReLU.hpp"
 #include "CNN_Pool.hpp"
 #include "CNN_Flatten.hpp"
-#include "CNN_InstanceNorm.hpp"
+#include "CNN_Normalization.hpp"
 
 #include <ANN_Core.hpp>
 
@@ -648,16 +647,11 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
       // Per-sample pool max indices: poolMaxIndices[n][poolLayerIdx]
       std::vector<std::vector<std::vector<ulong>>> poolMaxIndices(N);
 
-      // Per-BN-layer batch stats and xNorm
+      // Per-norm-layer stats and xNorm (unified for both InstanceNorm and BatchNorm)
       ulong numNormLayers = this->parameters.normParams.size();
-      std::vector<std::vector<T>> bnBatchMeans(numNormLayers);
-      std::vector<std::vector<T>> bnBatchVars(numNormLayers);
-      std::vector<std::vector<Tensor3D<T>>> bnXNormalized(numNormLayers);
-
-      // Per-InstanceNorm-layer per-sample stats
-      std::vector<std::vector<std::vector<T>>> inBatchMeans;
-      std::vector<std::vector<std::vector<T>>> inBatchVars;
-      std::vector<std::vector<Tensor3D<T>>> inXNormalized;
+      std::vector<std::vector<Tensor3D<T>>> normXNormalized(numNormLayers);
+      std::vector<std::vector<T>> normStatsMean(numNormLayers);
+      std::vector<std::vector<T>> normStatsVar(numNormLayers);
 
       ulong convIdx = 0;
       ulong poolIdx = 0;
@@ -704,42 +698,19 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
           break;
         }
 
+        case LayerType::INSTANCENORM:
         case LayerType::BATCHNORM: {
-          const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+          const auto& normConfig = std::get<NormLayerConfig>(layerConfig.config);
           ulong ni = normIdx;
 
-          // Collect pointers to all samples' activations
           std::vector<Tensor3D<T>*> batchPtrs(N);
 
-          for (ulong n = 0; n < N; n++) {
+          for (ulong n = 0; n < N; n++)
             batchPtrs[n] = &currentActvs[n];
-          }
 
-          // True batch normalization: compute stats across all N samples
-          BatchNorm<T>::propagate(batchPtrs, currentActvs[0].shape, this->parameters.normParams[ni], bn, true,
-                                  &bnXNormalized[ni], &bnBatchMeans[ni], &bnBatchVars[ni]);
-
-          normIdx++;
-          break;
-        }
-
-        case LayerType::INSTANCENORM: {
-          const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
-          ulong ni = normIdx;
-
-          // InstanceNorm: per-sample normalization (same as existing path)
-          // Track per-sample stats for backprop
-          ulong inIdx = inBatchMeans.size();
-          inBatchMeans.push_back(std::vector<std::vector<T>>(N));
-          inBatchVars.push_back(std::vector<std::vector<T>>(N));
-          inXNormalized.push_back(std::vector<Tensor3D<T>>(N));
-
-          for (ulong n = 0; n < N; n++) {
-            NormParameters<T> normParams = this->parameters.normParams[ni];
-            currentActvs[n] =
-              InstanceNorm<T>::propagate(currentActvs[n], currentActvs[n].shape, normParams, bn, true,
-                                         &inBatchMeans[inIdx][n], &inBatchVars[inIdx][n], &inXNormalized[inIdx][n]);
-          }
+          Normalization<T>::propagate(batchPtrs, currentActvs[0].shape, this->parameters.normParams[ni], normConfig,
+                                      layerConfig.type, true, &normXNormalized[ni], &normStatsMean[ni],
+                                      &normStatsVar[ni]);
 
           normIdx++;
           break;
@@ -859,7 +830,6 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
       convIdx = numConvLayers;
       poolIdx = poolMaxIndices.empty() ? 0 : poolMaxIndices[0].size();
       normIdx = numNormLayers;
-      ulong inNormIdx = inBatchMeans.size();
 
       for (long layerIdx = static_cast<long>(this->layersConfig.cnnLayers.size()) - 1; layerIdx >= 0; layerIdx--) {
         const CNNLayerConfig& layerConfig = this->layersConfig.cnnLayers[static_cast<ulong>(layerIdx)];
@@ -907,54 +877,28 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
           break;
         }
 
+        case LayerType::INSTANCENORM:
         case LayerType::BATCHNORM: {
           normIdx--;
-          const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+          const auto& normConfig = std::get<NormLayerConfig>(layerConfig.config);
 
-          // Collect pointers to all samples' gradients
           std::vector<Tensor3D<T>*> dBatchPtrs(N);
 
-          for (ulong n = 0; n < N; n++) {
+          for (ulong n = 0; n < N; n++)
             dBatchPtrs[n] = &dCurrents[n];
-          }
 
-          // True batch norm backward: computes dGamma, dBeta across all samples
-          // and modifies dCurrents in-place to contain dInput
           std::vector<T> layerDGamma;
           std::vector<T> layerDBeta;
           Shape3D layerShape = intermediates[0][static_cast<ulong>(layerIdx)].shape;
-          BatchNorm<T>::backpropagate(dBatchPtrs, layerShape, this->parameters.normParams[normIdx], bn,
-                                      bnBatchMeans[normIdx], bnBatchVars[normIdx], bnXNormalized[normIdx], layerDGamma,
-                                      layerDBeta);
+          Normalization<T>::backpropagate(dBatchPtrs, layerShape, this->parameters.normParams[normIdx], normConfig,
+                                          layerConfig.type, normStatsMean[normIdx], normStatsVar[normIdx],
+                                          normXNormalized[normIdx], layerDGamma, layerDBeta);
 
           for (ulong j = 0; j < layerDGamma.size(); j++)
             dBNGamma[normIdx][j] += layerDGamma[j];
 
           for (ulong j = 0; j < layerDBeta.size(); j++)
             dBNBeta[normIdx][j] += layerDBeta[j];
-
-          break;
-        }
-
-        case LayerType::INSTANCENORM: {
-          normIdx--;
-          inNormIdx--;
-          const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
-
-          for (ulong n = 0; n < N; n++) {
-            Shape3D layerShape = intermediates[n][static_cast<ulong>(layerIdx)].shape;
-            std::vector<T> sampleDGamma;
-            std::vector<T> sampleDBeta;
-            dCurrents[n] = InstanceNorm<T>::backpropagate(
-              dCurrents[n], layerShape, this->parameters.normParams[normIdx], bn, inBatchMeans[inNormIdx][n],
-              inBatchVars[inNormIdx][n], inXNormalized[inNormIdx][n], sampleDGamma, sampleDBeta);
-
-            for (ulong j = 0; j < sampleDGamma.size(); j++)
-              dBNGamma[normIdx][j] += sampleDGamma[j];
-
-            for (ulong j = 0; j < sampleDBeta.size(); j++)
-              dBNBeta[normIdx][j] += sampleDBeta[j];
-          }
 
           break;
         }
