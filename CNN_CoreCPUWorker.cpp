@@ -4,6 +4,7 @@
 #include "CNN_Pool.hpp"
 #include "CNN_Flatten.hpp"
 #include "CNN_InstanceNorm.hpp"
+#include "CNN_BatchNorm.hpp"
 
 #include <ANN_Core.hpp>
 
@@ -276,6 +277,35 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
       break;
     }
 
+    case LayerType::BATCHNORM: {
+      const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+      NormParameters<T> normParams = this->sharedParams.normParams[normIdx];
+
+      if (training) {
+        // In the BatchNorm-aware training path, this code is not reached
+        // (trainBatchNorm handles BN layers directly). But for safety:
+        this->normBatchMeans.push_back({});
+        this->normBatchVars.push_back({});
+        this->bnXNormalized.push_back({});
+
+        // Single-sample BN during per-sample training degenerates to instance norm
+        std::vector<Tensor3D<T>*> batch = {&current};
+        std::vector<Tensor3D<T>> tempXNorm;
+        BatchNorm<T>::propagate(batch, current.shape, normParams, bn, true, &tempXNorm, &this->normBatchMeans.back(),
+                                &this->normBatchVars.back());
+
+        if (!tempXNorm.empty())
+          this->bnXNormalized.back() = tempXNorm[0];
+      } else {
+        // Inference: use running stats
+        std::vector<Tensor3D<T>*> batch = {&current};
+        BatchNorm<T>::propagate(batch, current.shape, normParams, bn, false);
+      }
+
+      normIdx++;
+      break;
+    }
+
     case LayerType::FLATTEN: {
       break;
     }
@@ -340,6 +370,23 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::v
       dCurrent = InstanceNorm<T>::backpropagate(dCurrent, layerInput.shape, this->sharedParams.normParams[normIdx], bn,
                                                 this->normBatchMeans[normIdx], this->normBatchVars[normIdx],
                                                 this->bnXNormalized[normIdx], dBNGamma[normIdx], dBNBeta[normIdx]);
+      break;
+    }
+
+    case LayerType::BATCHNORM: {
+      normIdx--;
+      const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+
+      // Single-sample backprop for BN (degenerates to instance-norm-like)
+      // In the BatchNorm-aware training path, this code is not reached.
+      std::vector<Tensor3D<T>*> dBatch = {&dCurrent};
+      std::vector<T> layerDGamma;
+      std::vector<T> layerDBeta;
+      BatchNorm<T>::backpropagate(dBatch, layerInput.shape, this->sharedParams.normParams[normIdx], bn,
+                                  this->normBatchMeans[normIdx], this->normBatchVars[normIdx],
+                                  {this->bnXNormalized[normIdx]}, layerDGamma, layerDBeta);
+      dBNGamma[normIdx] = layerDGamma;
+      dBNBeta[normIdx] = layerDBeta;
       break;
     }
 

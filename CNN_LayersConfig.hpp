@@ -49,7 +49,7 @@ namespace CNN
   };
 
   // A CNN layer can be any of these types
-  enum class LayerType { CONV, RELU, POOL, FLATTEN, INSTANCENORM };
+  enum class LayerType { CONV, RELU, POOL, FLATTEN, INSTANCENORM, BATCHNORM };
 
   struct CNNLayerConfig {
       LayerType type;

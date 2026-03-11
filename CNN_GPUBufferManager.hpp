@@ -29,6 +29,7 @@ namespace CNN
       void computeLayerOffsets();
       void loadSources(bool skipDefines);
       void allocateBuffers();
+      void allocateBatchBuffers(ulong batchSize);
       void buildANNWorker();
 
       //-- Parameter synchronization: GPU → CPU --//
@@ -82,6 +83,10 @@ namespace CNN
 
       Shape3D cnnOutputShape;
       ulong flattenSize = 0;
+
+      //-- Batch normalization batch buffers --//
+      ulong batchBufferSize = 0; // batchSize used for batch buffer allocation
+      bool batchBuffersAllocated = false;
 
       //-- ANN GPU worker (dense layers on shared core) --//
       std::unique_ptr<ANN::CoreGPUWorker<T>> annGPUWorker;

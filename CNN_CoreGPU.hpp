@@ -35,6 +35,9 @@ namespace CNN
       //-- Initialization --//
       void initializeWorkers();
 
+      //-- Batch normalization detection --//
+      bool hasBatchNorm = false;
+
       //-- Training coordination --//
       void mergeCNNGradients();
       void mergeANNGradients();

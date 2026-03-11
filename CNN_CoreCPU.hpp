@@ -27,6 +27,9 @@ namespace CNN
       //-- Step-by-step worker (for predict / single-threaded path) --//
       std::unique_ptr<CoreCPUWorker<T>> stepWorker;
 
+      //-- BatchNorm flag (set by scanning layersConfig for BATCHNORM layers) --//
+      bool hasBatchNorm = false;
+
       //-- Global CNN gradient accumulators (for merging worker results) --//
       std::vector<std::vector<T>> accumDConvFilters;
       std::vector<std::vector<T>> accumDConvBiases;
@@ -52,6 +55,9 @@ namespace CNN
       void updateCNNParameters(ulong numSamples);
       void updateNormRunningStats(ulong numSamples);
       void allocateAdamState();
+
+      //-- BatchNorm-aware training (layer-by-layer orchestration) --//
+      void trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampleProvider);
   };
 }
 
