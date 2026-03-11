@@ -1,4 +1,10 @@
 #include "CNN_CoreCPU.hpp"
+#include "CNN_BatchNorm.hpp"
+#include "CNN_Conv2D.hpp"
+#include "CNN_ReLU.hpp"
+#include "CNN_Pool.hpp"
+#include "CNN_Flatten.hpp"
+#include "CNN_InstanceNorm.hpp"
 
 #include <ANN_Core.hpp>
 
@@ -26,6 +32,14 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
 
   // Initialize batch norm parameters if not loaded
   Worker<T>::initializeNormParams(this->layersConfig, this->inputShape, this->parameters);
+
+  // Check if any layer is BATCHNORM
+  for (const auto& layerConfig : this->layersConfig.cnnLayers) {
+    if (layerConfig.type == LayerType::BATCHNORM) {
+      this->hasBatchNorm = true;
+      break;
+    }
+  }
 
   // Create the step worker (used for predict and single-threaded paths)
   bool allocateTraining = (this->modeType == ModeType::TRAIN);
@@ -131,9 +145,9 @@ void CoreCPU<T>::updateNormRunningStats(ulong numSamples)
 {
   T momentum = static_cast<T>(0.1); // Default momentum
 
-  // Get momentum from the first BN layer config
+  // Get momentum from the first norm layer config
   for (const auto& layerConfig : this->layersConfig.cnnLayers) {
-    if (layerConfig.type == LayerType::INSTANCENORM) {
+    if (layerConfig.type == LayerType::INSTANCENORM || layerConfig.type == LayerType::BATCHNORM) {
       const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
       momentum = static_cast<T>(bn.momentum);
       break;
@@ -277,10 +291,16 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples)
 template <typename T>
 void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider)
 {
-  ulong numEpochs = this->trainingConfig.numEpochs;
-
   if (numSamples == 0)
     throw std::runtime_error("No training samples provided");
+
+  // Dispatch to batch-norm-aware training loop if any BATCHNORM layers exist
+  if (this->hasBatchNorm) {
+    this->trainBatchNorm(numSamples, sampleProvider);
+    return;
+  }
+
+  ulong numEpochs = this->trainingConfig.numEpochs;
 
   int numThreads = this->numThreads;
 
@@ -550,6 +570,490 @@ TestResult<T> CoreCPU<T>::test(ulong numSamples, const SampleProvider<T>& sample
                                      : static_cast<T>(0);
 
   return result;
+}
+
+//===================================================================================================================//
+
+//===================================================================================================================//
+//-- BatchNorm-aware training (layer-by-layer orchestration) --//
+//===================================================================================================================//
+
+template <typename T>
+void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampleProvider)
+{
+  ulong numEpochs = this->trainingConfig.numEpochs;
+  ulong batchSize = this->trainingConfig.batchSize;
+
+  int numThreads = this->numThreads;
+
+  if (numThreads <= 0)
+    numThreads = QThreadPool::globalInstance()->maxThreadCount();
+
+  this->trainingStart(numSamples);
+
+  if (this->logLevel >= CNN::LogLevel::INFO)
+    qDebug() << "CNN Training (BatchNorm):" << numEpochs << "epochs," << numSamples << "samples," << numThreads
+             << "threads, batch size" << batchSize;
+
+  // Create per-thread ANN workers (each owns its own ANN core for thread safety)
+  std::vector<std::unique_ptr<CoreCPUWorker<T>>> workers;
+
+  for (int i = 0; i < numThreads; i++) {
+    workers.push_back(std::make_unique<CoreCPUWorker<T>>(this->coreConfig, this->layersConfig, this->parameters, true));
+  }
+
+  QMutex callbackMutex;
+
+  // Sample index indirection for shuffling
+  std::vector<ulong> sampleIndices(numSamples);
+  std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
+  std::mt19937 rng(std::random_device{}());
+
+  // Precompute CNN output shape
+  Shape3D cnnOutputShape = this->layersConfig.validateShapes(this->inputShape);
+  ulong flattenSize = cnnOutputShape.size();
+
+  for (ulong e = 0; e < numEpochs; e++) {
+    T epochLoss = static_cast<T>(0);
+    std::atomic<ulong> completedSamples{0};
+
+    if (this->trainingConfig.shuffleSamples) {
+      std::shuffle(sampleIndices.begin(), sampleIndices.end(), rng);
+    }
+
+    ulong batchIndex = 0;
+
+    for (ulong batchStart = 0; batchStart < numSamples; batchStart += batchSize, batchIndex++) {
+      ulong batchEnd = std::min(batchStart + batchSize, numSamples);
+      ulong currentBatchSize = batchEnd - batchStart;
+
+      Samples<T> batchSamples = sampleProvider(sampleIndices, batchSize, batchIndex);
+      ulong N = batchSamples.size();
+
+      // ---- FORWARD PASS (layer by layer) ----
+      // Per-sample activations: currentActvs[n] is the current activation for sample n
+      std::vector<Tensor3D<T>> currentActvs(N);
+
+      for (ulong n = 0; n < N; n++) {
+        currentActvs[n] = batchSamples[n].input;
+      }
+
+      // Per-sample intermediates for backprop: intermediates[n][layerIdx]
+      std::vector<std::vector<Tensor3D<T>>> intermediates(N);
+
+      for (ulong n = 0; n < N; n++) {
+        intermediates[n].resize(this->layersConfig.cnnLayers.size());
+      }
+
+      // Per-sample pool max indices: poolMaxIndices[n][poolLayerIdx]
+      std::vector<std::vector<std::vector<ulong>>> poolMaxIndices(N);
+
+      // Per-BN-layer batch stats and xNorm
+      ulong numNormLayers = this->parameters.normParams.size();
+      std::vector<std::vector<T>> bnBatchMeans(numNormLayers);
+      std::vector<std::vector<T>> bnBatchVars(numNormLayers);
+      std::vector<std::vector<Tensor3D<T>>> bnXNormalized(numNormLayers);
+
+      // Per-InstanceNorm-layer per-sample stats
+      std::vector<std::vector<std::vector<T>>> inBatchMeans;
+      std::vector<std::vector<std::vector<T>>> inBatchVars;
+      std::vector<std::vector<Tensor3D<T>>> inXNormalized;
+
+      ulong convIdx = 0;
+      ulong poolIdx = 0;
+      ulong normIdx = 0;
+
+      for (ulong layerIdx = 0; layerIdx < this->layersConfig.cnnLayers.size(); layerIdx++) {
+        const CNNLayerConfig& layerConfig = this->layersConfig.cnnLayers[layerIdx];
+
+        // Save intermediates for all samples
+        for (ulong n = 0; n < N; n++) {
+          intermediates[n][layerIdx] = currentActvs[n];
+        }
+
+        switch (layerConfig.type) {
+        case LayerType::CONV: {
+          const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
+          ulong ci = convIdx;
+
+          for (ulong n = 0; n < N; n++) {
+            currentActvs[n] = Conv2D<T>::propagate(currentActvs[n], conv, this->parameters.convParams[ci]);
+          }
+
+          convIdx++;
+          break;
+        }
+
+        case LayerType::RELU: {
+          for (ulong n = 0; n < N; n++) {
+            currentActvs[n] = ReLU<T>::propagate(currentActvs[n]);
+          }
+
+          break;
+        }
+
+        case LayerType::POOL: {
+          const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
+
+          for (ulong n = 0; n < N; n++) {
+            poolMaxIndices[n].push_back({});
+            currentActvs[n] = Pool<T>::propagate(currentActvs[n], pool, poolMaxIndices[n].back());
+          }
+
+          poolIdx++;
+          break;
+        }
+
+        case LayerType::BATCHNORM: {
+          const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+          ulong ni = normIdx;
+
+          // Collect pointers to all samples' activations
+          std::vector<Tensor3D<T>*> batchPtrs(N);
+
+          for (ulong n = 0; n < N; n++) {
+            batchPtrs[n] = &currentActvs[n];
+          }
+
+          // True batch normalization: compute stats across all N samples
+          BatchNorm<T>::propagate(batchPtrs, currentActvs[0].shape, this->parameters.normParams[ni], bn, true,
+                                  &bnXNormalized[ni], &bnBatchMeans[ni], &bnBatchVars[ni]);
+
+          normIdx++;
+          break;
+        }
+
+        case LayerType::INSTANCENORM: {
+          const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+          ulong ni = normIdx;
+
+          // InstanceNorm: per-sample normalization (same as existing path)
+          // Track per-sample stats for backprop
+          ulong inIdx = inBatchMeans.size();
+          inBatchMeans.push_back(std::vector<std::vector<T>>(N));
+          inBatchVars.push_back(std::vector<std::vector<T>>(N));
+          inXNormalized.push_back(std::vector<Tensor3D<T>>(N));
+
+          for (ulong n = 0; n < N; n++) {
+            NormParameters<T> normParams = this->parameters.normParams[ni];
+            currentActvs[n] =
+              InstanceNorm<T>::propagate(currentActvs[n], currentActvs[n].shape, normParams, bn, true,
+                                         &inBatchMeans[inIdx][n], &inBatchVars[inIdx][n], &inXNormalized[inIdx][n]);
+          }
+
+          normIdx++;
+          break;
+        }
+
+        case LayerType::FLATTEN: {
+          break;
+        }
+        }
+      }
+
+      // ---- ANN FORWARD + LOSS (parallel per sample) ----
+      // Sync worker ANN cores with main parameters
+      ANN::Parameters<T> mainANNParams = this->stepWorker->getANNCore()->getParameters();
+
+      for (int i = 0; i < numThreads; i++) {
+        workers[i]->getANNCore()->setParameters(mainANNParams);
+        workers[i]->getANNCore()->resetAccumulators();
+      }
+
+      // Per-sample ANN outputs and losses
+      std::vector<Output<T>> predictions(N);
+      std::vector<T> sampleLosses(N);
+      std::vector<Tensor1D<T>> dFlatInputs(N);
+
+      // Distribute samples across workers for ANN forward + backward
+      std::vector<ulong> workerSampleCounts(numThreads);
+
+      for (int i = 0; i < numThreads; i++)
+        workerSampleCounts[i] =
+          N / static_cast<ulong>(numThreads) + (static_cast<ulong>(i) < N % static_cast<ulong>(numThreads) ? 1 : 0);
+
+      QVector<int> workerIndices(numThreads);
+
+      for (int i = 0; i < numThreads; i++)
+        workerIndices[i] = i;
+
+      QtConcurrent::blockingMap(workerIndices, [&](int workerIdx) {
+        CoreCPUWorker<T>& worker = *workers[workerIdx];
+
+        ulong workerLocalStart = 0;
+
+        for (int i = 0; i < workerIdx; i++)
+          workerLocalStart += workerSampleCounts[i];
+        ulong workerLocalEnd = workerLocalStart + workerSampleCounts[workerIdx];
+
+        for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
+          // Flatten CNN output
+          Tensor1D<T> flatInput = Flatten<T>::propagate(currentActvs[s]);
+
+          // ANN forward
+          ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
+          ANN::Output<T> annOutput = worker.getANNCore()->predict(annInput);
+          predictions[s] = Output<T>(annOutput.begin(), annOutput.end());
+
+          // Loss
+          sampleLosses[s] = worker.calculateLoss(predictions[s], batchSamples[s].output);
+
+          // ANN backward + accumulate
+          ANN::Output<T> annExpected(batchSamples[s].output.begin(), batchSamples[s].output.end());
+          ANN::Tensor1D<T> dFlatANN = worker.getANNCore()->backpropagate(annExpected);
+          worker.getANNCore()->accumulate();
+
+          dFlatInputs[s] = Tensor1D<T>(dFlatANN.begin(), dFlatANN.end());
+
+          ulong completed = ++completedSamples;
+
+          if (this->trainingCallback) {
+            QMutexLocker locker(&callbackMutex);
+            TrainingProgress<T> progress;
+            progress.currentEpoch = e + 1;
+            progress.totalEpochs = numEpochs;
+            progress.currentSample = completed;
+            progress.totalSamples = numSamples;
+            progress.sampleLoss = sampleLosses[s];
+            progress.epochLoss = 0;
+            this->trainingCallback(progress);
+          }
+        }
+      });
+
+      // Sum losses
+      T batchLoss = static_cast<T>(0);
+
+      for (ulong n = 0; n < N; n++) {
+        batchLoss += sampleLosses[n];
+      }
+
+      epochLoss += batchLoss;
+
+      // ---- CNN BACKWARD PASS (layer by layer, reverse) ----
+      // Unflatten ANN input gradients to CNN output gradients
+      std::vector<Tensor3D<T>> dCurrents(N);
+
+      for (ulong n = 0; n < N; n++) {
+        dCurrents[n] = Flatten<T>::backpropagate(dFlatInputs[n], cnnOutputShape);
+      }
+
+      // Per-layer gradient accumulators
+      ulong numConvLayers = this->parameters.convParams.size();
+      std::vector<std::vector<T>> dConvFilters(numConvLayers);
+      std::vector<std::vector<T>> dConvBiases(numConvLayers);
+
+      for (ulong i = 0; i < numConvLayers; i++) {
+        dConvFilters[i].assign(this->parameters.convParams[i].filters.size(), static_cast<T>(0));
+        dConvBiases[i].assign(this->parameters.convParams[i].biases.size(), static_cast<T>(0));
+      }
+
+      std::vector<std::vector<T>> dBNGamma(numNormLayers);
+      std::vector<std::vector<T>> dBNBeta(numNormLayers);
+
+      for (ulong i = 0; i < numNormLayers; i++) {
+        dBNGamma[i].assign(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+        dBNBeta[i].assign(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+      }
+
+      convIdx = numConvLayers;
+      poolIdx = poolMaxIndices.empty() ? 0 : poolMaxIndices[0].size();
+      normIdx = numNormLayers;
+      ulong inNormIdx = inBatchMeans.size();
+
+      for (long layerIdx = static_cast<long>(this->layersConfig.cnnLayers.size()) - 1; layerIdx >= 0; layerIdx--) {
+        const CNNLayerConfig& layerConfig = this->layersConfig.cnnLayers[static_cast<ulong>(layerIdx)];
+
+        switch (layerConfig.type) {
+        case LayerType::CONV: {
+          convIdx--;
+          const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
+
+          for (ulong n = 0; n < N; n++) {
+            const Tensor3D<T>& layerInput = intermediates[n][static_cast<ulong>(layerIdx)];
+            std::vector<T> sampleDFilters;
+            std::vector<T> sampleDBiases;
+            dCurrents[n] = Conv2D<T>::backpropagate(
+              dCurrents[n], layerInput, conv, this->parameters.convParams[convIdx], sampleDFilters, sampleDBiases);
+
+            for (ulong j = 0; j < sampleDFilters.size(); j++)
+              dConvFilters[convIdx][j] += sampleDFilters[j];
+
+            for (ulong j = 0; j < sampleDBiases.size(); j++)
+              dConvBiases[convIdx][j] += sampleDBiases[j];
+          }
+
+          break;
+        }
+
+        case LayerType::RELU: {
+          for (ulong n = 0; n < N; n++) {
+            const Tensor3D<T>& layerInput = intermediates[n][static_cast<ulong>(layerIdx)];
+            dCurrents[n] = ReLU<T>::backpropagate(dCurrents[n], layerInput);
+          }
+
+          break;
+        }
+
+        case LayerType::POOL: {
+          poolIdx--;
+          const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
+
+          for (ulong n = 0; n < N; n++) {
+            const Tensor3D<T>& layerInput = intermediates[n][static_cast<ulong>(layerIdx)];
+            dCurrents[n] = Pool<T>::backpropagate(dCurrents[n], layerInput.shape, pool, poolMaxIndices[n][poolIdx]);
+          }
+
+          break;
+        }
+
+        case LayerType::BATCHNORM: {
+          normIdx--;
+          const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+
+          // Collect pointers to all samples' gradients
+          std::vector<Tensor3D<T>*> dBatchPtrs(N);
+
+          for (ulong n = 0; n < N; n++) {
+            dBatchPtrs[n] = &dCurrents[n];
+          }
+
+          // True batch norm backward: computes dGamma, dBeta across all samples
+          // and modifies dCurrents in-place to contain dInput
+          std::vector<T> layerDGamma;
+          std::vector<T> layerDBeta;
+          Shape3D layerShape = intermediates[0][static_cast<ulong>(layerIdx)].shape;
+          BatchNorm<T>::backpropagate(dBatchPtrs, layerShape, this->parameters.normParams[normIdx], bn,
+                                      bnBatchMeans[normIdx], bnBatchVars[normIdx], bnXNormalized[normIdx], layerDGamma,
+                                      layerDBeta);
+
+          for (ulong j = 0; j < layerDGamma.size(); j++)
+            dBNGamma[normIdx][j] += layerDGamma[j];
+
+          for (ulong j = 0; j < layerDBeta.size(); j++)
+            dBNBeta[normIdx][j] += layerDBeta[j];
+
+          break;
+        }
+
+        case LayerType::INSTANCENORM: {
+          normIdx--;
+          inNormIdx--;
+          const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
+
+          for (ulong n = 0; n < N; n++) {
+            Shape3D layerShape = intermediates[n][static_cast<ulong>(layerIdx)].shape;
+            std::vector<T> sampleDGamma;
+            std::vector<T> sampleDBeta;
+            dCurrents[n] = InstanceNorm<T>::backpropagate(
+              dCurrents[n], layerShape, this->parameters.normParams[normIdx], bn, inBatchMeans[inNormIdx][n],
+              inBatchVars[inNormIdx][n], inXNormalized[inNormIdx][n], sampleDGamma, sampleDBeta);
+
+            for (ulong j = 0; j < sampleDGamma.size(); j++)
+              dBNGamma[normIdx][j] += sampleDGamma[j];
+
+            for (ulong j = 0; j < sampleDBeta.size(); j++)
+              dBNBeta[normIdx][j] += sampleDBeta[j];
+          }
+
+          break;
+        }
+
+        case LayerType::FLATTEN: {
+          break;
+        }
+        }
+      }
+
+      // ---- MERGE + UPDATE ----
+      // Merge ANN parameters across workers (weighted average)
+      for (int i = 0; i < numThreads; i++) {
+        if (workerSampleCounts[i] > 0)
+          workers[i]->getANNCore()->update(workerSampleCounts[i]);
+      }
+
+      ANN::Parameters<T> mergedParams;
+      const ANN::Parameters<T>& ref = workers[0]->getANNCore()->getParameters();
+      mergedParams.weights.resize(ref.weights.size());
+
+      for (ulong l = 0; l < ref.weights.size(); l++) {
+        mergedParams.weights[l].resize(ref.weights[l].size());
+
+        for (ulong j = 0; j < ref.weights[l].size(); j++)
+          mergedParams.weights[l][j].assign(ref.weights[l][j].size(), static_cast<T>(0));
+      }
+
+      mergedParams.biases.resize(ref.biases.size());
+
+      for (ulong l = 0; l < ref.biases.size(); l++)
+        mergedParams.biases[l].assign(ref.biases[l].size(), static_cast<T>(0));
+
+      for (int i = 0; i < numThreads; i++) {
+        if (workerSampleCounts[i] == 0)
+          continue;
+        T w = static_cast<T>(workerSampleCounts[i]) / static_cast<T>(currentBatchSize);
+        const ANN::Parameters<T>& wp = workers[i]->getANNCore()->getParameters();
+
+        for (ulong l = 0; l < wp.weights.size(); l++)
+
+          for (ulong j = 0; j < wp.weights[l].size(); j++)
+
+            for (ulong k = 0; k < wp.weights[l][j].size(); k++)
+              mergedParams.weights[l][j][k] += wp.weights[l][j][k] * w;
+
+        for (ulong l = 0; l < wp.biases.size(); l++)
+
+          for (ulong j = 0; j < wp.biases[l].size(); j++)
+            mergedParams.biases[l][j] += wp.biases[l][j] * w;
+      }
+
+      this->stepWorker->getANNCore()->setParameters(mergedParams);
+
+      // Update CNN parameters using accumulated gradients
+      this->resetGlobalCNNAccumulators();
+
+      for (ulong i = 0; i < numConvLayers; i++) {
+        for (ulong j = 0; j < dConvFilters[i].size(); j++)
+          this->accumDConvFilters[i][j] = dConvFilters[i][j];
+
+        for (ulong j = 0; j < dConvBiases[i].size(); j++)
+          this->accumDConvBiases[i][j] = dConvBiases[i][j];
+      }
+
+      for (ulong i = 0; i < numNormLayers; i++) {
+        for (ulong j = 0; j < dBNGamma[i].size(); j++)
+          this->accumDBNGamma[i][j] = dBNGamma[i][j];
+
+        for (ulong j = 0; j < dBNBeta[i].size(); j++)
+          this->accumDBNBeta[i][j] = dBNBeta[i][j];
+      }
+
+      this->updateCNNParameters(currentBatchSize);
+      // Note: BatchNorm running stats are updated during propagate() directly
+    }
+
+    // Sync ANN parameters for checkpoint saves
+    this->parameters.denseParams = this->stepWorker->getANNCore()->getParameters();
+
+    T avgLoss = epochLoss / static_cast<T>(numSamples);
+    this->trainingMetadata.finalLoss = avgLoss;
+
+    if (this->logLevel >= CNN::LogLevel::INFO)
+      qDebug() << "Epoch " << (e + 1) << "/" << numEpochs << " - Loss: " << avgLoss;
+
+    if (this->trainingCallback) {
+      TrainingProgress<T> progress;
+      progress.currentEpoch = e + 1;
+      progress.totalEpochs = numEpochs;
+      progress.currentSample = numSamples;
+      progress.totalSamples = numSamples;
+      progress.sampleLoss = 0;
+      progress.epochLoss = avgLoss;
+      this->trainingCallback(progress);
+    }
+  }
+
+  this->trainingEnd();
 }
 
 //===================================================================================================================//

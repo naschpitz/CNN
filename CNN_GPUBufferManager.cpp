@@ -99,6 +99,16 @@ void GPUBufferManager<T>::computeLayerOffsets()
     }
 
     case LayerType::INSTANCENORM: {
+      // Instance norm doesn't change shape
+      InstanceNormInfo bi;
+      bi.paramOffset = this->totalNormParamSize;
+      bi.numChannels = currentShape.c;
+      this->normInfos.push_back(bi);
+      this->totalNormParamSize += bi.numChannels;
+      break;
+    }
+
+    case LayerType::BATCHNORM: {
       // Batch norm doesn't change shape
       InstanceNormInfo bi;
       bi.paramOffset = this->totalNormParamSize;
@@ -147,6 +157,7 @@ void GPUBufferManager<T>::loadSources(bool skipDefines)
   this->core->addSourceFile(srcDir + "opencl/CNN_Update.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_Bridge.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_InstanceNorm.cpp.cl");
+  this->core->addSourceFile(srcDir + "opencl/CNN_BatchNorm.cpp.cl");
 
   if (this->logLevel >= CNN::LogLevel::INFO)
     std::cout << "CNN OpenCL kernels loaded.\n";
@@ -292,6 +303,43 @@ void GPUBufferManager<T>::allocateBuffers()
 }
 
 //===================================================================================================================//
+//-- Allocate batch buffers for true batch normalization --//
+//===================================================================================================================//
+
+template <typename T>
+void GPUBufferManager<T>::allocateBatchBuffers(ulong batchSize)
+{
+  if (this->batchBuffersAllocated)
+    return;
+
+  this->batchBufferSize = batchSize;
+
+  ulong batchActvSize = this->totalActvSize * batchSize;
+
+  // Batch activation buffer: holds activations for ALL samples in the batch
+  this->core->template allocateBuffer<T>("cnn_batch_actvs", batchActvSize);
+
+  // Batch gradient buffer: holds gradients for ALL samples in the batch
+  this->core->template allocateBuffer<T>("cnn_batch_grads", batchActvSize);
+
+  // Batch xnorm buffer: holds normalized values for backprop
+  if (this->totalNormParamSize > 0) {
+    this->core->template allocateBuffer<T>("cnn_batch_xnorm", batchActvSize);
+  }
+
+  // Batch pool indices buffer
+  if (this->totalPoolIndexSize > 0) {
+    this->core->template allocateBuffer<ulong>("cnn_batch_pool_indices", this->totalPoolIndexSize * batchSize);
+  }
+
+  this->batchBuffersAllocated = true;
+
+  if (this->logLevel >= CNN::LogLevel::INFO)
+    std::cout << "CNN batch buffers allocated (batchSize=" << batchSize << ", batchActvSize=" << batchActvSize
+              << ").\n";
+}
+
+//===================================================================================================================//
 //-- Build ANN GPU worker --//
 //===================================================================================================================//
 
@@ -325,6 +373,8 @@ void GPUBufferManager<T>::buildANNWorker()
     }
 
     case LayerType::INSTANCENORM:
+      break;
+    case LayerType::BATCHNORM:
       break;
     case LayerType::FLATTEN:
       break;

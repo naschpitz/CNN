@@ -131,6 +131,30 @@ void Worker<T>::initializeNormParams(const LayersConfig& layersConfig, const Sha
       break;
     }
 
+    case LayerType::BATCHNORM: {
+      ulong numChannels = currentShape.c;
+
+      // Check if parameters already loaded
+      if (normIdx < parameters.normParams.size() && !parameters.normParams[normIdx].gamma.empty()) {
+        normIdx++;
+        break;
+      }
+
+      // Ensure normParams vector is large enough
+      if (normIdx >= parameters.normParams.size()) {
+        parameters.normParams.resize(normIdx + 1);
+      }
+
+      NormParameters<T>& bp = parameters.normParams[normIdx];
+      bp.numChannels = numChannels;
+      bp.gamma.assign(numChannels, static_cast<T>(1)); // Initialize scale to 1
+      bp.beta.assign(numChannels, static_cast<T>(0)); // Initialize shift to 0
+      bp.runningMean.assign(numChannels, static_cast<T>(0));
+      bp.runningVar.assign(numChannels, static_cast<T>(1));
+      normIdx++;
+      break;
+    }
+
     case LayerType::RELU:
     case LayerType::FLATTEN:
       break;
