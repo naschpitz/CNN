@@ -5,22 +5,52 @@ int testsFailed = 0;
 
 void runConv2DTests();
 void runLayerTests();
-void runIntegrationTests();
-void runGPUTests();
+void runLayerTests2();
+void runIntegrationBasicTests();
+void runIntegrationBasicTests2();
+void runIntegrationBasicTests3();
+void runIntegrationCostFuncTests();
+void runIntegrationExactTests();
+void runIntegrationBatchNormTests();
+void runGPUBasicTests();
+void runGPUBasicTests2();
+void runGPUBasicTests3();
+void runGPUBasicTests4();
+void runGPUMultiGPUTests();
+void runGPUMultiGPUTests2();
+void runGPUExactTests();
+void runGPUExactBNTests();
+void runGPUBatchNormTests();
+void runGPUBatchNormTests2();
 
 int main()
 {
   std::cout << "=== CNN Unit Tests ===" << std::endl;
   runConv2DTests();
   runLayerTests();
+  runLayerTests2();
 
   std::cout << std::endl;
   std::cout << "=== Integration Tests ===" << std::endl;
-  runIntegrationTests();
+  runIntegrationBasicTests();
+  runIntegrationBasicTests2();
+  runIntegrationBasicTests3();
+  runIntegrationCostFuncTests();
+  runIntegrationExactTests();
+  runIntegrationBatchNormTests();
 
   std::cout << std::endl;
   std::cout << "=== GPU Tests ===" << std::endl;
-  runGPUTests();
+  runGPUBasicTests();
+  runGPUBasicTests2();
+  runGPUBasicTests3();
+  runGPUBasicTests4();
+  runGPUMultiGPUTests();
+  runGPUMultiGPUTests2();
+  runGPUExactTests();
+  runGPUExactBNTests();
+  runGPUBatchNormTests();
+  runGPUBatchNormTests2();
 
   std::cout << std::endl;
   std::cout << "=== Results: " << testsPassed << " passed, " << testsFailed << " failed ===" << std::endl;

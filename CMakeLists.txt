@@ -59,6 +59,8 @@ add_library(CNN STATIC
   CNN_Pool.hpp CNN_Pool.cpp
   CNN_Flatten.hpp CNN_Flatten.cpp
   CNN_InstanceNorm.hpp CNN_InstanceNorm.cpp
+  CNN_BatchNorm.hpp CNN_BatchNorm.cpp
+  opencl/CNN_BatchNorm.cpp.cl
 )
 
 # PUBLIC: Consumers of CNN need access to CNN headers
@@ -82,7 +84,22 @@ add_executable(test_cnn
   tests/test_main.cpp
   tests/test_conv2d.cpp
   tests/test_layers.cpp
-  tests/test_integration.cpp
-  tests/test_gpu.cpp
+  tests/test_layers2.cpp
+  tests/test_integration_basic.cpp
+  tests/test_integration_basic2.cpp
+  tests/test_integration_basic3.cpp
+  tests/test_integration_costfunc.cpp
+  tests/test_integration_exact.cpp
+  tests/test_integration_batchnorm.cpp
+  tests/test_gpu_basic.cpp
+  tests/test_gpu_basic2.cpp
+  tests/test_gpu_basic3.cpp
+  tests/test_gpu_basic4.cpp
+  tests/test_gpu_multigpu.cpp
+  tests/test_gpu_multigpu2.cpp
+  tests/test_gpu_exact.cpp
+  tests/test_gpu_exact_bn.cpp
+  tests/test_gpu_batchnorm.cpp
+  tests/test_gpu_batchnorm2.cpp
 )
 target_link_libraries(test_cnn PRIVATE CNN)
