@@ -3,7 +3,7 @@
 #include "CNN_Mode.hpp"
 #include "CNN_PoolType.hpp"
 #include "CNN_CostFunctionConfig.hpp"
-#include "CNN_BatchNorm.hpp"
+#include "CNN_Normalization.hpp"
 
 static void testInstanceNormOutputShape()
 {
@@ -22,10 +22,11 @@ static void testInstanceNormOutputShape()
 
   CNN::NormLayerConfig config;
 
-  CNN::Tensor3D<double> out = CNN::InstanceNorm<double>::propagate(input, shape, params, config);
-  CHECK(out.shape.c == 3, "instancenorm preserves channels");
-  CHECK(out.shape.h == 8, "instancenorm preserves height");
-  CHECK(out.shape.w == 8, "instancenorm preserves width");
+  std::vector<CNN::Tensor3D<double>*> batch = {&input};
+  CNN::Normalization<double>::propagate(batch, shape, params, config, CNN::LayerType::INSTANCENORM, false);
+  CHECK(input.shape.c == 3, "instancenorm preserves channels");
+  CHECK(input.shape.h == 8, "instancenorm preserves height");
+  CHECK(input.shape.w == 8, "instancenorm preserves width");
 }
 
 //===================================================================================================================//
@@ -86,7 +87,7 @@ static void testBatchNormInference()
   CNN::NormLayerConfig config;
   config.epsilon = 0.0;
 
-  CNN::BatchNorm<double>::propagate(batch, shape, params, config, false);
+  CNN::Normalization<double>::propagate(batch, shape, params, config, CNN::LayerType::BATCHNORM, false);
 
   // Inference uses running stats, same as InstanceNorm inference
   double invStd0 = 1.0 / std::sqrt(1.25);
@@ -125,7 +126,8 @@ static void testBatchNormTraining()
   std::vector<CNN::Tensor3D<double>> xNorm;
   std::vector<double> batchMean, batchVar;
 
-  CNN::BatchNorm<double>::propagate(batch, shape, params, config, true, &xNorm, &batchMean, &batchVar);
+  CNN::Normalization<double>::propagate(batch, shape, params, config, CNN::LayerType::BATCHNORM, true, &xNorm,
+                                        &batchMean, &batchVar);
 
   // Mean across all 4 values: (1+3+5+7)/4 = 4.0
   CHECK_NEAR(batchMean[0], 4.0, 1e-9, "batchnorm train mean");
@@ -177,7 +179,8 @@ static void testBatchNormBackpropagate()
   std::vector<CNN::Tensor3D<double>> xNorm;
   std::vector<double> batchMean, batchVar;
 
-  CNN::BatchNorm<double>::propagate(batch, shape, params, config, true, &xNorm, &batchMean, &batchVar);
+  CNN::Normalization<double>::propagate(batch, shape, params, config, CNN::LayerType::BATCHNORM, true, &xNorm,
+                                        &batchMean, &batchVar);
 
   // Upstream gradient: all ones
   CNN::Tensor3D<double> d0(shape, 1.0);
@@ -185,7 +188,8 @@ static void testBatchNormBackpropagate()
   std::vector<CNN::Tensor3D<double>*> dBatch = {&d0, &d1};
 
   std::vector<double> dGamma, dBeta;
-  CNN::BatchNorm<double>::backpropagate(dBatch, shape, params, config, batchMean, batchVar, xNorm, dGamma, dBeta);
+  CNN::Normalization<double>::backpropagate(dBatch, shape, params, config, CNN::LayerType::BATCHNORM, batchMean,
+                                            batchVar, xNorm, dGamma, dBeta);
 
   // dBeta = sum of all dOutputs = 4.0
   CHECK_NEAR(dBeta[0], 4.0, 1e-9, "batchnorm backprop dBeta");
