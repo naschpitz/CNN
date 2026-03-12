@@ -3,6 +3,7 @@
 #include "CNN_ReLU.hpp"
 #include "CNN_Pool.hpp"
 #include "CNN_Flatten.hpp"
+#include "CNN_GlobalAvgPool.hpp"
 #include "CNN_Normalization.hpp"
 
 #include <ANN_Core.hpp>
@@ -716,6 +717,12 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
           break;
         }
 
+        case LayerType::GLOBALAVGPOOL: {
+          for (ulong n = 0; n < N; n++)
+            GlobalAvgPool<T>::propagate(currentActvs[n], currentActvs[n].shape);
+          break;
+        }
+
         case LayerType::FLATTEN: {
           break;
         }
@@ -899,6 +906,15 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
 
           for (ulong j = 0; j < layerDBeta.size(); j++)
             dBNBeta[normIdx][j] += layerDBeta[j];
+
+          break;
+        }
+
+        case LayerType::GLOBALAVGPOOL: {
+          for (ulong n = 0; n < N; n++) {
+            const Tensor3D<T>& layerInput = intermediates[n][static_cast<ulong>(layerIdx)];
+            GlobalAvgPool<T>::backpropagate(dCurrents[n], layerInput.shape);
+          }
 
           break;
         }

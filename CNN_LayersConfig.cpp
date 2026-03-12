@@ -98,6 +98,12 @@ Shape3D LayersConfig::validateShapes(const Shape3D& inputShape) const
       break;
     }
 
+    case LayerType::GLOBALAVGPOOL: {
+      // Global average pooling reduces spatial dims to 1x1, preserving channels
+      current = {current.c, 1, 1};
+      break;
+    }
+
     case LayerType::INSTANCENORM: {
       // Instance normalization does not change shape
       break;

@@ -36,6 +36,7 @@ add_library(CNN STATIC
   opencl/CNN_Update.cpp.cl
   opencl/CNN_Bridge.cpp.cl
   opencl/CNN_Normalization.cpp.cl
+  opencl/CNN_GlobalAvgPool.cpp.cl
   CNN_Types.hpp
   CNN_Device.hpp CNN_Device.cpp
   CNN_Mode.hpp CNN_Mode.cpp
@@ -58,6 +59,7 @@ add_library(CNN STATIC
   CNN_ReLU.hpp CNN_ReLU.cpp
   CNN_Pool.hpp CNN_Pool.cpp
   CNN_Flatten.hpp CNN_Flatten.cpp
+  CNN_GlobalAvgPool.hpp CNN_GlobalAvgPool.cpp
   CNN_Normalization.hpp CNN_Normalization.cpp
 )
 
