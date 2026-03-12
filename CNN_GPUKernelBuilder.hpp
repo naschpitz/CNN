@@ -27,35 +27,23 @@ namespace CNN
       void setupUpdateKernels(ulong numSamples);
 
       //-- Kernel building blocks (public for external orchestration) --//
-      void addPropagateKernels(bool training = false);
-      void addCopyBridgeKernels();
-      void addBackpropagateKernels();
-      void addCNNAccumulateKernels();
-      void addCNNUpdateKernels(ulong numSamples);
+      void addPropagateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd, bool training = false);
+      void addBackpropagateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd);
+      void addCopyBridgeKernels(ulong sampleIdx);
+      void addReverseBridgeKernels(ulong sampleIdx);
+      void addCNNAccumulateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd);
+      void addCNNUpdateKernels(ulong numSamples, bool skipBNRunningStats = false);
 
-      //-- Batch-norm-aware kernel building blocks --//
-      // Add propagation kernels for a single sample within batch buffers
-      void addBatchPropagateKernelsForSample(ulong sampleIdx, ulong layerStart, ulong layerEnd);
-      // Add batch-wide BN forward kernels (cross-sample reduction)
+      //-- Cross-sample batch normalization kernels --//
       void addBatchNormForwardKernels(ulong layerIdx, ulong batchSize);
-      // Add backpropagation kernels for a single sample within batch buffers
-      void addBatchBackpropagateKernelsForSample(ulong sampleIdx, ulong layerStart, ulong layerEnd);
-      // Add batch-wide BN backward kernels (cross-sample reduction)
       void addBatchNormBackwardKernels(ulong layerIdx, ulong batchSize);
-      // Add copy bridge from batch buffer to single-sample ANN buffer
-      void addBatchCopyBridgeKernels(ulong sampleIdx);
-      // Add reverse bridge from ANN grads to batch gradient buffer
-      void addBatchReverseBridgeKernels(ulong sampleIdx);
-      // Add accumulate kernels for batch-norm training (CNN only, from batch buffers)
-      void addBatchCNNAccumulateKernelsForSample(ulong sampleIdx, ulong layerStart, ulong layerEnd);
-      // Add batch-norm running stats update using batch-wide mean/var directly
       void addBatchNormRunningStatsUpdate(ulong batchSize);
 
       //-- Kernel setup flags --//
       bool predictKernelsSetup = false;
       bool trainingKernelsSetup = false;
       bool updateKernelsSetup = false;
-      bool skipBNRunningStatsInUpdate = false; // Set by batch norm training path
+      bool skipBNRunningStatsInUpdate = false; // Set by trainSubset when BN path is active
 
       void invalidateAllKernelFlags();
 

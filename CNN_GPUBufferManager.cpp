@@ -174,11 +174,14 @@ void GPUBufferManager<T>::loadSources(bool skipDefines)
 //===================================================================================================================//
 
 template <typename T>
-void GPUBufferManager<T>::allocateBuffers()
+void GPUBufferManager<T>::allocateBuffers(ulong batchSize)
 {
-  // Activation and gradient buffers (same layout)
-  this->core->template allocateBuffer<T>("cnn_actvs", this->totalActvSize);
-  this->core->template allocateBuffer<T>("cnn_grads", this->totalActvSize);
+  this->batchSize = batchSize;
+  ulong batchActvSize = this->totalActvSize * batchSize;
+
+  // Activation and gradient buffers — sized for the full batch
+  this->core->template allocateBuffer<T>("cnn_actvs", batchActvSize);
+  this->core->template allocateBuffer<T>("cnn_grads", batchActvSize);
 
   // Filter and bias parameter buffers
   if (this->totalFilterSize > 0) {
@@ -193,9 +196,9 @@ void GPUBufferManager<T>::allocateBuffers()
     this->core->template allocateBuffer<T>("cnn_accum_dBiases", this->totalBiasSize);
   }
 
-  // Pool index buffer
+  // Pool index buffer — sized for the full batch
   if (this->totalPoolIndexSize > 0) {
-    this->core->template allocateBuffer<ulong>("cnn_pool_indices", this->totalPoolIndexSize);
+    this->core->template allocateBuffer<ulong>("cnn_pool_indices", this->totalPoolIndexSize * batchSize);
   }
 
   // Batch norm buffers
@@ -214,8 +217,8 @@ void GPUBufferManager<T>::allocateBuffers()
     // Accumulators for batch mean/var across samples (for running stats update)
     this->core->template allocateBuffer<T>("cnn_accum_norm_batch_mean", this->totalNormParamSize);
     this->core->template allocateBuffer<T>("cnn_accum_norm_batch_var", this->totalNormParamSize);
-    // Normalized values for backprop
-    this->core->template allocateBuffer<T>("cnn_norm_xnorm", this->totalActvSize);
+    // Normalized values for backprop — sized for the full batch
+    this->core->template allocateBuffer<T>("cnn_norm_xnorm", batchActvSize);
   }
 
   // Write initial filter/bias values to GPU
@@ -305,44 +308,7 @@ void GPUBufferManager<T>::allocateBuffers()
   }
 
   if (this->logLevel >= CNN::LogLevel::INFO)
-    std::cout << "CNN GPU buffers allocated.\n";
-}
-
-//===================================================================================================================//
-//-- Allocate batch buffers for true batch normalization --//
-//===================================================================================================================//
-
-template <typename T>
-void GPUBufferManager<T>::allocateBatchBuffers(ulong batchSize)
-{
-  if (this->batchBuffersAllocated)
-    return;
-
-  this->batchBufferSize = batchSize;
-
-  ulong batchActvSize = this->totalActvSize * batchSize;
-
-  // Batch activation buffer: holds activations for ALL samples in the batch
-  this->core->template allocateBuffer<T>("cnn_batch_actvs", batchActvSize);
-
-  // Batch gradient buffer: holds gradients for ALL samples in the batch
-  this->core->template allocateBuffer<T>("cnn_batch_grads", batchActvSize);
-
-  // Batch xnorm buffer: holds normalized values for backprop
-  if (this->totalNormParamSize > 0) {
-    this->core->template allocateBuffer<T>("cnn_batch_xnorm", batchActvSize);
-  }
-
-  // Batch pool indices buffer
-  if (this->totalPoolIndexSize > 0) {
-    this->core->template allocateBuffer<ulong>("cnn_batch_pool_indices", this->totalPoolIndexSize * batchSize);
-  }
-
-  this->batchBuffersAllocated = true;
-
-  if (this->logLevel >= CNN::LogLevel::INFO)
-    std::cout << "CNN batch buffers allocated (batchSize=" << batchSize << ", batchActvSize=" << batchActvSize
-              << ").\n";
+    std::cout << "CNN GPU buffers allocated (batchSize=" << batchSize << ").\n";
 }
 
 //===================================================================================================================//
