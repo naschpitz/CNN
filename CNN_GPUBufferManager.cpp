@@ -98,6 +98,12 @@ void GPUBufferManager<T>::computeLayerOffsets()
       break;
     }
 
+    case LayerType::GLOBALAVGPOOL: {
+      // Global average pooling reduces spatial dims to 1x1
+      outShape = {currentShape.c, 1, 1};
+      break;
+    }
+
     case LayerType::INSTANCENORM: {
       // Instance norm doesn't change shape
       InstanceNormInfo bi;
@@ -157,6 +163,7 @@ void GPUBufferManager<T>::loadSources(bool skipDefines)
   this->core->addSourceFile(srcDir + "opencl/CNN_Update.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_Bridge.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_Normalization.cpp.cl");
+  this->core->addSourceFile(srcDir + "opencl/CNN_GlobalAvgPool.cpp.cl");
 
   if (this->logLevel >= CNN::LogLevel::INFO)
     std::cout << "CNN OpenCL kernels loaded.\n";
@@ -371,6 +378,9 @@ void GPUBufferManager<T>::buildANNWorker()
       break;
     }
 
+    case LayerType::GLOBALAVGPOOL:
+      currentShape = {currentShape.c, 1, 1};
+      break;
     case LayerType::INSTANCENORM:
       break;
     case LayerType::BATCHNORM:

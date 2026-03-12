@@ -219,6 +219,23 @@ void GPUKernelBuilder<T>::addPropagateKernels(bool training)
       break;
     }
 
+    case LayerType::GLOBALAVGPOOL: {
+      ulong localWS = 256;
+      ulong gapGlobalWS = currentShape.c * localWS;
+
+      std::string kernelId = "gap_propagate_layer" + layerStr;
+      this->core->addKernel(kernelId, "gap_propagate", gapGlobalWS, 0, localWS);
+      this->core->template addArgument<T>(kernelId, "cnn_actvs");
+      this->core->template addArgument<ulong>(kernelId, inOffset);
+      this->core->template addArgument<ulong>(kernelId, outOffset);
+      this->core->template addArgument<ulong>(kernelId, currentShape.c);
+      this->core->template addArgument<ulong>(kernelId, currentShape.h);
+      this->core->template addArgument<ulong>(kernelId, currentShape.w);
+
+      currentShape = {currentShape.c, 1, 1};
+      break;
+    }
+
     case LayerType::INSTANCENORM: {
       const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
       ulong size = currentShape.size();
@@ -409,6 +426,9 @@ void GPUKernelBuilder<T>::addBackpropagateKernels()
       break;
     }
 
+    case LayerType::GLOBALAVGPOOL:
+      shapes[i + 1] = {inShape.c, 1, 1};
+      break;
     case LayerType::INSTANCENORM:
       shapes[i + 1] = inShape;
       break;
@@ -562,6 +582,20 @@ void GPUKernelBuilder<T>::addBackpropagateKernels()
         this->core->template addArgument<ulong>(poolId, outShape.w);
       }
 
+      break;
+    }
+
+    case LayerType::GLOBALAVGPOOL: {
+      ulong size = inShape.size();
+
+      std::string kernelId = "gap_backpropagate_layer" + layerStr;
+      this->core->addKernel(kernelId, "gap_backpropagate", size, 0);
+      this->core->template addArgument<T>(kernelId, "cnn_grads");
+      this->core->template addArgument<ulong>(kernelId, gradInOffset);
+      this->core->template addArgument<ulong>(kernelId, gradOutOffset);
+      this->core->template addArgument<ulong>(kernelId, inShape.c);
+      this->core->template addArgument<ulong>(kernelId, inShape.h);
+      this->core->template addArgument<ulong>(kernelId, inShape.w);
       break;
     }
 
@@ -1085,6 +1119,23 @@ void GPUKernelBuilder<T>::addBatchPropagateKernelsForSample(ulong sampleIdx, ulo
       break;
     }
 
+    case LayerType::GLOBALAVGPOOL: {
+      ulong localWS = 256;
+      ulong gapGlobalWS = currentShape.c * localWS;
+
+      std::string kernelId = "batch_gap_propagate" + kernelSuffix;
+      this->core->addKernel(kernelId, "gap_propagate", gapGlobalWS, 0, localWS);
+      this->core->template addArgument<T>(kernelId, "cnn_batch_actvs");
+      this->core->template addArgument<ulong>(kernelId, inOffset);
+      this->core->template addArgument<ulong>(kernelId, outOffset);
+      this->core->template addArgument<ulong>(kernelId, currentShape.c);
+      this->core->template addArgument<ulong>(kernelId, currentShape.h);
+      this->core->template addArgument<ulong>(kernelId, currentShape.w);
+
+      currentShape = {currentShape.c, 1, 1};
+      break;
+    }
+
     case LayerType::FLATTEN: {
       break;
     }
@@ -1229,6 +1280,10 @@ void GPUKernelBuilder<T>::addBatchBackpropagateKernelsForSample(ulong sampleIdx,
       shapes[i + 1] = {inShape.c, outH, outW};
       break;
     }
+
+    case LayerType::GLOBALAVGPOOL:
+      shapes[i + 1] = {inShape.c, 1, 1};
+      break;
 
     default:
       shapes[i + 1] = inShape;
@@ -1456,6 +1511,20 @@ void GPUKernelBuilder<T>::addBatchBackpropagateKernelsForSample(ulong sampleIdx,
     case LayerType::BATCHNORM: {
       // Skip — handled by addBatchNormBackwardKernels
       normIdx--;
+      break;
+    }
+
+    case LayerType::GLOBALAVGPOOL: {
+      ulong size = inShape.size();
+
+      std::string kernelId = "batch_gap_backpropagate" + kernelSuffix;
+      this->core->addKernel(kernelId, "gap_backpropagate", size, 0);
+      this->core->template addArgument<T>(kernelId, "cnn_batch_grads");
+      this->core->template addArgument<ulong>(kernelId, gradInOffset);
+      this->core->template addArgument<ulong>(kernelId, gradOutOffset);
+      this->core->template addArgument<ulong>(kernelId, inShape.c);
+      this->core->template addArgument<ulong>(kernelId, inShape.h);
+      this->core->template addArgument<ulong>(kernelId, inShape.w);
       break;
     }
 
