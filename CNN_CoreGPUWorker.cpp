@@ -52,9 +52,20 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
   // Build ANN GPU worker on the shared core (loads ANN sources + allocates ANN buffers)
   this->bufferManager->buildANNWorker();
 
-  // Allocate CNN GPU buffers and write initial parameters
-  // Use the configured batch size so batch norm training has room for all samples
-  ulong batchSize = std::max(static_cast<ulong>(1), static_cast<ulong>(config.trainingConfig.batchSize));
+  // Allocate CNN GPU buffers and write initial parameters.
+  // Only size for the full batch when BatchNorm layers are present (they need cross-sample buffers).
+  // InstanceNorm-only models use the fast single-sample path, so batchSize=1 is sufficient.
+  bool hasBatchNorm = false;
+
+  for (const auto& layer : config.layersConfig.cnnLayers) {
+    if (layer.type == LayerType::BATCHNORM) {
+      hasBatchNorm = true;
+      break;
+    }
+  }
+
+  ulong batchSize =
+    hasBatchNorm ? std::max(static_cast<ulong>(1), static_cast<ulong>(config.trainingConfig.batchSize)) : 1;
   this->bufferManager->allocateBuffers(batchSize);
 
   // Create kernel builder
