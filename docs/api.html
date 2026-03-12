@@ -31,7 +31,7 @@
   <a href="layers-conv2d.html">Conv2D</a>
   <a href="layers-relu.html">ReLU</a>
   <a href="layers-pool.html">Pool</a>
-  <a href="layers-instancenorm.html">InstanceNorm</a>
+  <a href="layers-normalization.html">Normalization</a>
   <a href="layers-flatten.html">Flatten</a>
   <a href="layers-pipeline.html">Pipeline Example</a>
   <div class="section-title">Math Foundations</div>
@@ -39,7 +39,7 @@
   <a href="math-convolution.html">Convolution</a>
   <a href="math-pooling.html">Pooling</a>
   <a href="math-activations.html">Activations</a>
-  <a href="math-instancenorm.html">Instance Normalization</a>
+  <a href="math-normalization.html">Normalization</a>
   <a href="math-initialization.html">Weight Initialization</a>
   <a href="math-optimizers.html">Optimizers</a>
   <a href="math-gradient-flow.html">Gradient Flow</a>
@@ -124,7 +124,8 @@
   <tr><td><code>CONV</code></td><td>2D convolution layer</td></tr>
   <tr><td><code>RELU</code></td><td>ReLU activation layer</td></tr>
   <tr><td><code>POOL</code></td><td>Pooling layer (max or average)</td></tr>
-  <tr><td><code>BATCHNORM</code></td><td>Batch normalization layer</td></tr>
+  <tr><td><code>INSTANCENORM</code></td><td>Instance normalization layer (per-sample spatial stats)</td></tr>
+  <tr><td><code>BATCHNORM</code></td><td>Batch normalization layer (cross-sample stats)</td></tr>
   <tr><td><code>FLATTEN</code></td><td>3D → 1D reshape layer</td></tr>
 </table>
 
@@ -262,7 +263,7 @@
 <h3>CNNLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-  <tr><td><code>type</code></td><td><code>LayerType</code></td><td>CONV, RELU, POOL, BATCHNORM, or FLATTEN</td></tr>
+  <tr><td><code>type</code></td><td><code>LayerType</code></td><td>CONV, RELU, POOL, INSTANCENORM, BATCHNORM, or FLATTEN</td></tr>
   <tr><td><code>config</code></td><td><code>std::variant&lt;...&gt;</code></td><td>Layer-specific configuration</td></tr>
 </table>
 
@@ -365,11 +366,12 @@
   <tr><td><code>backpropagate(dOut, inputShape, config, maxIndices)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Route/distribute gradient back through pool</td></tr>
 </table>
 
-<h3>InstanceNorm&lt;T&gt;</h3>
+<h3>Normalization&lt;T&gt; <span class="badge badge-green">CNN_Normalization.hpp</span></h3>
+<p>Unified class handling both Instance Normalization and Batch Normalization. The <code>layerType</code> parameter controls the statistics scope.</p>
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-  <tr><td><code>propagate(input, inputShape, params, config, training, batchMean*, batchVar*, xNormalized*)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Normalize per channel per sample over spatial dimensions; computes per-sample spatial stats for both training and inference</td></tr>
-  <tr><td><code>backpropagate(dOut, inputShape, params, config, batchMean, batchVar, xNormalized, dGamma, dBeta)</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Compute gradients for γ, β, and input</td></tr>
+  <tr><td><code>propagate(batch, shape, params, config, layerType, training, xNorm*, statsMean*, statsVar*)</code></td><td><code>void</code></td><td>Normalize activations in-place; InstanceNorm uses per-sample spatial stats, BatchNorm uses cross-sample stats</td></tr>
+  <tr><td><code>backpropagate(dBatch, shape, params, config, layerType, statsMean, statsVar, xNorm, dGamma, dBeta)</code></td><td><code>void</code></td><td>Compute gradients for γ, β, and input (in-place)</td></tr>
 </table>
 
 <h3>Flatten&lt;T&gt;</h3>
