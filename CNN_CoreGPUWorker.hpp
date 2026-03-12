@@ -34,8 +34,6 @@ namespace CNN
       //-- Training (called by CoreGPU orchestrator) --//
       T trainSubset(const Samples<T>& batchSamples, ulong totalSamples, ulong epoch, ulong totalEpochs,
                     const TrainingCallback<T>& callback);
-      T trainBatchNormSubset(const Samples<T>& batchSamples, ulong totalSamples, ulong epoch, ulong totalEpochs,
-                             const TrainingCallback<T>& callback);
 
       //-- Testing --//
       std::pair<T, ulong> testSubset(const Samples<T>& samples, ulong startIdx, ulong endIdx);

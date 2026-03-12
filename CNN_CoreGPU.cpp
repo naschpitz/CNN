@@ -30,14 +30,6 @@ CoreGPU<T>::CoreGPU(const CoreConfig<T>& coreConfig) : Core<T>(coreConfig)
     this->numGPUs = std::min(static_cast<size_t>(requestedGPUs), availableGPUs);
   }
 
-  // Detect if any CNN layer is BATCHNORM
-  for (const auto& layerConfig : coreConfig.layersConfig.cnnLayers) {
-    if (layerConfig.type == LayerType::BATCHNORM) {
-      this->hasBatchNorm = true;
-      break;
-    }
-  }
-
   this->initializeWorkers();
 }
 
@@ -151,17 +143,12 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
           };
         }
 
-        if (this->hasBatchNorm) {
-          gpuLosses[item.gpuIdx] =
-            this->gpuWorkers[item.gpuIdx]->trainBatchNormSubset(gpuSamples, numSamples, e + 1, numEpochs, callback);
-        } else {
-          gpuLosses[item.gpuIdx] =
-            this->gpuWorkers[item.gpuIdx]->trainSubset(gpuSamples, numSamples, e + 1, numEpochs, callback);
-        }
+        gpuLosses[item.gpuIdx] =
+          this->gpuWorkers[item.gpuIdx]->trainSubset(gpuSamples, numSamples, e + 1, numEpochs, callback);
       });
 
-      // Save training kernels after first batch (skip for batch norm — kernels are rebuilt each phase)
-      if (!this->hasBatchNorm && !kernelsSaved) {
+      // Save training kernels after first batch
+      if (!kernelsSaved) {
         for (size_t i = 0; i < this->numGPUs; i++) {
           savedKernels[i] = this->gpuWorkers[i]->saveKernels();
         }
@@ -192,8 +179,8 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
           gpuIndices, [this, currentBatchSize](size_t gpuIdx) { this->gpuWorkers[gpuIdx]->update(currentBatchSize); });
       }
 
-      // Restore training kernels after update (skip for batch norm — kernels are rebuilt each phase)
-      if (!this->hasBatchNorm && kernelsSaved) {
+      // Restore training kernels after update
+      if (kernelsSaved) {
         QVector<size_t> gpuIndices;
 
         for (size_t i = 0; i < this->numGPUs; i++)
