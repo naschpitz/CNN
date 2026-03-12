@@ -13,12 +13,11 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-GPUBufferManager<T>::GPUBufferManager(OpenCLWrapper::Core* core, const CoreConfig<T>& coreConfig,
-                                      Parameters<T>& parameters, LogLevel logLevel)
+GPUBufferManager<T>::GPUBufferManager(OpenCLWrapper::Core* core, const CoreGPUWorkerConfig<T>& workerConfig,
+                                      Parameters<T>& parameters)
   : core(core),
-    coreConfig(coreConfig),
-    parameters(parameters),
-    logLevel(logLevel)
+    workerConfig(workerConfig),
+    parameters(parameters)
 {
 }
 
@@ -29,8 +28,8 @@ GPUBufferManager<T>::GPUBufferManager(OpenCLWrapper::Core* core, const CoreConfi
 template <typename T>
 void GPUBufferManager<T>::computeLayerOffsets()
 {
-  const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
-  Shape3D currentShape = this->coreConfig.inputShape;
+  const auto& cnnLayers = this->workerConfig.layersConfig.cnnLayers;
+  Shape3D currentShape = this->workerConfig.inputShape;
 
   // First entry: input tensor
   this->layerInfos.clear();
@@ -147,7 +146,7 @@ void GPUBufferManager<T>::computeLayerOffsets()
 template <typename T>
 void GPUBufferManager<T>::loadSources(bool skipDefines)
 {
-  if (this->logLevel >= CNN::LogLevel::INFO)
+  if (this->workerConfig.logLevel >= CNN::LogLevel::INFO)
     std::cout << "Loading CNN OpenCL kernels...\n";
 
   // Resolve .cl file paths relative to the source file's directory (via __FILE__)
@@ -165,7 +164,7 @@ void GPUBufferManager<T>::loadSources(bool skipDefines)
   this->core->addSourceFile(srcDir + "opencl/CNN_Normalization.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_GlobalAvgPool.cpp.cl");
 
-  if (this->logLevel >= CNN::LogLevel::INFO)
+  if (this->workerConfig.logLevel >= CNN::LogLevel::INFO)
     std::cout << "CNN OpenCL kernels loaded.\n";
 }
 
@@ -278,7 +277,7 @@ void GPUBufferManager<T>::allocateBuffers(ulong batchSize)
   }
 
   // Adam optimizer buffers
-  if (this->coreConfig.trainingConfig.optimizer.type == OptimizerType::ADAM) {
+  if (this->workerConfig.trainingConfig.optimizer.type == OptimizerType::ADAM) {
     T zero = static_cast<T>(0);
 
     if (this->totalFilterSize > 0) {
@@ -307,7 +306,7 @@ void GPUBufferManager<T>::allocateBuffers(ulong batchSize)
     }
   }
 
-  if (this->logLevel >= CNN::LogLevel::INFO)
+  if (this->workerConfig.logLevel >= CNN::LogLevel::INFO)
     std::cout << "CNN GPU buffers allocated (batchSize=" << batchSize << ").\n";
 }
 
@@ -319,8 +318,8 @@ template <typename T>
 void GPUBufferManager<T>::buildANNWorker()
 {
   // Compute flatten size from cnn output shape
-  const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
-  Shape3D currentShape = this->coreConfig.inputShape;
+  const auto& cnnLayers = this->workerConfig.layersConfig.cnnLayers;
+  Shape3D currentShape = this->workerConfig.inputShape;
 
   for (const auto& layerConfig : cnnLayers) {
     switch (layerConfig.type) {
@@ -367,7 +366,7 @@ void GPUBufferManager<T>::buildANNWorker()
   inputLayer.actvFuncType = ANN::ActvFuncType::RELU;
   annLayers.push_back(inputLayer);
 
-  for (const auto& denseConfig : this->coreConfig.layersConfig.denseLayers) {
+  for (const auto& denseConfig : this->workerConfig.layersConfig.denseLayers) {
     ANN::Layer layer;
     layer.numNeurons = denseConfig.numNeurons;
     layer.actvFuncType = denseConfig.actvFuncType;
@@ -376,23 +375,23 @@ void GPUBufferManager<T>::buildANNWorker()
 
   // Training config
   ANN::TrainingConfig<T> annTrainingConfig;
-  annTrainingConfig.numEpochs = this->coreConfig.trainingConfig.numEpochs;
-  annTrainingConfig.learningRate = this->coreConfig.trainingConfig.learningRate;
-  annTrainingConfig.dropoutRate = this->coreConfig.trainingConfig.dropoutRate;
-  annTrainingConfig.optimizer.type = static_cast<ANN::OptimizerType>(this->coreConfig.trainingConfig.optimizer.type);
-  annTrainingConfig.optimizer.beta1 = this->coreConfig.trainingConfig.optimizer.beta1;
-  annTrainingConfig.optimizer.beta2 = this->coreConfig.trainingConfig.optimizer.beta2;
-  annTrainingConfig.optimizer.epsilon = this->coreConfig.trainingConfig.optimizer.epsilon;
+  annTrainingConfig.numEpochs = this->workerConfig.trainingConfig.numEpochs;
+  annTrainingConfig.learningRate = this->workerConfig.trainingConfig.learningRate;
+  annTrainingConfig.dropoutRate = this->workerConfig.trainingConfig.dropoutRate;
+  annTrainingConfig.optimizer.type = static_cast<ANN::OptimizerType>(this->workerConfig.trainingConfig.optimizer.type);
+  annTrainingConfig.optimizer.beta1 = this->workerConfig.trainingConfig.optimizer.beta1;
+  annTrainingConfig.optimizer.beta2 = this->workerConfig.trainingConfig.optimizer.beta2;
+  annTrainingConfig.optimizer.epsilon = this->workerConfig.trainingConfig.optimizer.epsilon;
 
   // Cost function config
   ANN::CostFunctionConfig<T> annCostFunctionConfig;
-  annCostFunctionConfig.type = static_cast<ANN::CostFunctionType>(this->coreConfig.costFunctionConfig.type);
-  annCostFunctionConfig.weights = this->coreConfig.costFunctionConfig.weights;
+  annCostFunctionConfig.type = static_cast<ANN::CostFunctionType>(this->workerConfig.costFunctionConfig.type);
+  annCostFunctionConfig.weights = this->workerConfig.costFunctionConfig.weights;
 
   // Create ANN GPU worker on the shared core
   this->annGPUWorker = std::make_unique<ANN::CoreGPUWorker<T>>(
-    annLayers, annTrainingConfig, this->coreConfig.parameters.denseParams, annCostFunctionConfig, *this->core,
-    this->coreConfig.progressReports, static_cast<ANN::LogLevel>(this->coreConfig.logLevel));
+    annLayers, annTrainingConfig, this->workerConfig.parameters.denseParams, annCostFunctionConfig, *this->core,
+    this->workerConfig.progressReports, static_cast<ANN::LogLevel>(this->workerConfig.logLevel));
 
   // Load ANN sources (skip defines — CNN_Defines.hpp.cl already defined TYPE, ActvFuncType, Layer)
   this->annGPUWorker->bufferManager->loadSources(true);

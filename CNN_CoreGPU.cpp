@@ -1,4 +1,5 @@
 #include "CNN_CoreGPU.hpp"
+#include "CNN_CoreGPUWorkerConfig.hpp"
 
 #include <OCLW_Core.hpp>
 #include <QtConcurrent>
@@ -295,15 +296,13 @@ TestResult<T> CoreGPU<T>::test(ulong numSamples, const SampleProvider<T>& sample
 template <typename T>
 void CoreGPU<T>::initializeWorkers()
 {
-  // Each GPU only receives batchSize/numGPUs samples, so pass a config
-  // with the per-GPU batch size to avoid over-allocating VRAM.
-  CoreConfig<T> workerConfig = this->coreConfig;
-  ulong fullBatchSize = this->coreConfig.trainingConfig.batchSize;
+  CoreGPUWorkerConfig<T> workerConfig(this->coreConfig);
 
-  // Integer ceiling division: ⌈fullBatchSize / numGPUs⌉.
+  // Each GPU only receives batchSize/numGPUs samples.
+  // Integer ceiling division: ⌈batchSize / numGPUs⌉.
   // Ensures the buffer fits the GPU that gets the extra sample when the batch doesn't divide evenly.
-  ulong perGPUBatchSize = (fullBatchSize + this->numGPUs - 1) / this->numGPUs;
-  workerConfig.trainingConfig.batchSize = perGPUBatchSize;
+  ulong fullBatchSize = this->coreConfig.trainingConfig.batchSize;
+  workerConfig.batchSize = (fullBatchSize + this->numGPUs - 1) / this->numGPUs;
 
   for (size_t i = 0; i < this->numGPUs; i++) {
     auto worker = std::make_unique<CoreGPUWorker<T>>(workerConfig);

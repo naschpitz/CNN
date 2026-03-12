@@ -2,7 +2,7 @@
 #define CNN_GPUKERNELBUILDER_HPP
 
 #include "CNN_Types.hpp"
-#include "CNN_CoreConfig.hpp"
+#include "CNN_CoreGPUWorkerConfig.hpp"
 #include "CNN_GPUBufferManager.hpp"
 #include "CNN_LogLevel.hpp"
 
@@ -18,8 +18,8 @@ namespace CNN
   class GPUKernelBuilder
   {
     public:
-      GPUKernelBuilder(OpenCLWrapper::Core* core, const CoreConfig<T>& coreConfig, GPUBufferManager<T>& bufferManager,
-                       LogLevel logLevel);
+      GPUKernelBuilder(OpenCLWrapper::Core* core, const CoreGPUWorkerConfig<T>& workerConfig,
+                       GPUBufferManager<T>& bufferManager);
 
       //-- Kernel setup (clears previous kernels and rebuilds) --//
       void setupPredictKernels();
@@ -49,9 +49,8 @@ namespace CNN
 
     private:
       OpenCLWrapper::Core* core;
-      const CoreConfig<T>& coreConfig;
+      const CoreGPUWorkerConfig<T>& workerConfig;
       GPUBufferManager<T>& bufferManager;
-      LogLevel logLevel;
 
       //-- Adam optimizer state --//
       ulong adam_t = 0;

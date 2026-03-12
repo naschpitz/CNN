@@ -9,12 +9,11 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-GPUKernelBuilder<T>::GPUKernelBuilder(OpenCLWrapper::Core* core, const CoreConfig<T>& coreConfig,
-                                      GPUBufferManager<T>& bufferManager, LogLevel logLevel)
+GPUKernelBuilder<T>::GPUKernelBuilder(OpenCLWrapper::Core* core, const CoreGPUWorkerConfig<T>& workerConfig,
+                                      GPUBufferManager<T>& bufferManager)
   : core(core),
-    coreConfig(coreConfig),
-    bufferManager(bufferManager),
-    logLevel(logLevel)
+    workerConfig(workerConfig),
+    bufferManager(bufferManager)
 {
 }
 
@@ -28,7 +27,7 @@ void GPUKernelBuilder<T>::setupPredictKernels()
   this->core->clearKernels();
   this->invalidateAllKernelFlags();
 
-  ulong numLayers = this->coreConfig.layersConfig.cnnLayers.size();
+  ulong numLayers = this->workerConfig.layersConfig.cnnLayers.size();
 
   this->addPropagateKernels(0, 0, numLayers, false);
   this->addCopyBridgeKernels(0);
@@ -45,7 +44,7 @@ void GPUKernelBuilder<T>::setupTrainingKernels()
   this->core->clearKernels();
   this->invalidateAllKernelFlags();
 
-  ulong numLayers = this->coreConfig.layersConfig.cnnLayers.size();
+  ulong numLayers = this->workerConfig.layersConfig.cnnLayers.size();
 
   // Propagate pipeline: CNN propagate → copy → ANN propagate
   this->addPropagateKernels(0, 0, numLayers, true);
@@ -72,7 +71,7 @@ void GPUKernelBuilder<T>::setupTrainingKernels()
   this->core->template addArgument<ulong>("calculate_sample_loss", outputActvOffset);
   this->core->template addArgument<ulong>("calculate_sample_loss", numOutputNeurons);
   this->core->template addArgument<ulong>("calculate_sample_loss",
-                                          static_cast<ulong>(this->coreConfig.costFunctionConfig.type));
+                                          static_cast<ulong>(this->workerConfig.costFunctionConfig.type));
 
   this->trainingKernelsSetup = true;
 }
@@ -108,12 +107,12 @@ void GPUKernelBuilder<T>::invalidateAllKernelFlags()
 template <typename T>
 void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd, bool training)
 {
-  const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
+  const auto& cnnLayers = this->workerConfig.layersConfig.cnnLayers;
   ulong sampleStride = this->bufferManager.totalActvSize;
   ulong sampleOffset = sampleIdx * sampleStride;
 
   // Compute shape and type-specific indices at layerStart
-  Shape3D currentShape = this->coreConfig.inputShape;
+  Shape3D currentShape = this->workerConfig.inputShape;
   ulong convIdx = 0;
   ulong poolIdx = 0;
   ulong normIdx = 0;
@@ -377,14 +376,14 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart,
 template <typename T>
 void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd)
 {
-  const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
+  const auto& cnnLayers = this->workerConfig.layersConfig.cnnLayers;
   ulong numLayers = cnnLayers.size();
   ulong sampleStride = this->bufferManager.totalActvSize;
   ulong sampleOffset = sampleIdx * sampleStride;
 
   // Precompute shapes for each layer (propagate direction)
   std::vector<Shape3D> shapes(numLayers + 1);
-  shapes[0] = this->coreConfig.inputShape;
+  shapes[0] = this->workerConfig.inputShape;
 
   for (ulong i = 0; i < numLayers; i++) {
     Shape3D inShape = shapes[i];
@@ -701,7 +700,7 @@ void GPUKernelBuilder<T>::addReverseBridgeKernels(ulong sampleIdx)
 template <typename T>
 void GPUKernelBuilder<T>::addCNNAccumulateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd)
 {
-  const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
+  const auto& cnnLayers = this->workerConfig.layersConfig.cnnLayers;
   std::string sampleStr = std::to_string(sampleIdx);
 
   // Accumulate conv filter and bias gradients for conv layers within [layerStart, layerEnd)
@@ -785,8 +784,8 @@ void GPUKernelBuilder<T>::addCNNAccumulateKernels(ulong sampleIdx, ulong layerSt
 template <typename T>
 void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunningStats)
 {
-  if (this->coreConfig.trainingConfig.optimizer.type == OptimizerType::ADAM) {
-    const auto& opt = this->coreConfig.trainingConfig.optimizer;
+  if (this->workerConfig.trainingConfig.optimizer.type == OptimizerType::ADAM) {
+    const auto& opt = this->workerConfig.trainingConfig.optimizer;
     this->adam_t++;
 
     float bc1 = 1.0f - std::pow(static_cast<float>(opt.beta1), static_cast<float>(this->adam_t));
@@ -803,7 +802,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
       this->core->template addArgument<ulong>("update_parameters_filters", this->bufferManager.totalFilterSize);
       this->core->template addArgument<ulong>("update_parameters_filters", numSamples);
       this->core->template addArgument<float>("update_parameters_filters",
-                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+                                              static_cast<float>(this->workerConfig.trainingConfig.learningRate));
       this->core->template addArgument<float>("update_parameters_filters", static_cast<float>(opt.beta1));
       this->core->template addArgument<float>("update_parameters_filters", static_cast<float>(opt.beta2));
       this->core->template addArgument<float>("update_parameters_filters", static_cast<float>(opt.epsilon));
@@ -821,7 +820,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
       this->core->template addArgument<ulong>("update_parameters_biases", this->bufferManager.totalBiasSize);
       this->core->template addArgument<ulong>("update_parameters_biases", numSamples);
       this->core->template addArgument<float>("update_parameters_biases",
-                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+                                              static_cast<float>(this->workerConfig.trainingConfig.learningRate));
       this->core->template addArgument<float>("update_parameters_biases", static_cast<float>(opt.beta1));
       this->core->template addArgument<float>("update_parameters_biases", static_cast<float>(opt.beta2));
       this->core->template addArgument<float>("update_parameters_biases", static_cast<float>(opt.epsilon));
@@ -840,7 +839,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
       this->core->template addArgument<ulong>("update_parameters_norm_gamma", this->bufferManager.totalNormParamSize);
       this->core->template addArgument<ulong>("update_parameters_norm_gamma", numSamples);
       this->core->template addArgument<float>("update_parameters_norm_gamma",
-                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+                                              static_cast<float>(this->workerConfig.trainingConfig.learningRate));
       this->core->template addArgument<float>("update_parameters_norm_gamma", static_cast<float>(opt.beta1));
       this->core->template addArgument<float>("update_parameters_norm_gamma", static_cast<float>(opt.beta2));
       this->core->template addArgument<float>("update_parameters_norm_gamma", static_cast<float>(opt.epsilon));
@@ -857,7 +856,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
       this->core->template addArgument<ulong>("update_parameters_norm_beta", this->bufferManager.totalNormParamSize);
       this->core->template addArgument<ulong>("update_parameters_norm_beta", numSamples);
       this->core->template addArgument<float>("update_parameters_norm_beta",
-                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+                                              static_cast<float>(this->workerConfig.trainingConfig.learningRate));
       this->core->template addArgument<float>("update_parameters_norm_beta", static_cast<float>(opt.beta1));
       this->core->template addArgument<float>("update_parameters_norm_beta", static_cast<float>(opt.beta2));
       this->core->template addArgument<float>("update_parameters_norm_beta", static_cast<float>(opt.epsilon));
@@ -874,7 +873,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
       this->core->template addArgument<ulong>("update_parameters_filters", this->bufferManager.totalFilterSize);
       this->core->template addArgument<ulong>("update_parameters_filters", numSamples);
       this->core->template addArgument<float>("update_parameters_filters",
-                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+                                              static_cast<float>(this->workerConfig.trainingConfig.learningRate));
     }
 
     if (this->bufferManager.totalBiasSize > 0) {
@@ -885,7 +884,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
       this->core->template addArgument<ulong>("update_parameters_biases", this->bufferManager.totalBiasSize);
       this->core->template addArgument<ulong>("update_parameters_biases", numSamples);
       this->core->template addArgument<float>("update_parameters_biases",
-                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+                                              static_cast<float>(this->workerConfig.trainingConfig.learningRate));
     }
 
     if (this->bufferManager.totalNormParamSize > 0) {
@@ -897,7 +896,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
       this->core->template addArgument<ulong>("update_parameters_norm_gamma", this->bufferManager.totalNormParamSize);
       this->core->template addArgument<ulong>("update_parameters_norm_gamma", numSamples);
       this->core->template addArgument<float>("update_parameters_norm_gamma",
-                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+                                              static_cast<float>(this->workerConfig.trainingConfig.learningRate));
 
       this->core->addKernel("update_parameters_norm_beta", "update_parameters", this->bufferManager.totalNormParamSize,
                             0);
@@ -907,7 +906,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
       this->core->template addArgument<ulong>("update_parameters_norm_beta", this->bufferManager.totalNormParamSize);
       this->core->template addArgument<ulong>("update_parameters_norm_beta", numSamples);
       this->core->template addArgument<float>("update_parameters_norm_beta",
-                                              static_cast<float>(this->coreConfig.trainingConfig.learningRate));
+                                              static_cast<float>(this->workerConfig.trainingConfig.learningRate));
     }
   }
 
@@ -916,7 +915,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
     // Build a list of norm layer types
     std::vector<LayerType> normLayerTypes;
 
-    for (const auto& layerConfig : this->coreConfig.layersConfig.cnnLayers) {
+    for (const auto& layerConfig : this->workerConfig.layersConfig.cnnLayers) {
       if (layerConfig.type == LayerType::INSTANCENORM || layerConfig.type == LayerType::BATCHNORM) {
         normLayerTypes.push_back(layerConfig.type);
       }
@@ -925,7 +924,7 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
     // Get momentum from first norm layer config
     float momentum = 0.1f;
 
-    for (const auto& layerConfig : this->coreConfig.layersConfig.cnnLayers) {
+    for (const auto& layerConfig : this->workerConfig.layersConfig.cnnLayers) {
       if (layerConfig.type == LayerType::INSTANCENORM || layerConfig.type == LayerType::BATCHNORM) {
         const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
         momentum = bn.momentum;
@@ -967,12 +966,12 @@ void GPUKernelBuilder<T>::addCNNUpdateKernels(ulong numSamples, bool skipBNRunni
 template <typename T>
 void GPUKernelBuilder<T>::addBatchNormForwardKernels(ulong layerIdx, ulong batchSize)
 {
-  const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
+  const auto& cnnLayers = this->workerConfig.layersConfig.cnnLayers;
   const auto& bn = std::get<NormLayerConfig>(cnnLayers[layerIdx].config);
   std::string layerStr = std::to_string(layerIdx);
 
   // Compute shape and normIdx at this layer
-  Shape3D currentShape = this->coreConfig.inputShape;
+  Shape3D currentShape = this->workerConfig.inputShape;
   ulong normIdx = 0;
 
   for (ulong i = 0; i < layerIdx; i++) {
@@ -1068,12 +1067,12 @@ void GPUKernelBuilder<T>::addBatchNormForwardKernels(ulong layerIdx, ulong batch
 template <typename T>
 void GPUKernelBuilder<T>::addBatchNormBackwardKernels(ulong layerIdx, ulong batchSize)
 {
-  const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
+  const auto& cnnLayers = this->workerConfig.layersConfig.cnnLayers;
   const auto& bn = std::get<NormLayerConfig>(cnnLayers[layerIdx].config);
   std::string layerStr = std::to_string(layerIdx);
 
   // Compute shape and normIdx at this layer
-  Shape3D currentShape = this->coreConfig.inputShape;
+  Shape3D currentShape = this->workerConfig.inputShape;
   ulong normIdx = 0;
 
   for (ulong i = 0; i < layerIdx; i++) {
@@ -1164,7 +1163,7 @@ void GPUKernelBuilder<T>::addBatchNormRunningStatsUpdate(ulong batchSize)
   // Get momentum from first BN layer config
   float momentum = 0.1f;
 
-  for (const auto& layerConfig : this->coreConfig.layersConfig.cnnLayers) {
+  for (const auto& layerConfig : this->workerConfig.layersConfig.cnnLayers) {
     if (layerConfig.type == LayerType::BATCHNORM) {
       const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
       momentum = bn.momentum;
@@ -1174,7 +1173,7 @@ void GPUKernelBuilder<T>::addBatchNormRunningStatsUpdate(ulong batchSize)
 
   // For BatchNorm layers, the batch mean/var are already the true batch statistics
   // (computed by norm_compute_mean/var with N=batchSize). We update running stats directly.
-  const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
+  const auto& cnnLayers = this->workerConfig.layersConfig.cnnLayers;
   ulong normIdx = 0;
 
   for (ulong i = 0; i < cnnLayers.size(); i++) {
