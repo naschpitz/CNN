@@ -298,11 +298,25 @@ void CoreGPU<T>::initializeWorkers()
 {
   CoreGPUWorkerConfig<T> workerConfig(this->coreConfig);
 
-  // Each GPU only receives batchSize/numGPUs samples.
-  // Integer ceiling division: ⌈batchSize / numGPUs⌉.
-  // Ensures the buffer fits the GPU that gets the extra sample when the batch doesn't divide evenly.
-  ulong fullBatchSize = this->coreConfig.trainingConfig.batchSize;
-  workerConfig.batchSize = (fullBatchSize + this->numGPUs - 1) / this->numGPUs;
+  // Only allocate batch-sized buffers when BatchNorm layers are present.
+  // BatchNorm needs cross-sample statistics, so all samples must be in GPU memory.
+  // InstanceNorm-only models use the fast single-sample path (batchSize=1).
+  bool hasBatchNorm = false;
+
+  for (const auto& layer : this->coreConfig.layersConfig.cnnLayers) {
+    if (layer.type == LayerType::BATCHNORM) {
+      hasBatchNorm = true;
+      break;
+    }
+  }
+
+  if (hasBatchNorm) {
+    // Each GPU only receives batchSize/numGPUs samples.
+    // Integer ceiling division: ⌈batchSize / numGPUs⌉.
+    // Ensures the buffer fits the GPU that gets the extra sample when the batch doesn't divide evenly.
+    ulong fullBatchSize = this->coreConfig.trainingConfig.batchSize;
+    workerConfig.batchSize = (fullBatchSize + this->numGPUs - 1) / this->numGPUs;
+  }
 
   for (size_t i = 0; i < this->numGPUs; i++) {
     auto worker = std::make_unique<CoreGPUWorker<T>>(workerConfig);
