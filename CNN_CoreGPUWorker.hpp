@@ -3,6 +3,7 @@
 
 #include "CNN_Core.hpp"
 #include "CNN_Worker.hpp"
+#include "CNN_CoreGPUWorkerConfig.hpp"
 #include "CNN_GPUBufferManager.hpp"
 #include "CNN_GPUKernelBuilder.hpp"
 
@@ -21,12 +22,12 @@ namespace CNN
   {
     public:
       // Standalone constructor — creates its own OpenCL core
-      CoreGPUWorker(const CoreConfig<T>& config);
+      CoreGPUWorker(const CoreGPUWorkerConfig<T>& workerConfig);
 
       // Shared-core constructor — uses externally-provided OpenCL core.
       // Only initializes parameters and computes offsets. Caller must invoke
       // loadSources(), allocateBuffers() manually.
-      CoreGPUWorker(const CoreConfig<T>& config, OpenCLWrapper::Core& sharedCore);
+      CoreGPUWorker(const CoreGPUWorkerConfig<T>& workerConfig, OpenCLWrapper::Core& sharedCore);
 
       //-- Predict --//
       Output<T> predict(const Input<T>& input);
@@ -69,9 +70,8 @@ namespace CNN
 
     private:
       //-- Configuration --//
-      CoreConfig<T> coreConfig;
+      CoreGPUWorkerConfig<T> workerConfig;
       Parameters<T> parameters;
-      LogLevel logLevel = LogLevel::ERROR;
 
       //-- OpenCL state --//
       std::unique_ptr<OpenCLWrapper::Core> ownedCore; // Owned core (standalone mode)

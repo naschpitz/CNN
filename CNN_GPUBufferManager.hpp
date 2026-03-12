@@ -2,7 +2,7 @@
 #define CNN_GPUBUFFERMANAGER_HPP
 
 #include "CNN_Types.hpp"
-#include "CNN_CoreConfig.hpp"
+#include "CNN_CoreGPUWorkerConfig.hpp"
 #include "CNN_Parameters.hpp"
 #include "CNN_LogLevel.hpp"
 
@@ -22,8 +22,8 @@ namespace CNN
   class GPUBufferManager
   {
     public:
-      GPUBufferManager(OpenCLWrapper::Core* core, const CoreConfig<T>& coreConfig, Parameters<T>& parameters,
-                       LogLevel logLevel);
+      GPUBufferManager(OpenCLWrapper::Core* core, const CoreGPUWorkerConfig<T>& workerConfig,
+                       Parameters<T>& parameters);
 
       //-- Initialization --//
       void computeLayerOffsets();
@@ -91,9 +91,8 @@ namespace CNN
 
     private:
       OpenCLWrapper::Core* core;
-      const CoreConfig<T>& coreConfig;
+      const CoreGPUWorkerConfig<T>& workerConfig;
       Parameters<T>& parameters;
-      LogLevel logLevel;
   };
 }
 

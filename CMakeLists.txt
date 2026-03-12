@@ -27,6 +27,7 @@ add_library(CNN STATIC
   CNN_CoreCPU.hpp CNN_CoreCPU.cpp
   CNN_CoreCPUWorker.hpp CNN_CoreCPUWorker.cpp
   CNN_CoreGPU.hpp CNN_CoreGPU.cpp
+  CNN_CoreGPUWorkerConfig.hpp CNN_CoreGPUWorkerConfig.cpp
   CNN_CoreGPUWorker.hpp CNN_CoreGPUWorker.cpp
   CNN_GPUBufferManager.hpp CNN_GPUBufferManager.cpp
   CNN_GPUKernelBuilder.hpp CNN_GPUKernelBuilder.cpp

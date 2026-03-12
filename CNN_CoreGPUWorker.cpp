@@ -22,26 +22,24 @@ using namespace CNN;
 //===================================================================================================================//
 
 template <typename T>
-CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
-  : coreConfig(config),
-    parameters(config.parameters),
-    logLevel(config.logLevel)
+CoreGPUWorker<T>::CoreGPUWorker(const CoreGPUWorkerConfig<T>& workerConfig)
+  : workerConfig(workerConfig),
+    parameters(workerConfig.parameters)
 {
-  this->costFunctionConfig = config.costFunctionConfig;
+  this->costFunctionConfig = workerConfig.costFunctionConfig;
 
   this->ownedCore = std::make_unique<OpenCLWrapper::Core>(false);
   this->core = this->ownedCore.get();
-  this->core->setVerbose(this->logLevel >= CNN::LogLevel::DEBUG);
+  this->core->setVerbose(this->workerConfig.logLevel >= CNN::LogLevel::DEBUG);
 
   // Initialize conv parameters (He initialization if not loaded)
-  Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
+  Worker<T>::initializeConvParams(workerConfig.layersConfig, workerConfig.inputShape, this->parameters);
 
   // Initialize batch norm parameters if not loaded
-  Worker<T>::initializeNormParams(config.layersConfig, config.inputShape, this->parameters);
+  Worker<T>::initializeNormParams(workerConfig.layersConfig, workerConfig.inputShape, this->parameters);
 
   // Create buffer manager
-  this->bufferManager =
-    std::make_unique<GPUBufferManager<T>>(this->core, this->coreConfig, this->parameters, this->logLevel);
+  this->bufferManager = std::make_unique<GPUBufferManager<T>>(this->core, this->workerConfig, this->parameters);
 
   // Compute buffer offsets for all layers
   this->bufferManager->computeLayerOffsets();
@@ -52,54 +50,37 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config)
   // Build ANN GPU worker on the shared core (loads ANN sources + allocates ANN buffers)
   this->bufferManager->buildANNWorker();
 
-  // Allocate CNN GPU buffers and write initial parameters.
-  // Only size for the full batch when BatchNorm layers are present (they need cross-sample buffers).
-  // InstanceNorm-only models use the fast single-sample path, so batchSize=1 is sufficient.
-  bool hasBatchNorm = false;
-
-  for (const auto& layer : config.layersConfig.cnnLayers) {
-    if (layer.type == LayerType::BATCHNORM) {
-      hasBatchNorm = true;
-      break;
-    }
-  }
-
-  ulong batchSize =
-    hasBatchNorm ? std::max(static_cast<ulong>(1), static_cast<ulong>(config.trainingConfig.batchSize)) : 1;
-  this->bufferManager->allocateBuffers(batchSize);
+  // Allocate CNN GPU buffers — batchSize is already set by the caller (CoreGPU)
+  this->bufferManager->allocateBuffers(this->workerConfig.batchSize);
 
   // Create kernel builder
-  this->kernelBuilder =
-    std::make_unique<GPUKernelBuilder<T>>(this->core, this->coreConfig, *this->bufferManager, this->logLevel);
+  this->kernelBuilder = std::make_unique<GPUKernelBuilder<T>>(this->core, this->workerConfig, *this->bufferManager);
 }
 
 //===================================================================================================================//
 
 template <typename T>
-CoreGPUWorker<T>::CoreGPUWorker(const CoreConfig<T>& config, OpenCLWrapper::Core& sharedCore)
-  : coreConfig(config),
-    parameters(config.parameters),
-    logLevel(config.logLevel),
+CoreGPUWorker<T>::CoreGPUWorker(const CoreGPUWorkerConfig<T>& config, OpenCLWrapper::Core& sharedCore)
+  : workerConfig(workerConfig),
+    parameters(workerConfig.parameters),
     core(&sharedCore)
 {
-  this->costFunctionConfig = config.costFunctionConfig;
+  this->costFunctionConfig = workerConfig.costFunctionConfig;
 
   // Initialize conv parameters (He initialization if not loaded)
-  Worker<T>::initializeConvParams(config.layersConfig, config.inputShape, this->parameters);
+  Worker<T>::initializeConvParams(workerConfig.layersConfig, workerConfig.inputShape, this->parameters);
 
   // Initialize batch norm parameters if not loaded
-  Worker<T>::initializeNormParams(config.layersConfig, config.inputShape, this->parameters);
+  Worker<T>::initializeNormParams(workerConfig.layersConfig, workerConfig.inputShape, this->parameters);
 
   // Create buffer manager
-  this->bufferManager =
-    std::make_unique<GPUBufferManager<T>>(this->core, this->coreConfig, this->parameters, this->logLevel);
+  this->bufferManager = std::make_unique<GPUBufferManager<T>>(this->core, this->workerConfig, this->parameters);
 
   // Compute buffer offsets for all layers
   this->bufferManager->computeLayerOffsets();
 
   // Create kernel builder
-  this->kernelBuilder =
-    std::make_unique<GPUKernelBuilder<T>>(this->core, this->coreConfig, *this->bufferManager, this->logLevel);
+  this->kernelBuilder = std::make_unique<GPUKernelBuilder<T>>(this->core, this->workerConfig, *this->bufferManager);
 
   // Caller must call loadSources(), buildANNWorker(), allocateBuffers() manually
 }
@@ -141,7 +122,7 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& batchSamples, ulong totalSampl
   ulong sampleStride = this->bufferManager->totalActvSize;
 
   // Detect whether any BN layers exist
-  const auto& cnnLayers = this->coreConfig.layersConfig.cnnLayers;
+  const auto& cnnLayers = this->workerConfig.layersConfig.cnnLayers;
   ulong numLayers = cnnLayers.size();
 
   bool hasBatchNorm = false;
@@ -281,7 +262,7 @@ T CoreGPUWorker<T>::trainSubset(const Samples<T>& batchSamples, ulong totalSampl
       this->core->template addArgument<T>(lossId, "accum_loss");
       this->core->template addArgument<ulong>(lossId, outputActvOffset);
       this->core->template addArgument<ulong>(lossId, numOutputNeurons);
-      this->core->template addArgument<ulong>(lossId, static_cast<ulong>(this->coreConfig.costFunctionConfig.type));
+      this->core->template addArgument<ulong>(lossId, static_cast<ulong>(this->workerConfig.costFunctionConfig.type));
 
       this->core->run();
 
