@@ -39,15 +39,46 @@ CoreGPU<T>::CoreGPU(const CoreConfig<T>& coreConfig) : Core<T>(coreConfig)
 //===================================================================================================================//
 
 template <typename T>
-Output<T> CoreGPU<T>::predict(const Input<T>& input)
+Outputs<T> CoreGPU<T>::predict(const Inputs<T>& inputs)
 {
-  this->predictStart();
+  ulong numInputs = inputs.size();
+  Outputs<T> outputs(numInputs);
 
-  Output<T> output = this->gpuWorkers[0]->predict(input);
+  // Distribute inputs across GPUs
+  ulong inputsPerGPU = numInputs / this->numGPUs;
+  ulong remainder = numInputs % this->numGPUs;
 
-  this->predictEnd();
+  struct GPUWorkItem {
+      size_t gpuIdx;
+      ulong startIdx;
+      ulong endIdx;
+  };
 
-  return output;
+  QVector<GPUWorkItem> workItems;
+
+  for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
+    ulong startIdx = gpuIdx * inputsPerGPU + std::min(gpuIdx, remainder);
+    ulong endIdx = startIdx + inputsPerGPU + (gpuIdx < remainder ? 1 : 0);
+
+    if (startIdx < endIdx)
+      workItems.append({gpuIdx, startIdx, endIdx});
+  }
+
+  std::vector<Outputs<T>> gpuOutputs(this->numGPUs);
+
+  QtConcurrent::blockingMap(workItems, [this, &inputs, &gpuOutputs](const GPUWorkItem& item) {
+    gpuOutputs[item.gpuIdx] = this->gpuWorkers[item.gpuIdx]->predictSubset(inputs, item.startIdx, item.endIdx);
+  });
+
+  // Merge GPU outputs into final result
+  for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
+    ulong startIdx = gpuIdx * inputsPerGPU + std::min(gpuIdx, remainder);
+
+    for (ulong i = 0; i < gpuOutputs[gpuIdx].size(); i++)
+      outputs[startIdx + i] = std::move(gpuOutputs[gpuIdx][i]);
+  }
+
+  return outputs;
 }
 
 //===================================================================================================================//

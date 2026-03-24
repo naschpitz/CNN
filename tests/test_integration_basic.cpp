@@ -538,6 +538,87 @@ static void testGlobalAvgPoolAfterPool()
 
 //===================================================================================================================//
 
+//===================================================================================================================//
+
+static void testBatchPredict()
+{
+  std::cout << "--- testBatchPredict ---" << std::endl;
+
+  // 1x5x5 → Conv(1 filter 3x3 valid) → ReLU → Flatten(9) → Dense(1, sigmoid)
+  CNN::CoreConfig<double> config;
+  config.modeType = CNN::ModeType::TRAIN;
+  config.deviceType = CNN::DeviceType::CPU;
+  config.inputShape = {1, 5, 5};
+  config.logLevel = CNN::LogLevel::ERROR;
+
+  CNN::CNNLayerConfig convLayer;
+  convLayer.type = CNN::LayerType::CONV;
+  convLayer.config = CNN::ConvLayerConfig{1, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+  CNN::CNNLayerConfig reluLayer;
+  reluLayer.type = CNN::LayerType::RELU;
+  reluLayer.config = CNN::ReLULayerConfig{};
+
+  CNN::CNNLayerConfig flattenLayer;
+  flattenLayer.type = CNN::LayerType::FLATTEN;
+  flattenLayer.config = CNN::FlattenLayerConfig{};
+
+  config.layersConfig.cnnLayers = {convLayer, reluLayer, flattenLayer};
+  config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
+
+  CNN::ConvParameters<double> initConv;
+  initConv.numFilters = 1;
+  initConv.inputC = 1;
+  initConv.filterH = 3;
+  initConv.filterW = 3;
+  initConv.filters.assign(9, 0.1);
+  initConv.biases.assign(1, 0.0);
+  config.parameters.convParams = {initConv};
+
+  config.trainingConfig.numEpochs = 100;
+  config.trainingConfig.learningRate = 0.5;
+  config.progressReports = 0;
+
+  // "bright" → 1, "dark" → 0
+  CNN::Samples<double> samples(2);
+  samples[0].input = makeGradientInput<double>({1, 5, 5});
+  samples[0].output = {1.0};
+  samples[1].input = CNN::Tensor3D<double>({1, 5, 5}, 0.0);
+  samples[1].output = {0.0};
+
+  std::unique_ptr<CNN::Core<double>> core;
+  bool converged = false;
+  CNN::Outputs<double> batchOutputs;
+
+  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
+    if (attempt > 0)
+      std::cout << "  retry #" << attempt << std::endl;
+
+    core = CNN::Core<double>::makeCore(config);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
+
+    // Batch predict both inputs at once
+    CNN::Inputs<double> inputs = {samples[0].input, samples[1].input};
+    batchOutputs = core->predict(inputs);
+
+    if (batchOutputs[0][0] > batchOutputs[1][0])
+      converged = true;
+  }
+
+  CHECK(batchOutputs.size() == 2, "batch predict returns 2 outputs");
+  CHECK(batchOutputs[0].size() == 1, "output[0] size = 1");
+  CHECK(batchOutputs[1].size() == 1, "output[1] size = 1");
+  CHECK(converged, "batch predict: bright > dark after training");
+
+  // Verify batch predict matches single predict
+  CNN::Output<double> single0 = core->predict(samples[0].input);
+  CNN::Output<double> single1 = core->predict(samples[1].input);
+  CHECK_NEAR(batchOutputs[0][0], single0[0], 1e-10, "batch[0] matches single predict");
+  CHECK_NEAR(batchOutputs[1][0], single1[0], 1e-10, "batch[1] matches single predict");
+}
+
+//===================================================================================================================//
+
 void runIntegrationBasicTests()
 {
   testEndToEnd();
@@ -547,4 +628,5 @@ void runIntegrationBasicTests()
   testGlobalAvgPoolEndToEnd();
   testGlobalAvgPoolWithNorm();
   testGlobalAvgPoolAfterPool();
+  testBatchPredict();
 }

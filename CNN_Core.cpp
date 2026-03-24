@@ -101,6 +101,14 @@ TrainingMetadata<T> Core<T>::trainingEnd()
 //===================================================================================================================//
 
 template <typename T>
+Output<T> Core<T>::predict(const Input<T>& input)
+{
+  return predict(Inputs<T>{input})[0];
+}
+
+//===================================================================================================================//
+
+template <typename T>
 void Core<T>::predictStart()
 {
   this->predictStartTime = std::chrono::system_clock::now();

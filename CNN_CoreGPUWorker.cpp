@@ -374,6 +374,29 @@ std::pair<T, ulong> CoreGPUWorker<T>::testSubset(const Samples<T>& samples, ulon
 }
 
 //===================================================================================================================//
+//-- Batch predict (called by CoreGPU orchestrator) --//
+//===================================================================================================================//
+
+template <typename T>
+Outputs<T> CoreGPUWorker<T>::predictSubset(const Inputs<T>& inputs, ulong startIdx, ulong endIdx)
+{
+  // Set up predict kernels if needed (CNN propagate → bridge → ANN propagate)
+  if (!this->kernelBuilder->predictKernelsSetup) {
+    this->kernelBuilder->setupPredictKernels();
+  }
+
+  Outputs<T> outputs;
+  outputs.reserve(endIdx - startIdx);
+
+  for (ulong i = startIdx; i < endIdx; i++) {
+    Output<T> predicted = this->predict(inputs[i]);
+    outputs.push_back(std::move(predicted));
+  }
+
+  return outputs;
+}
+
+//===================================================================================================================//
 //-- Step-by-step: backpropagate a single sample (for external orchestration) --//
 //===================================================================================================================//
 

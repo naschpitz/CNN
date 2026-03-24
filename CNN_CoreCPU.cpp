@@ -76,9 +76,54 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
 //===================================================================================================================//
 
 template <typename T>
-Output<T> CoreCPU<T>::predict(const Input<T>& input)
+Outputs<T> CoreCPU<T>::predict(const Inputs<T>& inputs)
 {
-  return this->stepWorker->predict(input);
+  int numThreads = this->numThreads;
+
+  if (numThreads <= 0)
+    numThreads = QThreadPool::globalInstance()->maxThreadCount();
+
+  // Build a config snapshot with current trained parameters so fresh workers get the right weights
+  CoreConfig<T> predictConfig = this->coreConfig;
+  predictConfig.parameters = this->parameters;
+
+  // Create per-thread workers (predict-only, no training buffers)
+  std::vector<std::unique_ptr<CoreCPUWorker<T>>> workers;
+
+  for (int i = 0; i < numThreads; i++) {
+    workers.push_back(std::make_unique<CoreCPUWorker<T>>(predictConfig, this->layersConfig, this->parameters, false));
+  }
+
+  ulong numInputs = inputs.size();
+  Outputs<T> outputs(numInputs);
+
+  // Distribute inputs across workers
+  std::vector<ulong> workerInputCounts(numThreads);
+
+  for (int i = 0; i < numThreads; i++)
+    workerInputCounts[i] = numInputs / static_cast<ulong>(numThreads) +
+                           (static_cast<ulong>(i) < numInputs % static_cast<ulong>(numThreads) ? 1 : 0);
+
+  // Each worker predicts its chunk in parallel
+  QVector<int> workerIndices(numThreads);
+
+  for (int i = 0; i < numThreads; i++)
+    workerIndices[i] = i;
+
+  QtConcurrent::blockingMap(workerIndices, [&](int workerIdx) {
+    CoreCPUWorker<T>& worker = *workers[workerIdx];
+
+    ulong workerLocalStart = 0;
+
+    for (int i = 0; i < workerIdx; i++)
+      workerLocalStart += workerInputCounts[i];
+    ulong workerLocalEnd = workerLocalStart + workerInputCounts[workerIdx];
+
+    for (ulong s = workerLocalStart; s < workerLocalEnd; s++)
+      outputs[s] = worker.predict(inputs[s]);
+  });
+
+  return outputs;
 }
 
 //===================================================================================================================//

@@ -17,7 +17,7 @@ namespace CNN
     public:
       CoreGPU(const CoreConfig<T>& config);
 
-      Output<T> predict(const Input<T>& input) override;
+      Outputs<T> predict(const Inputs<T>& inputs) override;
       void train(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
       TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
 

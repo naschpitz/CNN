@@ -39,6 +39,9 @@ namespace CNN
       //-- Testing --//
       std::pair<T, ulong> testSubset(const Samples<T>& samples, ulong startIdx, ulong endIdx);
 
+      //-- Batch predict (called by CoreGPU orchestrator) --//
+      Outputs<T> predictSubset(const Inputs<T>& inputs, ulong startIdx, ulong endIdx);
+
       //-- Step-by-step training methods (for external orchestration) --//
       void backpropagateSample(const Input<T>& input, const Output<T>& expected);
       void accumulate();

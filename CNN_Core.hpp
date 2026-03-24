@@ -25,7 +25,8 @@ namespace CNN
       static std::unique_ptr<Core<T>> makeCore(const CoreConfig<T>& config);
 
       //-- Core interface --//
-      virtual Output<T> predict(const Input<T>& input) = 0;
+      virtual Outputs<T> predict(const Inputs<T>& inputs) = 0;
+      Output<T> predict(const Input<T>& input); // Convenience wrapper for the multi-input version
       virtual void train(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
       virtual TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
 
