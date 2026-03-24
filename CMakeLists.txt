@@ -39,6 +39,8 @@ add_library(CNN STATIC
   opencl/CNN_Normalization.cpp.cl
   opencl/CNN_GlobalAvgPool.cpp.cl
   CNN_Types.hpp
+  CNN_Shape3D.hpp CNN_Shape3D.cpp
+  CNN_Tensor3D.hpp CNN_Tensor3D.cpp
   CNN_Device.hpp CNN_Device.cpp
   CNN_Mode.hpp CNN_Mode.cpp
   CNN_SlidingStrategy.hpp CNN_SlidingStrategy.cpp
