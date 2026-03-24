@@ -13,6 +13,8 @@
 #include <QThreadPool>
 #include <QtConcurrent>
 
+#include <atomic>
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -110,6 +112,8 @@ Outputs<T> CoreCPU<T>::predict(const Inputs<T>& inputs)
   for (int i = 0; i < numThreads; i++)
     workerIndices[i] = i;
 
+  std::atomic<ulong> completedInputs{0};
+
   QtConcurrent::blockingMap(workerIndices, [&](int workerIdx) {
     CoreCPUWorker<T>& worker = *workers[workerIdx];
 
@@ -119,8 +123,14 @@ Outputs<T> CoreCPU<T>::predict(const Inputs<T>& inputs)
       workerLocalStart += workerInputCounts[i];
     ulong workerLocalEnd = workerLocalStart + workerInputCounts[workerIdx];
 
-    for (ulong s = workerLocalStart; s < workerLocalEnd; s++)
+    for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
       outputs[s] = worker.predict(inputs[s]);
+
+      ulong completed = ++completedInputs;
+
+      if (this->progressCallback)
+        this->progressCallback(completed, numInputs);
+    }
   });
 
   return outputs;

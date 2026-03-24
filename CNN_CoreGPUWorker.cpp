@@ -378,7 +378,8 @@ std::pair<T, ulong> CoreGPUWorker<T>::testSubset(const Samples<T>& samples, ulon
 //===================================================================================================================//
 
 template <typename T>
-Outputs<T> CoreGPUWorker<T>::predictSubset(const Inputs<T>& inputs, ulong startIdx, ulong endIdx)
+Outputs<T> CoreGPUWorker<T>::predictSubset(const Inputs<T>& inputs, ulong startIdx, ulong endIdx,
+                                           const ProgressCallback& callback)
 {
   // Set up predict kernels if needed (CNN propagate → bridge → ANN propagate)
   if (!this->kernelBuilder->predictKernelsSetup) {
@@ -391,6 +392,9 @@ Outputs<T> CoreGPUWorker<T>::predictSubset(const Inputs<T>& inputs, ulong startI
   for (ulong i = startIdx; i < endIdx; i++) {
     Output<T> predicted = this->predict(inputs[i]);
     outputs.push_back(std::move(predicted));
+
+    if (callback)
+      callback(i - startIdx + 1, endIdx - startIdx);
   }
 
   return outputs;

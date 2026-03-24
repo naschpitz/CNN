@@ -5,6 +5,7 @@
 #include <QtConcurrent>
 
 #include <algorithm>
+#include <atomic>
 #include <iostream>
 #include <numeric>
 #include <random>
@@ -65,10 +66,22 @@ Outputs<T> CoreGPU<T>::predict(const Inputs<T>& inputs)
   }
 
   std::vector<Outputs<T>> gpuOutputs(this->numGPUs);
+  std::atomic<ulong> completedInputs{0};
 
-  QtConcurrent::blockingMap(workItems, [this, &inputs, &gpuOutputs](const GPUWorkItem& item) {
-    gpuOutputs[item.gpuIdx] = this->gpuWorkers[item.gpuIdx]->predictSubset(inputs, item.startIdx, item.endIdx);
-  });
+  QtConcurrent::blockingMap(
+    workItems, [this, &inputs, &gpuOutputs, &completedInputs, numInputs](const GPUWorkItem& item) {
+      ProgressCallback callback;
+
+      if (this->progressCallback) {
+        callback = [this, &completedInputs, numInputs](ulong /*current*/, ulong /*total*/) {
+          ulong completed = ++completedInputs;
+          this->progressCallback(completed, numInputs);
+        };
+      }
+
+      gpuOutputs[item.gpuIdx] =
+        this->gpuWorkers[item.gpuIdx]->predictSubset(inputs, item.startIdx, item.endIdx, callback);
+    });
 
   // Merge GPU outputs into final result
   for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
