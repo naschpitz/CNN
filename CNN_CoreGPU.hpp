@@ -17,6 +17,7 @@ namespace CNN
     public:
       CoreGPU(const CoreConfig<T>& config);
 
+      using Core<T>::predict; // Bring in the single-input convenience wrapper
       Outputs<T> predict(const Inputs<T>& inputs) override;
       void train(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
       TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
