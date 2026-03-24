@@ -69,10 +69,43 @@
 </div>
 
 <h2 id="types">1. Types &amp; Aliases</h2>
+
+<h3>Shape3D <span class="badge badge-blue">CNN_Shape3D.hpp</span></h3>
+<p>3D tensor shape (Channels, Height, Width) — NCHW layout.</p>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>c</code></td><td><code>ulong</code></td><td>Channels</td></tr>
+  <tr><td><code>h</code></td><td><code>ulong</code></td><td>Height</td></tr>
+  <tr><td><code>w</code></td><td><code>ulong</code></td><td>Width</td></tr>
+</table>
+<table>
+  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+  <tr><td><code>size()</code></td><td><code>ulong</code></td><td>Returns <code>c × h × w</code></td></tr>
+  <tr><td><code>operator==()</code></td><td><code>bool</code></td><td>Equality comparison</td></tr>
+  <tr><td><code>operator!=()</code></td><td><code>bool</code></td><td>Inequality comparison</td></tr>
+</table>
+
+<h3>Tensor3D&lt;T&gt; <span class="badge badge-blue">CNN_Tensor3D.hpp</span></h3>
+<p>3D tensor stored as flat vector in NCHW order: <code>data[c * H * W + h * W + w]</code>.</p>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>shape</code></td><td><code>Shape3D</code></td><td>Tensor dimensions</td></tr>
+  <tr><td><code>data</code></td><td><code>std::vector&lt;T&gt;</code></td><td>Flat data storage</td></tr>
+</table>
+<table>
+  <tr><th>Method</th><th>Description</th></tr>
+  <tr><td><code>Tensor3D(shape)</code></td><td>Construct with given shape, zero-initialized</td></tr>
+  <tr><td><code>Tensor3D(shape, value)</code></td><td>Construct with given shape, filled with value</td></tr>
+  <tr><td><code>at(c, h, w)</code></td><td>Element access at channel c, row h, column w</td></tr>
+  <tr><td><code>size()</code></td><td>Returns total number of elements</td></tr>
+  <tr><td><code>resize(newShape)</code></td><td>Resize data to new shape, zero-filled</td></tr>
+  <tr><td><code>resize(newShape, value)</code></td><td>Resize and fill with value</td></tr>
+  <tr><td><code>fill(value)</code></td><td>Fill all elements with value</td></tr>
+</table>
+
+<h3>Type Aliases <span class="badge badge-blue">CNN_Types.hpp</span></h3>
 <table>
   <tr><th>Type</th><th>Definition</th><th>Description</th></tr>
-  <tr><td><code>Shape3D</code></td><td>struct { ulong c, h, w; }</td><td>3D tensor shape (channels, height, width)</td></tr>
-  <tr><td><code>Tensor3D&lt;T&gt;</code></td><td>struct { Shape3D shape; vector&lt;T&gt; data; }</td><td>3D tensor in flat NCHW layout</td></tr>
   <tr><td><code>Tensor1D&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>1D tensor</td></tr>
   <tr><td><code>Input&lt;T&gt;</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Network input (3D image tensor)</td></tr>
   <tr><td><code>Output&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>Network output (1D classification vector)</td></tr>
@@ -80,23 +113,6 @@
   <tr><td><code>Outputs&lt;T&gt;</code></td><td><code>std::vector&lt;Output&lt;T&gt;&gt;</code></td><td>Batch of outputs</td></tr>
   <tr><td><code>Sample&lt;T&gt;</code></td><td>struct { Input&lt;T&gt; input; Output&lt;T&gt; output; }</td><td>Training/test sample</td></tr>
   <tr><td><code>Samples&lt;T&gt;</code></td><td><code>std::vector&lt;Sample&lt;T&gt;&gt;</code></td><td>Collection of samples</td></tr>
-</table>
-
-<h3>Shape3D Methods</h3>
-<table>
-  <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-  <tr><td><code>size()</code></td><td><code>ulong</code></td><td>Returns <code>c × h × w</code></td></tr>
-  <tr><td><code>operator==()</code></td><td><code>bool</code></td><td>Equality comparison</td></tr>
-</table>
-
-<h3>Tensor3D&lt;T&gt; Methods</h3>
-<table>
-  <tr><th>Method</th><th>Description</th></tr>
-  <tr><td><code>at(c, h, w)</code></td><td>Element access at channel c, row h, column w</td></tr>
-  <tr><td><code>size()</code></td><td>Returns total number of elements</td></tr>
-  <tr><td><code>resize(newShape)</code></td><td>Resize data to new shape</td></tr>
-  <tr><td><code>resize(newShape, value)</code></td><td>Resize and fill with value</td></tr>
-  <tr><td><code>fill(value)</code></td><td>Fill all elements with value</td></tr>
 </table>
 
 <div class="info-box">
