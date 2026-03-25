@@ -78,7 +78,7 @@
 
 <div class="tip-box">
 <strong>Code:</strong> <code>ReLU&lt;T&gt;::propagate(input)</code> and <code>ReLU&lt;T&gt;::backpropagate(dOut, input)</code> in <code>CNN_ReLU.cpp</code>. Backpropagation uses the original input to determine where the gradient passes through (<code>input.data[i] &gt; 0</code>).
-On GPU: <code>calculate_relu</code> and <code>calculate_dCost_dRelu</code> kernels in <code>opencl/CNN_Kernels.cpp.cl</code>.
+On GPU: <code>calculate_relu</code> kernel in <code>opencl/CNN_Propagate.cpp.cl</code>, <code>calculate_dCost_dRelu</code> in <code>opencl/CNN_Backpropagate.cpp.cl</code>.
 </div>
 
 <div class="info-box">

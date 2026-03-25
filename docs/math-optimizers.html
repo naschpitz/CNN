@@ -77,7 +77,7 @@
 
 <div class="tip-box">
 <strong>Code:</strong> The SGD update is applied in <code>CoreCPU&lt;T&gt;::update()</code> in <code>CNN_CoreCPU.cpp</code> when <code>optimizer.type == SGD</code>.
-On GPU: <code>update_weights_sgd</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code>.
+On GPU: <code>update_parameters</code> kernel in <code>opencl/CNN_Update.cpp.cl</code>.
 </div>
 
 <h2 id="adam">Adam (Adaptive Moment Estimation)</h2>
@@ -103,7 +103,7 @@ On GPU: <code>update_weights_sgd</code> kernel in <code>opencl/CNN_Kernels.cpp.c
 
 <div class="tip-box">
 <strong>Code:</strong> <code>CoreCPU&lt;T&gt;::update()</code> in <code>CNN_CoreCPU.cpp</code> when <code>optimizer.type == ADAM</code>. The Adam state (m, v vectors and timestep t) is stored in <code>Parameters&lt;T&gt;::adamState</code>.
-On GPU: <code>update_weights_adam</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code>.
+On GPU: <code>update_parameters_adam</code> kernel in <code>opencl/CNN_Update.cpp.cl</code>.
 </div>
 
 <div class="info-box">

@@ -88,7 +88,7 @@
 
 <div class="tip-box">
 <strong>Code:</strong> <code>Pool&lt;T&gt;::propagate(input, config, maxIndices)</code> in <code>CNN_Pool.cpp</code> implements both modes. For max pooling, it stores the flat index of each maximum in <code>maxIndices</code>. <code>Pool&lt;T&gt;::backpropagate()</code> routes the gradient to <code>dInput.data[maxIdx]</code> (max) or distributes <code>dOutVal / count</code> evenly (avg).
-On GPU: <code>calculate_maxpool</code> records indices, <code>calculate_dCost_dMaxpool</code> routes gradients (both in <code>opencl/CNN_Kernels.cpp.cl</code>).
+On GPU: <code>calculate_maxpool</code> records indices (<code>opencl/CNN_Propagate.cpp.cl</code>), <code>calculate_dCost_dMaxpool</code> routes gradients (<code>opencl/CNN_Backpropagate.cpp.cl</code>).
 </div>
 
 <div class="info-box">
