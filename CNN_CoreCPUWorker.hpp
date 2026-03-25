@@ -4,7 +4,7 @@
 #include "CNN_Worker.hpp"
 #include "CNN_Core.hpp"
 
-#include <ANN_Core.hpp>
+#include <ANN_CoreCPU.hpp>
 
 #include <memory>
 #include <vector>
@@ -82,12 +82,12 @@ namespace CNN
       }
 
       //-- ANN sub-core access (for parameter sync/merge by CoreCPU) --//
-      ANN::Core<T>* getANNCore()
+      ANN::CoreCPU<T>* getANNCore()
       {
         return annCore.get();
       }
 
-      const ANN::Core<T>* getANNCore() const
+      const ANN::CoreCPU<T>* getANNCore() const
       {
         return annCore.get();
       }
@@ -102,7 +102,7 @@ namespace CNN
       ulong flattenSize;
 
       //-- ANN sub-core (each worker owns its own for thread safety) --//
-      std::unique_ptr<ANN::Core<T>> annCore;
+      std::unique_ptr<ANN::CoreCPU<T>> annCore;
 
       //-- Per-worker CNN gradient accumulators --//
       std::vector<std::vector<T>> accumDConvFilters;

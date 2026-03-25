@@ -823,20 +823,16 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
           // Flatten CNN output
           Tensor1D<T> flatInput = Flatten<T>::propagate(currentActvs[s]);
 
-          // ANN forward
+          // ANN forward + backward + accumulate
           ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-          ANN::Output<T> annOutput = worker.getANNCore()->predict(annInput);
-          predictions[s] = Output<T>(annOutput.begin(), annOutput.end());
+          ANN::Output<T> annExpected(batchSamples[s].output.begin(), batchSamples[s].output.end());
+          ANN::TrainStepResult<T> annResult = worker.getANNCore()->trainStep(annInput, annExpected);
+          predictions[s] = Output<T>(annResult.predicted.begin(), annResult.predicted.end());
 
           // Loss
           sampleLosses[s] = worker.calculateLoss(predictions[s], batchSamples[s].output);
 
-          // ANN backward + accumulate
-          ANN::Output<T> annExpected(batchSamples[s].output.begin(), batchSamples[s].output.end());
-          ANN::Tensor1D<T> dFlatANN = worker.getANNCore()->backpropagate(annExpected);
-          worker.getANNCore()->accumulate();
-
-          dFlatInputs[s] = Tensor1D<T>(dFlatANN.begin(), dFlatANN.end());
+          dFlatInputs[s] = Tensor1D<T>(annResult.inputGradients.begin(), annResult.inputGradients.end());
 
           ulong completed = ++completedSamples;
 
