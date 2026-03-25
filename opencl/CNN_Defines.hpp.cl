@@ -2,6 +2,7 @@
 #define CNN_DEFINES_HPP_CL
 
 #define TYPE float
+#define TILE_SIZE 16
 
 //===================================================================================================================//
 // ANN types (must match C++ ANN::ActvFuncType and ANN::Layer)

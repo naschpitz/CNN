@@ -42,6 +42,7 @@ void GPUBufferManager<T>::computeLayerOffsets()
   this->totalBiasSize = 0;
   this->totalPoolIndexSize = 0;
   this->totalNormParamSize = 0;
+  this->maxIm2ColSize = 0;
   this->convInfos.clear();
   this->poolInfos.clear();
   this->normInfos.clear();
@@ -67,6 +68,13 @@ void GPUBufferManager<T>::computeLayerOffsets()
 
       this->totalFilterSize += ci.numFilterElems;
       this->totalBiasSize += ci.numBiases;
+
+      // Track max im2col workspace size across all conv layers
+      ulong im2colSize = currentShape.c * conv.filterH * conv.filterW * outH * outW;
+
+      if (im2colSize > this->maxIm2ColSize)
+        this->maxIm2ColSize = im2colSize;
+
       convIdx++;
       break;
     }
@@ -157,6 +165,8 @@ void GPUBufferManager<T>::loadSources(bool skipDefines)
     this->core->addSourceFile(srcDir + "opencl/CNN_Defines.hpp.cl");
   }
 
+  this->core->addSourceFile(srcDir + "opencl/CNN_GEMM.cpp.cl");
+  this->core->addSourceFile(srcDir + "opencl/CNN_Im2Col.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_Propagate.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_Backpropagate.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_Update.cpp.cl");
@@ -193,6 +203,11 @@ void GPUBufferManager<T>::allocateBuffers(ulong batchSize)
     this->core->template allocateBuffer<T>("cnn_biases", this->totalBiasSize);
     this->core->template allocateBuffer<T>("cnn_dBiases", this->totalBiasSize);
     this->core->template allocateBuffer<T>("cnn_accum_dBiases", this->totalBiasSize);
+  }
+
+  // im2col workspace buffer — shared across layers, reused sequentially
+  if (this->maxIm2ColSize > 0) {
+    this->core->template allocateBuffer<T>("cnn_im2col", this->maxIm2ColSize);
   }
 
   // Pool index buffer — sized for the full batch

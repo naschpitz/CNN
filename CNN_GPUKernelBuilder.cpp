@@ -168,29 +168,56 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart,
       ulong padX = SlidingStrategy::computePadding(conv.filterW, conv.slidingStrategy);
       ulong outH = (currentShape.h + 2 * padY - conv.filterH) / conv.strideY + 1;
       ulong outW = (currentShape.w + 2 * padX - conv.filterW) / conv.strideX + 1;
-      ulong nElements = conv.numFilters * outH * outW;
 
-      std::string kernelId = "conv2d" + kernelSuffix;
-      this->core->addKernel(kernelId, "calculate_conv2d", nElements, 0);
-      this->core->template addArgument<T>(kernelId, "cnn_actvs");
-      this->core->template addArgument<T>(kernelId, "cnn_filters");
-      this->core->template addArgument<T>(kernelId, "cnn_biases");
-      this->core->template addArgument<ulong>(kernelId, inOffset);
-      this->core->template addArgument<ulong>(kernelId, outOffset);
-      this->core->template addArgument<ulong>(kernelId, this->bufferManager.convInfos[convIdx].filterOffset);
-      this->core->template addArgument<ulong>(kernelId, this->bufferManager.convInfos[convIdx].biasOffset);
-      this->core->template addArgument<ulong>(kernelId, currentShape.c);
-      this->core->template addArgument<ulong>(kernelId, currentShape.h);
-      this->core->template addArgument<ulong>(kernelId, currentShape.w);
-      this->core->template addArgument<ulong>(kernelId, conv.numFilters);
-      this->core->template addArgument<ulong>(kernelId, conv.filterH);
-      this->core->template addArgument<ulong>(kernelId, conv.filterW);
-      this->core->template addArgument<ulong>(kernelId, conv.strideY);
-      this->core->template addArgument<ulong>(kernelId, conv.strideX);
-      this->core->template addArgument<ulong>(kernelId, padY);
-      this->core->template addArgument<ulong>(kernelId, padX);
-      this->core->template addArgument<ulong>(kernelId, outH);
-      this->core->template addArgument<ulong>(kernelId, outW);
+      ulong im2colRows = currentShape.c * conv.filterH * conv.filterW;
+      ulong im2colCols = outH * outW;
+      ulong im2colSize = im2colRows * im2colCols;
+
+      // Step 1: im2col — rearrange input patches into column matrix
+      std::string im2colId = "im2col" + kernelSuffix;
+      this->core->addKernel(im2colId, "im2col", im2colSize, 0);
+      this->core->template addArgument<T>(im2colId, "cnn_actvs");
+      this->core->template addArgument<T>(im2colId, "cnn_im2col");
+      this->core->template addArgument<ulong>(im2colId, inOffset);
+      this->core->template addArgument<ulong>(im2colId, currentShape.c);
+      this->core->template addArgument<ulong>(im2colId, currentShape.h);
+      this->core->template addArgument<ulong>(im2colId, currentShape.w);
+      this->core->template addArgument<ulong>(im2colId, conv.filterH);
+      this->core->template addArgument<ulong>(im2colId, conv.filterW);
+      this->core->template addArgument<ulong>(im2colId, conv.strideY);
+      this->core->template addArgument<ulong>(im2colId, conv.strideX);
+      this->core->template addArgument<ulong>(im2colId, padY);
+      this->core->template addArgument<ulong>(im2colId, padX);
+      this->core->template addArgument<ulong>(im2colId, outH);
+      this->core->template addArgument<ulong>(im2colId, outW);
+
+      // Step 2: GEMM — Output = Filters × im2col_matrix + Biases
+      //   A = cnn_filters, shape (numFilters, C_in*kH*kW) = (M, K)
+      //   B = cnn_im2col, shape (C_in*kH*kW, outH*outW) = (K, N)
+      //   C = cnn_actvs at outOffset, shape (numFilters, outH*outW) = (M, N)
+      ulong M = conv.numFilters;
+      ulong N = im2colCols;
+      ulong K = im2colRows;
+      ulong TILE = 16;
+      ulong globalX = ((N + TILE - 1) / TILE) * TILE;
+      ulong globalY = ((M + TILE - 1) / TILE) * TILE;
+
+      ulong filterOffset = this->bufferManager.convInfos[convIdx].filterOffset;
+      ulong biasOffset = this->bufferManager.convInfos[convIdx].biasOffset;
+
+      std::string gemmId = "gemm_conv" + kernelSuffix;
+      this->core->addKernel(gemmId, "gemm", globalX, globalY, TILE, TILE);
+      this->core->template addArgument<T>(gemmId, "cnn_filters");
+      this->core->template addArgument<T>(gemmId, "cnn_im2col");
+      this->core->template addArgument<T>(gemmId, "cnn_actvs");
+      this->core->template addArgument<T>(gemmId, "cnn_biases");
+      this->core->template addArgument<ulong>(gemmId, filterOffset);
+      this->core->template addArgument<ulong>(gemmId, static_cast<ulong>(0));
+      this->core->template addArgument<ulong>(gemmId, outOffset);
+      this->core->template addArgument<ulong>(gemmId, biasOffset);
+      this->core->template addArgument<ulong>(gemmId, M);
+      this->core->template addArgument<ulong>(gemmId, N);
+      this->core->template addArgument<ulong>(gemmId, K);
 
       currentShape = {conv.numFilters, outH, outW};
       convIdx++;
@@ -462,32 +489,56 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
       ulong outH = outShape.h;
       ulong outW = outShape.w;
 
-      // dFilters
-      ulong nFilterElems = this->bufferManager.convInfos[convIdx].numFilterElems;
-      std::string filterId = "dFilters" + kernelSuffix;
-      ulong filterLocalWS = 256;
-      ulong filterGlobalWS = nFilterElems * filterLocalWS;
-      this->core->addKernel(filterId, "calculate_dCost_dFilters", filterGlobalWS, 0, filterLocalWS);
-      this->core->template addArgument<T>(filterId, "cnn_grads");
-      this->core->template addArgument<T>(filterId, "cnn_actvs");
-      this->core->template addArgument<T>(filterId, "cnn_dFilters");
-      this->core->template addArgument<ulong>(filterId, gradOutOffset);
-      this->core->template addArgument<ulong>(filterId, actvInOffset);
-      this->core->template addArgument<ulong>(filterId, this->bufferManager.convInfos[convIdx].filterOffset);
-      this->core->template addArgument<ulong>(filterId, inShape.c);
-      this->core->template addArgument<ulong>(filterId, inShape.h);
-      this->core->template addArgument<ulong>(filterId, inShape.w);
-      this->core->template addArgument<ulong>(filterId, conv.numFilters);
-      this->core->template addArgument<ulong>(filterId, conv.filterH);
-      this->core->template addArgument<ulong>(filterId, conv.filterW);
-      this->core->template addArgument<ulong>(filterId, conv.strideY);
-      this->core->template addArgument<ulong>(filterId, conv.strideX);
-      this->core->template addArgument<ulong>(filterId, padY);
-      this->core->template addArgument<ulong>(filterId, padX);
-      this->core->template addArgument<ulong>(filterId, outH);
-      this->core->template addArgument<ulong>(filterId, outW);
+      ulong im2colRows = inShape.c * conv.filterH * conv.filterW;
+      ulong im2colCols = outH * outW;
+      ulong im2colSize = im2colRows * im2colCols;
+      ulong filterOffset = this->bufferManager.convInfos[convIdx].filterOffset;
+      ulong biasOffset = this->bufferManager.convInfos[convIdx].biasOffset;
+      ulong TILE = 16;
 
-      // dBiases
+      // --- dFilters: im2col(input) then dFilters = dOut × im2col^T ---
+
+      // Step 1: im2col — rearrange input patches into column matrix
+      std::string im2colFiltId = "im2col_bk_filt" + kernelSuffix;
+      this->core->addKernel(im2colFiltId, "im2col", im2colSize, 0);
+      this->core->template addArgument<T>(im2colFiltId, "cnn_actvs");
+      this->core->template addArgument<T>(im2colFiltId, "cnn_im2col");
+      this->core->template addArgument<ulong>(im2colFiltId, actvInOffset);
+      this->core->template addArgument<ulong>(im2colFiltId, inShape.c);
+      this->core->template addArgument<ulong>(im2colFiltId, inShape.h);
+      this->core->template addArgument<ulong>(im2colFiltId, inShape.w);
+      this->core->template addArgument<ulong>(im2colFiltId, conv.filterH);
+      this->core->template addArgument<ulong>(im2colFiltId, conv.filterW);
+      this->core->template addArgument<ulong>(im2colFiltId, conv.strideY);
+      this->core->template addArgument<ulong>(im2colFiltId, conv.strideX);
+      this->core->template addArgument<ulong>(im2colFiltId, padY);
+      this->core->template addArgument<ulong>(im2colFiltId, padX);
+      this->core->template addArgument<ulong>(im2colFiltId, outH);
+      this->core->template addArgument<ulong>(im2colFiltId, outW);
+
+      // Step 2: gemm_transB — dFilters = dOut × im2col^T
+      //   A = cnn_grads at gradOutOffset, shape (numFilters, outH*outW) = (M, K)
+      //   B = cnn_im2col, shape (C_in*kH*kW, outH*outW) — transposed → (outH*outW, C_in*kH*kW)
+      //   C = cnn_dFilters at filterOffset, shape (numFilters, C_in*kH*kW) = (M, N)
+      ulong dF_M = conv.numFilters;
+      ulong dF_N = im2colRows;
+      ulong dF_K = im2colCols;
+      ulong dF_globalX = ((dF_N + TILE - 1) / TILE) * TILE;
+      ulong dF_globalY = ((dF_M + TILE - 1) / TILE) * TILE;
+
+      std::string gemmFiltId = "gemm_dFilters" + kernelSuffix;
+      this->core->addKernel(gemmFiltId, "gemm_transB", dF_globalX, dF_globalY, TILE, TILE);
+      this->core->template addArgument<T>(gemmFiltId, "cnn_grads");
+      this->core->template addArgument<T>(gemmFiltId, "cnn_im2col");
+      this->core->template addArgument<T>(gemmFiltId, "cnn_dFilters");
+      this->core->template addArgument<ulong>(gemmFiltId, gradOutOffset);
+      this->core->template addArgument<ulong>(gemmFiltId, static_cast<ulong>(0));
+      this->core->template addArgument<ulong>(gemmFiltId, filterOffset);
+      this->core->template addArgument<ulong>(gemmFiltId, dF_M);
+      this->core->template addArgument<ulong>(gemmFiltId, dF_N);
+      this->core->template addArgument<ulong>(gemmFiltId, dF_K);
+
+      // --- dBiases: keep existing reduction kernel (unchanged) ---
       std::string biasId = "dBiases" + kernelSuffix;
       ulong biasLocalWS = 256;
       ulong biasGlobalWS = conv.numFilters * biasLocalWS;
@@ -495,33 +546,61 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
       this->core->template addArgument<T>(biasId, "cnn_grads");
       this->core->template addArgument<T>(biasId, "cnn_dBiases");
       this->core->template addArgument<ulong>(biasId, gradOutOffset);
-      this->core->template addArgument<ulong>(biasId, this->bufferManager.convInfos[convIdx].biasOffset);
+      this->core->template addArgument<ulong>(biasId, biasOffset);
       this->core->template addArgument<ulong>(biasId, conv.numFilters);
       this->core->template addArgument<ulong>(biasId, outH);
       this->core->template addArgument<ulong>(biasId, outW);
 
-      // dInput (skip if first layer)
+      // --- dInput: gemm_transA then col2im (skip if first layer) ---
       if (i > 0) {
-        ulong nInputElems = inShape.size();
-        std::string inputId = "dInput" + kernelSuffix;
-        this->core->addKernel(inputId, "calculate_dCost_dInput", nInputElems, 0);
-        this->core->template addArgument<T>(inputId, "cnn_grads");
-        this->core->template addArgument<T>(inputId, "cnn_filters");
-        this->core->template addArgument<ulong>(inputId, gradOutOffset);
-        this->core->template addArgument<ulong>(inputId, gradInOffset);
-        this->core->template addArgument<ulong>(inputId, this->bufferManager.convInfos[convIdx].filterOffset);
-        this->core->template addArgument<ulong>(inputId, inShape.c);
-        this->core->template addArgument<ulong>(inputId, inShape.h);
-        this->core->template addArgument<ulong>(inputId, inShape.w);
-        this->core->template addArgument<ulong>(inputId, conv.numFilters);
-        this->core->template addArgument<ulong>(inputId, conv.filterH);
-        this->core->template addArgument<ulong>(inputId, conv.filterW);
-        this->core->template addArgument<ulong>(inputId, conv.strideY);
-        this->core->template addArgument<ulong>(inputId, conv.strideX);
-        this->core->template addArgument<ulong>(inputId, padY);
-        this->core->template addArgument<ulong>(inputId, padX);
-        this->core->template addArgument<ulong>(inputId, outH);
-        this->core->template addArgument<ulong>(inputId, outW);
+        ulong inSize = inShape.size();
+
+        // Step 0: zero the input gradient buffer (col2im accumulates)
+        std::string zeroId = "zero_conv" + kernelSuffix;
+        this->core->addKernel(zeroId, "zero_buffer", inSize, 0);
+        this->core->template addArgument<T>(zeroId, "cnn_grads");
+        this->core->template addArgument<ulong>(zeroId, gradInOffset);
+        this->core->template addArgument<ulong>(zeroId, inSize);
+
+        // Step 1: gemm_transA — dInput_cols = Filter^T × dOut
+        //   A = cnn_filters at filterOffset, shape (numFilters, C_in*kH*kW) — transposed
+        //   B = cnn_grads at gradOutOffset, shape (numFilters, outH*outW) = (K, N)
+        //   C = cnn_im2col, shape (C_in*kH*kW, outH*outW) = (M, N)
+        ulong dI_M = im2colRows;
+        ulong dI_N = im2colCols;
+        ulong dI_K = conv.numFilters;
+        ulong dI_globalX = ((dI_N + TILE - 1) / TILE) * TILE;
+        ulong dI_globalY = ((dI_M + TILE - 1) / TILE) * TILE;
+
+        std::string gemmInputId = "gemm_dInput" + kernelSuffix;
+        this->core->addKernel(gemmInputId, "gemm_transA", dI_globalX, dI_globalY, TILE, TILE);
+        this->core->template addArgument<T>(gemmInputId, "cnn_filters");
+        this->core->template addArgument<T>(gemmInputId, "cnn_grads");
+        this->core->template addArgument<T>(gemmInputId, "cnn_im2col");
+        this->core->template addArgument<ulong>(gemmInputId, filterOffset);
+        this->core->template addArgument<ulong>(gemmInputId, gradOutOffset);
+        this->core->template addArgument<ulong>(gemmInputId, static_cast<ulong>(0));
+        this->core->template addArgument<ulong>(gemmInputId, dI_M);
+        this->core->template addArgument<ulong>(gemmInputId, dI_N);
+        this->core->template addArgument<ulong>(gemmInputId, dI_K);
+
+        // Step 2: col2im — scatter dInput_cols back to input gradient buffer
+        std::string col2imId = "col2im" + kernelSuffix;
+        this->core->addKernel(col2imId, "col2im", inSize, 0);
+        this->core->template addArgument<T>(col2imId, "cnn_im2col");
+        this->core->template addArgument<T>(col2imId, "cnn_grads");
+        this->core->template addArgument<ulong>(col2imId, gradInOffset);
+        this->core->template addArgument<ulong>(col2imId, inShape.c);
+        this->core->template addArgument<ulong>(col2imId, inShape.h);
+        this->core->template addArgument<ulong>(col2imId, inShape.w);
+        this->core->template addArgument<ulong>(col2imId, conv.filterH);
+        this->core->template addArgument<ulong>(col2imId, conv.filterW);
+        this->core->template addArgument<ulong>(col2imId, conv.strideY);
+        this->core->template addArgument<ulong>(col2imId, conv.strideX);
+        this->core->template addArgument<ulong>(col2imId, padY);
+        this->core->template addArgument<ulong>(col2imId, padX);
+        this->core->template addArgument<ulong>(col2imId, outH);
+        this->core->template addArgument<ulong>(col2imId, outW);
       }
 
       break;

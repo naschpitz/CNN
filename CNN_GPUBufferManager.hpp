@@ -83,6 +83,9 @@ namespace CNN
       Shape3D cnnOutputShape;
       ulong flattenSize = 0;
 
+      //-- im2col workspace --//
+      ulong maxIm2ColSize = 0; // max(C_in * kH * kW * outH * outW) across all conv layers
+
       //-- Batch size --//
       ulong batchSize = 1;
 
