@@ -2,7 +2,7 @@
 #define CNN_DEFINES_HPP_CL
 
 #define TYPE float
-#define TILE_SIZE 16
+#define TILE_SIZE 16 // Work-group tile dimension for GEMM kernels (16×16 = 256 work-items per group)
 
 //===================================================================================================================//
 // ANN types (must match C++ ANN::ActvFuncType and ANN::Layer)

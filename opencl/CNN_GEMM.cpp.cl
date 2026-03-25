@@ -1,7 +1,36 @@
 #ifndef CNN_GEMM_CPP_CL
 #define CNN_GEMM_CPP_CL
 
-// Note: Depends on CNN_Defines.hpp.cl (TYPE, TILE_SIZE)
+// Tiled General Matrix Multiply (GEMM) kernels for im2col-based convolution.
+//
+// WHY GEMM?
+// Direct convolution (one work-item per output element, nested loops over filter×channels)
+// has poor memory access patterns: each work-item reads scattered, non-contiguous memory
+// locations with no data reuse between neighboring work-items. This wastes GPU memory
+// bandwidth, which is the primary bottleneck.
+//
+// The im2col + GEMM approach reshapes convolution into a matrix multiplication:
+//   Output = Filters × im2col(Input) + Bias
+// Matrix multiplication has regular, predictable access patterns that GPUs excel at.
+// By tiling the computation into TILE_SIZE × TILE_SIZE blocks loaded into fast local
+// (shared) memory, each element is loaded once from global memory and reused TILE_SIZE
+// times, reducing global memory traffic by ~TILE_SIZE×.
+//
+// HOW IT WORKS:
+// Each work-group computes one TILE×TILE block of the output matrix C.
+// The K dimension (shared between A and B) is processed in tiles:
+//   1. All work-items collaboratively load one tile of A and one tile of B into local memory
+//   2. barrier() ensures the tile is fully loaded
+//   3. Each work-item computes a partial dot product using the local tiles
+//   4. barrier() ensures the tile is fully consumed before loading the next one
+//   5. After all K-tiles, the accumulated result is written to global memory
+//
+// Three variants handle the different matrix layouts needed for forward and backward passes:
+//   gemm       — C = A × B + bias  (forward: Output = Filters × im2col + Bias)
+//   gemm_transA — C = A^T × B      (backward: dInput_cols = Filters^T × dOut)
+//   gemm_transB — C = A × B^T      (backward: dFilters = dOut × im2col^T)
+//
+// Depends on CNN_Defines.hpp.cl for TYPE and TILE_SIZE.
 
 //===================================================================================================================//
 

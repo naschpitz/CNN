@@ -1,7 +1,31 @@
 #ifndef CNN_IM2COL_CPP_CL
 #define CNN_IM2COL_CPP_CL
 
-// Note: Depends on CNN_Defines.hpp.cl (TYPE)
+// im2col and col2im kernels for GEMM-based convolution.
+//
+// WHY im2col?
+// Convolution slides a filter over an input tensor, computing element-wise products at
+// each position. This means the same input elements are read multiple times by different
+// output positions (overlapping receptive fields). Direct convolution handles this with
+// nested loops, but the scattered memory access pattern is inefficient on GPUs.
+//
+// im2col ("image to column") rearranges the input so that each column of the output matrix
+// contains all the input values needed for one output position. This transforms convolution
+// into a single matrix multiplication:
+//
+//   Input: (C_in, H, W)  →  im2col matrix: (C_in × kH × kW,  outH × outW)
+//   Filters: (F, C_in, kH, kW)  →  reshaped to: (F,  C_in × kH × kW)
+//   Output = Filters × im2col  →  (F, outH × outW)  →  reshaped to (F, outH, outW)
+//
+// The im2col matrix duplicates input data (overlapping patches share elements), trading
+// memory for regularity. The resulting matrix multiply has perfectly coalesced access
+// patterns and high arithmetic intensity, which GPUs handle efficiently via tiled GEMM.
+//
+// col2im is the inverse operation used during backpropagation to scatter gradients from
+// the column layout back to the input tensor shape. Since patches overlap, multiple column
+// entries map to the same input position, so col2im accumulates (sums) contributions.
+//
+// Depends on CNN_Defines.hpp.cl for TYPE.
 
 //===================================================================================================================//
 

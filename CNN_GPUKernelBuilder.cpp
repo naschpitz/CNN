@@ -163,12 +163,18 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart,
 
     switch (layerConfig.type) {
     case LayerType::CONV: {
+      // Forward convolution via im2col + GEMM:
+      //   1. im2col rearranges input patches into a column matrix in cnn_im2col workspace
+      //   2. gemm computes Output = Filters × im2col_matrix + Bias
+      // This replaces the direct calculate_conv2d kernel for better GPU memory access patterns.
+      // See opencl/CNN_GEMM.cpp.cl and opencl/CNN_Im2Col.cpp.cl for detailed explanations.
       const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
       ulong padY = SlidingStrategy::computePadding(conv.filterH, conv.slidingStrategy);
       ulong padX = SlidingStrategy::computePadding(conv.filterW, conv.slidingStrategy);
       ulong outH = (currentShape.h + 2 * padY - conv.filterH) / conv.strideY + 1;
       ulong outW = (currentShape.w + 2 * padX - conv.filterW) / conv.strideX + 1;
 
+      // im2col matrix dimensions: rows = filter volume, cols = number of output positions
       ulong im2colRows = currentShape.c * conv.filterH * conv.filterW;
       ulong im2colCols = outH * outW;
       ulong im2colSize = im2colRows * im2colCols;
@@ -482,6 +488,11 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
 
     switch (layerConfig.type) {
     case LayerType::CONV: {
+      // Backward convolution via im2col + GEMM (mirrors the forward pass approach):
+      //   dFilters = dOut × im2col(input)^T          (gemm_transB)
+      //   dBiases  = sum of dOut over spatial dims    (existing reduction kernel)
+      //   dInput   = col2im(Filters^T × dOut)         (gemm_transA + col2im)
+      // See opencl/CNN_GEMM.cpp.cl and opencl/CNN_Im2Col.cpp.cl for detailed explanations.
       convIdx--;
       const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
       ulong padY = SlidingStrategy::computePadding(conv.filterH, conv.slidingStrategy);

@@ -205,7 +205,11 @@ void GPUBufferManager<T>::allocateBuffers(ulong batchSize)
     this->core->template allocateBuffer<T>("cnn_accum_dBiases", this->totalBiasSize);
   }
 
-  // im2col workspace buffer — shared across layers, reused sequentially
+  // im2col workspace buffer for GEMM-based convolution.
+  // im2col rearranges input patches into a column matrix so that convolution can be
+  // computed as a matrix multiply (see opencl/CNN_Im2Col.cpp.cl for details).
+  // Sized to the largest im2col matrix across all conv layers — shared and reused
+  // sequentially since layers execute one at a time.
   if (this->maxIm2ColSize > 0) {
     this->core->template allocateBuffer<T>("cnn_im2col", this->maxIm2ColSize);
   }

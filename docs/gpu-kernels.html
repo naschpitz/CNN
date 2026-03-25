@@ -54,7 +54,92 @@
 </nav></aside>
 <main class="main">
 
+<h1>Kernel Reference</h1>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#gemm-kernels">GEMM Kernels</a></li>
+    <li><a href="#im2col-kernels">im2col / col2im Kernels</a></li>
+  </ol>
+</div>
+
+<h2 id="gemm-kernels">GEMM Kernels</h2>
+<p><span class="badge badge-blue">CNN_GEMM.cpp.cl</span></p>
+<p>Tiled General Matrix Multiply kernels used for <a href="math-convolution.html#im2col-gemm">im2col-based convolution</a>. All three variants use the same tiled algorithm with local memory — only the indexing into A or B differs for transpose variants.</p>
+<p>Dispatch: 2D global work size <code>(ceil(N/TILE)*TILE, ceil(M/TILE)*TILE)</code>, local <code>(TILE, TILE)</code>.</p>
+
+<table>
+  <thead>
+    <tr><th>Kernel</th><th>Operation</th><th>Used For</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>gemm</code></td>
+      <td>C = A × B + bias</td>
+      <td>Forward conv: Output = Filters × im2col(Input) + Bias</td>
+    </tr>
+    <tr>
+      <td><code>gemm_transA</code></td>
+      <td>C = A<sup>T</sup> × B</td>
+      <td>Backward dInput: dInput_cols = Filters<sup>T</sup> × dOut</td>
+    </tr>
+    <tr>
+      <td><code>gemm_transB</code></td>
+      <td>C = A × B<sup>T</sup></td>
+      <td>Backward dFilters: dFilters = dOut × im2col(Input)<sup>T</sup></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Arguments (gemm)</h3>
+<table>
+  <thead>
+    <tr><th>Argument</th><th>Type</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>A</code></td><td><code>global TYPE*</code></td><td>Matrix A (filters)</td></tr>
+    <tr><td><code>B</code></td><td><code>global TYPE*</code></td><td>Matrix B (im2col output)</td></tr>
+    <tr><td><code>C</code></td><td><code>global TYPE*</code></td><td>Output matrix (activations)</td></tr>
+    <tr><td><code>bias</code></td><td><code>global TYPE*</code></td><td>Bias vector (length M)</td></tr>
+    <tr><td><code>offsetA/B/C</code></td><td><code>ulong</code></td><td>Byte offsets into each buffer</td></tr>
+    <tr><td><code>offsetBias</code></td><td><code>ulong</code></td><td>Offset into bias buffer</td></tr>
+    <tr><td><code>M, N, K</code></td><td><code>ulong</code></td><td>Matrix dimensions: A is (M,K), B is (K,N), C is (M,N)</td></tr>
+  </tbody>
+</table>
+
+<p>The transpose variants (<code>gemm_transA</code>, <code>gemm_transB</code>) have the same arguments except without <code>bias</code> and <code>offsetBias</code>.</p>
+
+<h2 id="im2col-kernels">im2col / col2im Kernels</h2>
+<p><span class="badge badge-blue">CNN_Im2Col.cpp.cl</span></p>
+
+<h3>im2col</h3>
+<p>Rearranges input patches into a column matrix for GEMM-based convolution. One work-item per output element. Dispatch: 1D, <code>nElements = C_in × K_H × K_W × O_H × O_W</code>.</p>
+
+<table>
+  <thead>
+    <tr><th>Argument</th><th>Type</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>input</code></td><td><code>global TYPE*</code></td><td>Input activation buffer</td></tr>
+    <tr><td><code>col</code></td><td><code>global TYPE*</code></td><td>Output column matrix (cnn_im2col)</td></tr>
+    <tr><td><code>inputOffset</code></td><td><code>ulong</code></td><td>Offset into input buffer</td></tr>
+    <tr><td><code>C, H, W</code></td><td><code>ulong</code></td><td>Input tensor dimensions</td></tr>
+    <tr><td><code>kH, kW</code></td><td><code>ulong</code></td><td>Filter dimensions</td></tr>
+    <tr><td><code>strideY, strideX</code></td><td><code>ulong</code></td><td>Convolution strides</td></tr>
+    <tr><td><code>padY, padX</code></td><td><code>ulong</code></td><td>Padding amounts</td></tr>
+    <tr><td><code>outH, outW</code></td><td><code>ulong</code></td><td>Output spatial dimensions</td></tr>
+  </tbody>
+</table>
+
+<h3>col2im</h3>
+<p>Inverse of im2col — scatters column matrix back to input tensor shape, accumulating overlapping contributions. Used during backpropagation to convert dInput from column layout back to tensor layout. One work-item per <em>input element</em> (avoids float atomics). Dispatch: 1D, <code>nElements = C × H × W</code>.</p>
+
+<div class="warning-box">
+The gradient buffer must be <strong>zeroed</strong> before calling <code>col2im</code>, since it accumulates contributions from overlapping patches.
+</div>
+
+<p>Arguments are the same as <code>im2col</code>, except <code>col</code> is the input (column data) and <code>output</code> is the gradient buffer being written to.</p>
 
 </main>
 </div>

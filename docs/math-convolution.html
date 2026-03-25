@@ -64,6 +64,7 @@
     <li><a href="#conv2d">2D Convolution</a></li>
     <li><a href="#padding-stride">Padding &amp; Stride</a></li>
     <li><a href="#conv-backprop">Backpropagation through Conv2D</a></li>
+    <li><a href="#im2col-gemm">GPU Implementation: im2col + GEMM</a></li>
   </ol>
 </div>
 
@@ -95,8 +96,8 @@ The input is padded with zeros before convolution. The term <code>o_h · s_y + k
 </div>
 
 <div class="tip-box">
-<strong>Code:</strong> <code>Conv2D&lt;T&gt;::propagate(input, config, params)</code> in <code>CNN_Conv2D.cpp</code> implements the full 6-nested-loop convolution.
-On GPU: the <code>calculate_conv2d</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code> parallelises over output elements (one work-item per <em>(f, o_h, o_w)</em>).
+<strong>Code:</strong> <code>Conv2D&lt;T&gt;::propagate(input, config, params)</code> in <code>CNN_Conv2D.cpp</code> implements the full 6-nested-loop convolution (CPU path).
+On GPU: convolution is computed via <a href="#im2col-gemm">im2col + GEMM</a> — the <code>im2col</code> kernel in <code>opencl/CNN_Im2Col.cpp.cl</code> rearranges input patches, then the <code>gemm</code> kernel in <code>opencl/CNN_GEMM.cpp.cl</code> performs the matrix multiply.
 </div>
 
 <h2 id="padding-stride">Padding &amp; Stride</h2>
@@ -138,7 +139,7 @@ O_H = \left\lfloor \frac{H + 2P_Y - K_H}{S_Y} \right\rfloor + 1
 
 <div class="tip-box">
 <strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> in <code>CNN_Conv2D.cpp</code> — the line <code>dFilters[filterIdx] += dOutVal * input.at(c, ih, iw)</code>.
-On GPU: <code>calculate_dCost_dFilters</code> kernel in <code>opencl/CNN_Kernels.cpp.cl</code>.
+On GPU: <code>im2col</code> + <code>gemm_transB</code> — computes dFilters = dOut × im2col(input)<sup>T</sup>.
 </div>
 
 <h3>Bias Gradient</h3>
@@ -159,11 +160,96 @@ On GPU: <code>calculate_dCost_dBiases</code> kernel.
 
 <div class="tip-box">
 <strong>Code:</strong> Inside <code>Conv2D&lt;T&gt;::backpropagate()</code> — the line <code>dInput.at(c, ih, iw) += dOutVal * params.filterAt(f, c, kh, kw)</code>.
-On GPU: <code>calculate_dCost_dInput</code> kernel.
+On GPU: <code>gemm_transA</code> + <code>col2im</code> — computes dInput = col2im(Filters<sup>T</sup> × dOut).
 </div>
 
 <div class="info-box">
 The input gradient is essential when stacking multiple convolutional layers, since it propagates the error signal to previous layers.
+</div>
+
+<h2 id="im2col-gemm">GPU Implementation: im2col + GEMM</h2>
+<p>On the GPU, convolution is not computed directly using the formulas above. Instead, it is reformulated as a matrix multiplication using the <strong>im2col</strong> (image-to-column) transformation. This is the same approach used by cuDNN, MKL-DNN, and most production deep learning frameworks.</p>
+
+<h3>Why Not Direct Convolution?</h3>
+<p>Direct convolution — one work-item per output element, each computing a nested sum over channels and filter positions — has poor GPU performance because:</p>
+<ul>
+  <li><strong>Scattered memory access:</strong> Each work-item reads non-contiguous input locations (jumping by stride, across channels). Adjacent work-items read different, non-adjacent memory addresses, defeating GPU memory coalescing.</li>
+  <li><strong>No data reuse:</strong> Overlapping receptive fields mean the same input elements are loaded from global memory many times by different work-items, wasting bandwidth.</li>
+  <li><strong>Low arithmetic intensity:</strong> The ratio of computation to memory access is low, making the kernel memory-bound on most GPUs.</li>
+</ul>
+
+<h3>The im2col Transformation</h3>
+<p>im2col rearranges the input tensor so that each column contains all the input values needed for one output position. This "unrolls" the convolution into a matrix layout:</p>
+
+<div class="math-block">
+\[
+\underbrace{\text{Input}}_{\scriptsize (C, H, W)} \xrightarrow{\text{im2col}} \underbrace{\text{Column Matrix}}_{\scriptsize (C \cdot K_H \cdot K_W, \; O_H \cdot O_W)}
+\]
+</div>
+
+<p>Each column of the matrix contains the \(C \cdot K_H \cdot K_W\) input values that one filter position "sees". Overlapping patches share input elements, so im2col duplicates data — trading memory for regularity.</p>
+
+<h3>Convolution as Matrix Multiply</h3>
+<p>With the input rearranged, convolution becomes a single matrix multiplication:</p>
+
+<div class="math-block">
+\[
+\underbrace{\text{Output}}_{\scriptsize (F, \; O_H \cdot O_W)} = \underbrace{\text{Filters}}_{\scriptsize (F, \; C \cdot K_H \cdot K_W)} \times \underbrace{\text{im2col(Input)}}_{\scriptsize (C \cdot K_H \cdot K_W, \; O_H \cdot O_W)} + \text{Bias}
+\]
+</div>
+
+<p>Matrix multiplication has perfectly regular access patterns: each element of the output is a dot product of a row of A and a column of B. GPUs can exploit this with <strong>tiled GEMM</strong> — loading tiles into fast local (shared) memory and reusing each element \(T\) times (where \(T\) is the tile size), reducing global memory traffic by ~\(T\times\).</p>
+
+<h3>Tiled GEMM</h3>
+<p>The GEMM kernel divides the output matrix into \(T \times T\) tiles (currently \(T = 16\)). Each work-group computes one tile:</p>
+<ol>
+  <li>All work-items collaboratively load one tile of A and one tile of B from global memory into local memory</li>
+  <li>A <code>barrier()</code> ensures the tile is fully loaded</li>
+  <li>Each work-item computes a partial dot product using only local memory (fast)</li>
+  <li>A second <code>barrier()</code> ensures the tile is consumed before loading the next</li>
+  <li>Repeat for all tiles along the K dimension, accumulating results</li>
+  <li>Write the final accumulated value to global memory</li>
+</ol>
+
+<div class="info-box">
+The tiled approach loads each element from global memory once and reuses it 16 times (for TILE_SIZE=16), reducing memory bandwidth requirements by ~16×. This transforms the kernel from memory-bound to compute-bound on most GPUs.
+</div>
+
+<h3>Backpropagation with GEMM</h3>
+<p>The backward pass uses transpose variants of GEMM, avoiding the need for separate convolution kernels:</p>
+
+<table>
+  <thead>
+    <tr><th>Gradient</th><th>Formula</th><th>GEMM Variant</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>dFilters</strong></td>
+      <td>\(\nabla W = \text{dOut} \times \text{im2col(Input)}^T\)</td>
+      <td><code>gemm_transB</code> — B is transposed during tile loading</td>
+    </tr>
+    <tr>
+      <td><strong>dInput</strong></td>
+      <td>\(\nabla X = \text{col2im}(\text{Filters}^T \times \text{dOut})\)</td>
+      <td><code>gemm_transA</code> — A is transposed during tile loading, then <code>col2im</code> scatters the result back to input shape</td>
+    </tr>
+    <tr>
+      <td><strong>dBiases</strong></td>
+      <td>\(\nabla b[f] = \sum_{o_h, o_w} \text{dOut}[f, o_h, o_w]\)</td>
+      <td>Simple parallel reduction (unchanged)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The transpose variants (<code>gemm_transA</code>, <code>gemm_transB</code>) use the same tiled algorithm as the forward GEMM — only the indexing into A or B changes during tile loading. This means all three GEMM kernels share the same performance characteristics.</p>
+
+<h3>col2im</h3>
+<p><code>col2im</code> is the inverse of <code>im2col</code>: it scatters the column matrix back into the input tensor shape. Since overlapping patches map multiple column entries to the same input position, <code>col2im</code> <strong>accumulates</strong> (sums) contributions. The gradient buffer must be zeroed before <code>col2im</code> runs.</p>
+
+<p>To avoid float atomics (not reliably available in OpenCL), <code>col2im</code> uses one work-item per <em>input element</em> \((c, i_h, i_w)\). Each work-item iterates over all output positions whose receptive field includes that input element and sums the corresponding column values.</p>
+
+<div class="tip-box">
+<strong>Code:</strong> The GEMM kernels are in <code>opencl/CNN_GEMM.cpp.cl</code>, im2col/col2im in <code>opencl/CNN_Im2Col.cpp.cl</code>. The kernel wiring is in <code>CNN_GPUKernelBuilder.cpp</code> — see the CONV cases in <code>addPropagateKernels()</code> and <code>addBackpropagateKernels()</code>. The im2col workspace buffer (<code>cnn_im2col</code>) is allocated in <code>CNN_GPUBufferManager.cpp</code>.
 </div>
 
 </main>

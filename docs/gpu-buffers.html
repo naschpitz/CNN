@@ -54,7 +54,38 @@
 </nav></aside>
 <main class="main">
 
+<h1>GPU Buffer Layout</h1>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#im2col-buffer">im2col Workspace Buffer</a></li>
+  </ol>
+</div>
+
+<h2 id="overview">Overview</h2>
+<p>The CNN GPU implementation uses several OpenCL buffers to store activations, gradients, filter weights, biases, and intermediate data. Buffers are allocated once during initialization and reused across training iterations. Most buffers are sized per-batch (one copy per sample in the batch), while workspace buffers are shared.</p>
+
+<h2 id="im2col-buffer">im2col Workspace Buffer</h2>
+<p>The <code>cnn_im2col</code> buffer is a temporary workspace used by the <a href="math-convolution.html#im2col-gemm">im2col + GEMM convolution</a> approach. It holds the column matrix produced by the <code>im2col</code> kernel — a rearranged copy of the input where each column contains all input values needed for one output position.</p>
+
+<table>
+  <thead>
+    <tr><th>Buffer</th><th>Size</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>cnn_im2col</code></td>
+      <td>max(C<sub>in</sub> × K<sub>H</sub> × K<sub>W</sub> × O<sub>H</sub> × O<sub>W</sub>) across all conv layers</td>
+      <td>Shared workspace for im2col output. Reused sequentially by each conv layer since layers execute one at a time. Not scaled by batch size — each sample is processed independently.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="info-box">
+The im2col buffer is sized to the <strong>largest</strong> conv layer's column matrix. This avoids allocating separate buffers per layer. The buffer is written by <code>im2col</code> and read by <code>gemm</code> (forward) or <code>gemm_transB</code> / <code>gemm_transA</code> (backward). During backward dInput computation, <code>gemm_transA</code> writes to it and <code>col2im</code> reads from it.
+</div>
 
 </main>
 </div>
