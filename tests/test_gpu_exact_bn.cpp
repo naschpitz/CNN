@@ -80,11 +80,11 @@ static void testGPUExactBNForwardBackwardCrossEntropy()
 
   const CNN::Parameters<float>& p = core->getParameters();
 
-  // Conv filter
-  CHECK_NEAR(p.convParams[0].filters[0], 0.1000009552f, 1e-6, "GPU BN-CE filt[0]");
-  CHECK_NEAR(p.convParams[0].filters[1], -0.1999985725f, 1e-6, "GPU BN-CE filt[1]");
-  CHECK_NEAR(p.convParams[0].filters[2], 0.3000019193f, 1e-6, "GPU BN-CE filt[2]");
-  CHECK_NEAR(p.convParams[0].filters[3], -0.09999809414f, 1e-6, "GPU BN-CE filt[3]");
+  // Conv filter (tolerance 1e-5: GEMM accumulation order differs from direct conv)
+  CHECK_NEAR(p.convParams[0].filters[0], 0.1000009552f, 1e-5, "GPU BN-CE filt[0]");
+  CHECK_NEAR(p.convParams[0].filters[1], -0.1999985725f, 1e-5, "GPU BN-CE filt[1]");
+  CHECK_NEAR(p.convParams[0].filters[2], 0.3000019193f, 1e-5, "GPU BN-CE filt[2]");
+  CHECK_NEAR(p.convParams[0].filters[3], -0.09999809414f, 1e-5, "GPU BN-CE filt[3]");
   CHECK_NEAR(p.convParams[0].biases[0], 9.536743164e-07f, 1e-5, "GPU BN-CE conv bias");
 
   // InstanceNorm parameters
@@ -187,8 +187,9 @@ static void testGPUExactBNForwardBackwardWeightedCrossEntropy()
   // Conv filter
   CHECK_NEAR(p.convParams[0].filters[0], 0.1000019088f, 1e-6, "GPU BN-WCE filt[0]");
   CHECK_NEAR(p.convParams[0].filters[1], -0.200000003f, 1e-6, "GPU BN-WCE filt[1]");
-  CHECK_NEAR(p.convParams[0].filters[2], 0.3000000119f, 1e-6, "GPU BN-WCE filt[2]");
-  CHECK_NEAR(p.convParams[0].filters[3], -0.1000000015f, 1e-6, "GPU BN-WCE filt[3]");
+  // Tolerance 1e-5: GEMM accumulation order differs from direct conv
+  CHECK_NEAR(p.convParams[0].filters[2], 0.3000000119f, 1e-5, "GPU BN-WCE filt[2]");
+  CHECK_NEAR(p.convParams[0].filters[3], -0.1000000015f, 1e-5, "GPU BN-WCE filt[3]");
   CHECK_NEAR(p.convParams[0].biases[0], 0.0f, 1e-6, "GPU BN-WCE conv bias");
 
   // InstanceNorm parameters
