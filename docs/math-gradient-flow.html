@@ -117,9 +117,8 @@ The input gradient from the first Conv2D layer is typically discarded since ther
 </ol>
 
 <div class="tip-box">
-<strong>Code:</strong> <strong>Propagation:</strong> <code>CoreCPUWorker&lt;T&gt;::propagateCNN(input)</code> iterates Conv2D/ReLU/Pool/Normalization layers, then <code>Flatten&lt;T&gt;::propagate()</code> converts the 3D tensor to a 1D vector.
-<strong>ANN training step:</strong> <code>annCore-&gt;trainStep(input, expected)</code> runs the ANN forward pass, backward pass, and gradient accumulation in one call, returning <code>TrainStepResult</code> with the predicted output and input-layer gradients.
-<strong>Backpropagation:</strong> The returned <code>inputGradients</code> are reshaped by <code>Flatten&lt;T&gt;::backpropagate()</code> back to 3D, then <code>CoreCPUWorker&lt;T&gt;::backpropagateCNN()</code> iterates CNN layers in reverse, dispatching to <code>Conv2D::backpropagate()</code>, <code>ReLU::backpropagate()</code>, <code>Pool::backpropagate()</code>, and <code>Normalization::backpropagate()</code>.
+<strong>Code:</strong> <strong>Propagation:</strong> <code>CoreCPUWorker&lt;T&gt;::propagateCNN(input)</code> iterates Conv2D/ReLU/Pool/Normalization layers, then <code>Flatten&lt;T&gt;::propagate()</code> converts the 3D tensor to a 1D vector, and the ANN's <code>annCore-&gt;predict()</code> runs the dense layers.
+<strong>Backpropagation:</strong> ANN's <code>annCore-&gt;backpropagate()</code> returns the input gradient, <code>Flatten&lt;T&gt;::backpropagate()</code> reshapes it back to 3D, then <code>CoreCPUWorker&lt;T&gt;::backpropagateCNN()</code> iterates CNN layers in reverse, dispatching to <code>Conv2D::backpropagate()</code>, <code>ReLU::backpropagate()</code>, <code>Pool::backpropagate()</code>, and <code>Normalization::backpropagate()</code>.
 </div>
 
 </main>

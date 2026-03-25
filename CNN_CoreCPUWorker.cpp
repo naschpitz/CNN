@@ -24,10 +24,9 @@ CoreCPUWorker<T>::CoreCPUWorker(const CoreConfig<T>& config, const LayersConfig&
   this->cnnOutputShape = this->layersConfig.validateShapes(config.inputShape);
   this->flattenSize = this->cnnOutputShape.size();
 
-  // Build and create ANN sub-core (always CPU — CNN manages its own device dispatch)
+  // Build and create ANN sub-core
   ANN::CoreConfig<T> annConfig = buildANNConfig(config, this->flattenSize);
-  std::unique_ptr<ANN::Core<T>> core = ANN::Core<T>::makeCore(annConfig);
-  this->annCore.reset(static_cast<ANN::CoreCPU<T>*>(core.release()));
+  this->annCore = ANN::Core<T>::makeCore(annConfig);
 
   // Allocate CNN gradient accumulators if training
   if (allocateTraining) {
@@ -139,17 +138,21 @@ T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expect
   Tensor3D<T> cnnOut = this->propagateCNN(input, true, &intermediates, &poolMaxIndices);
   Tensor1D<T> flatInput = Flatten<T>::propagate(cnnOut);
 
-  // ANN forward + backward + accumulate
+  // ANN propagate
   ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-  ANN::Output<T> annExpected(expected.begin(), expected.end());
-  ANN::TrainStepResult<T> annResult = this->annCore->trainStep(annInput, annExpected);
-  Output<T> predicted(annResult.predicted.begin(), annResult.predicted.end());
+  ANN::Output<T> annOutput = this->annCore->predict(annInput);
+  Output<T> predicted(annOutput.begin(), annOutput.end());
 
   // Loss
   T sampleLoss = this->calculateLoss(predicted, expected);
 
+  // ANN backpropagate + accumulate
+  ANN::Output<T> annExpected(expected.begin(), expected.end());
+  ANN::Tensor1D<T> dFlatInput = this->annCore->backpropagate(annExpected);
+  this->annCore->accumulate();
+
   // CNN backpropagate
-  Tensor1D<T> dFlat(annResult.inputGradients.begin(), annResult.inputGradients.end());
+  Tensor1D<T> dFlat(dFlatInput.begin(), dFlatInput.end());
   Tensor3D<T> dCNNOut = Flatten<T>::backpropagate(dFlat, this->cnnOutputShape);
   std::vector<std::vector<T>> dConvFilters, dConvBiases;
   std::vector<std::vector<T>> dBNGamma, dBNBeta;
