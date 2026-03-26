@@ -2,6 +2,19 @@ cmake_minimum_required(VERSION 3.14)
 
 project(CNN LANGUAGES CXX)
 
+# Auto-update submodules recursively at configure time
+find_package(Git QUIET)
+if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    RESULT_VARIABLE GIT_SUBMOD_RESULT
+  )
+  if(NOT GIT_SUBMOD_RESULT EQUAL "0")
+    message(WARNING "git submodule update --init --recursive failed: ${GIT_SUBMOD_RESULT}")
+  endif()
+endif()
+
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
