@@ -166,7 +166,6 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart,
       // Forward convolution via im2col + GEMM:
       //   1. im2col rearranges input patches into a column matrix in cnn_im2col workspace
       //   2. gemm computes Output = Filters × im2col_matrix + Bias
-      // This replaces the direct calculate_conv2d kernel for better GPU memory access patterns.
       // See opencl/CNN_GEMM.cpp.cl and opencl/CNN_Im2Col.cpp.cl for detailed explanations.
       const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
       ulong padY = SlidingStrategy::computePadding(conv.filterH, conv.slidingStrategy);
