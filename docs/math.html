@@ -56,16 +56,36 @@
 <h1>Mathematical Foundations</h1>
 <p>This section covers the mathematical foundations of the CNN library. Each page connects the mathematical formulas to the exact C++ functions and GPU kernels that implement them.</p>
 
-<h2>Topics</h2>
-<ul>
-  <li><a href="math-convolution.html"><strong>Convolution</strong></a> — 2D convolution, padding &amp; stride, and backpropagation through convolutional layers</li>
-  <li><a href="math-pooling.html"><strong>Pooling</strong></a> — Max and average pooling backpropagation</li>
-  <li><a href="math-activations.html"><strong>Activations</strong></a> — ReLU and its gradient</li>
-  <li><a href="math-normalization.html"><strong>Normalization</strong></a> — Instance and Batch normalization: forward/backward pass, running statistics, and inference</li>
-  <li><a href="math-initialization.html"><strong>Weight Initialization</strong></a> — He/Kaiming initialisation for ReLU networks</li>
-  <li><a href="math-optimizers.html"><strong>Optimizers</strong></a> — SGD and Adam update rules</li>
-  <li><a href="math-gradient-flow.html"><strong>Gradient Flow</strong></a> — End-to-end gradient flow through a complete CNN pipeline</li>
-</ul>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;">
+  <a href="math-convolution.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">🔲 Convolution</h3>
+    <p style="font-size:.9rem;">2D convolution, padding &amp; stride, im2col + GEMM, and backpropagation.</p>
+  </a>
+  <a href="math-pooling.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">📐 Pooling</h3>
+    <p style="font-size:.9rem;">Max and average pooling with backpropagation.</p>
+  </a>
+  <a href="math-activations.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">⚡ Activations</h3>
+    <p style="font-size:.9rem;">ReLU and its gradient.</p>
+  </a>
+  <a href="math-normalization.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">📊 Normalization</h3>
+    <p style="font-size:.9rem;">Instance and Batch normalization: forward/backward, running statistics.</p>
+  </a>
+  <a href="math-initialization.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">🎯 Weight Initialization</h3>
+    <p style="font-size:.9rem;">He/Kaiming initialization for ReLU networks.</p>
+  </a>
+  <a href="math-optimizers.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">⚙️ Optimizers</h3>
+    <p style="font-size:.9rem;">SGD and Adam update rules.</p>
+  </a>
+  <a href="math-gradient-flow.html" class="card" style="text-decoration:none;color:inherit;">
+    <h3 style="color:var(--primary);">🔄 Gradient Flow</h3>
+    <p style="font-size:.9rem;">End-to-end gradient flow through a complete CNN pipeline.</p>
+  </a>
+</div>
 
 </main>
 </div>
