@@ -81,6 +81,9 @@ build/
 .augment/
 INSTRUCTIONS.md
 
+# Local planning / todo files
+todo/
+
 # Exploration/documentation files (auto-generated)
 EXPLORATION_COMPLETE.txt
 GPU_DATA_FLOW.md
