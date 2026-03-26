@@ -65,6 +65,7 @@
     <li><a href="#padding-stride">Padding &amp; Stride</a></li>
     <li><a href="#conv-backprop">Backpropagation through Conv2D</a></li>
     <li><a href="#im2col-gemm">GPU Implementation: im2col + GEMM</a></li>
+    <li><a href="#perf-comparison">Performance: CNN Library vs PyTorch</a></li>
   </ol>
 </div>
 
@@ -178,8 +179,25 @@ The input gradient is essential when stacking multiple convolutional layers, sin
   <li><strong>Low arithmetic intensity:</strong> The ratio of computation to memory access is low, making the kernel memory-bound on most GPUs.</li>
 </ul>
 
+<h3>Why im2col Is Needed</h3>
+
+<p>The input is a 3D tensor <code>(C, H, W)</code> stored flat in row-major memory. The values a filter needs for a single output position are <strong>scattered</strong> across memory — they are not contiguous. Consider a 3×3 filter at output position <code>(oh=5, ow=10)</code> on a <code>(3, 450, 600)</code> input. The filter needs these 27 values:</p>
+
+<pre><code>input[0, 5, 10]  input[0, 5, 11]  input[0, 5, 12]    ← channel 0, row 5
+input[0, 6, 10]  input[0, 6, 11]  input[0, 6, 12]    ← channel 0, row 6
+input[0, 7, 10]  input[0, 7, 11]  input[0, 7, 12]    ← channel 0, row 7
+input[1, 5, 10]  input[1, 5, 11]  input[1, 5, 12]    ← channel 1, row 5
+...                                                    ← 9 more values</code></pre>
+
+<p>In flat memory (row-major, C×H×W), those are at positions:</p>
+
+<pre><code>3010, 3011, 3012, 3610, 3611, 3612, 4210, 4211, 4212,   ← channel 0
+273010, 273011, 273012, ...                               ← channel 1 (offset by 450×600 = 270,000)</code></pre>
+
+<p>They jump by 600 between rows and by 270,000 between channels. This is terrible for GEMM, which needs contiguous rows and columns to stream through memory efficiently.</p>
+
 <h3>The im2col Transformation</h3>
-<p>im2col rearranges the input tensor so that each column contains all the input values needed for one output position. This "unrolls" the convolution into a matrix layout:</p>
+<p>im2col gathers those scattered values and writes them as one contiguous column. It does this for every output position, producing a column matrix:</p>
 
 <div class="math-block">
 \[
@@ -187,7 +205,13 @@ The input gradient is essential when stacking multiple convolutional layers, sin
 \]
 </div>
 
-<p>Each column of the matrix contains the \(C \cdot K_H \cdot K_W\) input values that one filter position "sees". Overlapping patches share input elements, so im2col duplicates data — trading memory for regularity.</p>
+<p>Column <em>j</em> of the result contains the \(C \cdot K_H \cdot K_W\) input values needed for output position <em>j</em>, packed contiguously. Now GEMM can stream through memory sequentially.</p>
+
+<p>The trade-off is memory: im2col duplicates data because adjacent patches share overlapping values. For a 3×3 filter with stride 1, each input value gets copied into up to 9 columns. But the regular access pattern makes GEMM dramatically faster than reading scattered locations.</p>
+
+<div class="info-box">
+<strong>1×1 convolutions:</strong> When the filter is 1×1, the "patch" is just one pixel across all channels — which is already a column of the input reshaped as <code>(C, H×W)</code>. Frameworks like PyTorch skip im2col entirely for 1×1 convolutions. This library does not currently optimize for that case.
+</div>
 
 <h3>Convolution as Matrix Multiply</h3>
 <p>With the input rearranged, convolution becomes a single matrix multiplication:</p>
@@ -263,6 +287,37 @@ The result is in im2col layout, so <code>col2im</code> scatters it back to the a
 
 <div class="tip-box">
 <strong>Code:</strong> The GEMM kernels are in <code>opencl/CNN_GEMM.cpp.cl</code>, im2col/col2im in <code>opencl/CNN_Im2Col.cpp.cl</code>. The kernel wiring is in <code>CNN_GPUKernelBuilder.cpp</code> — see the CONV cases in <code>addPropagateKernels()</code> and <code>addBackpropagateKernels()</code>. The im2col workspace buffer (<code>cnn_im2col</code>) is allocated in <code>CNN_GPUBufferManager.cpp</code>.
+</div>
+
+<h2 id="perf-comparison">Performance: CNN Library vs PyTorch</h2>
+
+<p>On an NVIDIA RTX 4090, this library's GPU convolution is roughly <strong>7–10× slower</strong> than PyTorch/cuDNN for the same network architecture. This is not a single bottleneck — it is the product of several independent factors:</p>
+
+<h3>Tensor Cores — ~2×</h3>
+<p>The RTX 4090 has dedicated tensor cores that deliver 165 TFLOPS (TF32) vs 83 TFLOPS on regular CUDA cores. PyTorch uses TF32 by default — a slightly reduced precision format (10-bit mantissa vs 23-bit for FP32) that is accurate enough for training but runs at 2× throughput.</p>
+<p><strong>Tensor cores are only accessible via CUDA's WMMA instructions or through cuBLAS/cuDNN. There is no OpenCL API for tensor cores.</strong> This is a hard 2× ceiling that cannot be broken on NVIDIA hardware with OpenCL.</p>
+
+<h3>Winograd Algorithm for 3×3 Convolutions — ~2×</h3>
+<p>cuDNN uses the Winograd minimal filtering algorithm for 3×3 convolutions, which is a mathematical transformation that reduces the number of multiplications by ~2.25×. Instead of 9 multiplies per output position per channel, Winograd does ~4. This is not a GPU trick — it is a different algorithm entirely that could be implemented in OpenCL, but it is complex (requires pre/post-transforming both filters and input tiles into the Winograd domain).</p>
+
+<h3>cuBLAS Hand-Tuned GEMM vs Textbook Tiled GEMM — ~1.5–2×</h3>
+<p>cuBLAS GEMM kernels are hand-tuned per GPU architecture by NVIDIA engineers over many years. They use register blocking, vectorized loads, software pipelining, and warp-level shuffle instructions — all CUDA-specific features. This library's tiled GEMM is correct and uses shared memory for data reuse, but it likely hits 20–30% of peak FLOPS while cuBLAS hits 80–90%.</p>
+
+<h3>CUDA vs OpenCL Driver Overhead — ~1.2–1.3×</h3>
+<p>NVIDIA's OpenCL implementation is a second-class citizen compared to CUDA. The CUDA runtime has lower kernel dispatch latency, better compiler optimizations, and tighter hardware integration.</p>
+
+<h3>Combined Effect</h3>
+<p>These factors multiply:</p>
+<div class="math-block">
+\[
+2\times \text{(tensor cores)} \times 2\times \text{(Winograd)} \times 1.5\times \text{(cuBLAS)} \times 1.2\times \text{(CUDA overhead)} \approx 7\times
+\]
+</div>
+
+<p>The dominant factors are tensor cores and Winograd — hardware that cannot be accessed from OpenCL and an algorithm not currently implemented. The GEMM quality gap matters but is the smallest factor.</p>
+
+<div class="info-box">
+<strong>On AMD GPUs</strong> (e.g., RX 480), the tensor core gap disappears since AMD's matrix cores are not used by PyTorch's ROCm backend for all operations. The gap narrows to roughly 3–4× (Winograd + hand-tuned GEMM + framework overhead).
 </div>
 
 </main>
