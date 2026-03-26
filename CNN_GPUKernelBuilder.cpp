@@ -205,10 +205,8 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart,
       ulong N = im2colCols;
       ulong K = im2colRows;
       ulong TILE = 16;
-      ulong WPT = 4;
-      ulong BLOCK = TILE * WPT;
-      ulong globalX = ((N + BLOCK - 1) / BLOCK) * TILE;
-      ulong globalY = ((M + BLOCK - 1) / BLOCK) * TILE;
+      ulong globalX = ((N + TILE - 1) / TILE) * TILE;
+      ulong globalY = ((M + TILE - 1) / TILE) * TILE;
 
       ulong filterOffset = this->bufferManager.convInfos[convIdx].filterOffset;
       ulong biasOffset = this->bufferManager.convInfos[convIdx].biasOffset;
@@ -508,8 +506,6 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
       ulong filterOffset = this->bufferManager.convInfos[convIdx].filterOffset;
       ulong biasOffset = this->bufferManager.convInfos[convIdx].biasOffset;
       ulong TILE = 16;
-      ulong WPT = 4;
-      ulong BLOCK = TILE * WPT;
 
       // --- dFilters: im2col(input) then dFilters = dOut × im2col^T ---
 
@@ -538,8 +534,8 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
       ulong dF_M = conv.numFilters;
       ulong dF_N = im2colRows;
       ulong dF_K = im2colCols;
-      ulong dF_globalX = ((dF_N + BLOCK - 1) / BLOCK) * TILE;
-      ulong dF_globalY = ((dF_M + BLOCK - 1) / BLOCK) * TILE;
+      ulong dF_globalX = ((dF_N + TILE - 1) / TILE) * TILE;
+      ulong dF_globalY = ((dF_M + TILE - 1) / TILE) * TILE;
 
       std::string gemmFiltId = "gemm_dFilters" + kernelSuffix;
       this->core->addKernel(gemmFiltId, "gemm_transB", dF_globalX, dF_globalY, TILE, TILE);
@@ -584,8 +580,8 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
         ulong dI_M = im2colRows;
         ulong dI_N = im2colCols;
         ulong dI_K = conv.numFilters;
-        ulong dI_globalX = ((dI_N + BLOCK - 1) / BLOCK) * TILE;
-        ulong dI_globalY = ((dI_M + BLOCK - 1) / BLOCK) * TILE;
+        ulong dI_globalX = ((dI_N + TILE - 1) / TILE) * TILE;
+        ulong dI_globalY = ((dI_M + TILE - 1) / TILE) * TILE;
 
         std::string gemmInputId = "gemm_dInput" + kernelSuffix;
         this->core->addKernel(gemmInputId, "gemm_transA", dI_globalX, dI_globalY, TILE, TILE);
