@@ -3,6 +3,7 @@
 
 #define TYPE float
 #define TILE_SIZE 16 // Work-group tile dimension for GEMM kernels (16×16 = 256 work-items per group)
+#define WPT 4 // Work-per-thread: each thread computes a WPT×WPT sub-block of the output
 
 //===================================================================================================================//
 // ANN types (must match C++ ANN::ActvFuncType and ANN::Layer)
