@@ -71,7 +71,7 @@
 
 <div class="math-block">
 \[
-\frac{\partial L}{\partial X[c,i_h,i_w]} = \begin{cases} \frac{\partial L}{\partial O[c,o_h,o_w]} & \text{if } (i_h, i_w) = \text{argmax} \\ 0 & \text{otherwise} \end{cases}
+\frac{\partial C}{\partial X[c,i_h,i_w]} = \begin{cases} \frac{\partial C}{\partial O[c,o_h,o_w]} & \text{if } (i_h, i_w) = \text{argmax} \\ 0 & \text{otherwise} \end{cases}
 \]
 </div>
 
@@ -80,7 +80,7 @@
 
 <div class="math-block">
 \[
-\frac{\partial L}{\partial X[c,i_h,i_w]} = \frac{1}{P_H \cdot P_W} \cdot \frac{\partial L}{\partial O[c,o_h,o_w]}
+\frac{\partial C}{\partial X[c,i_h,i_w]} = \frac{1}{P_H \cdot P_W} \cdot \frac{\partial C}{\partial O[c,o_h,o_w]}
 \]
 </div>
 

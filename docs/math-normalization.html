@@ -123,21 +123,21 @@ On GPU: <code>norm_compute_mean</code>, <code>norm_compute_var</code>, and <code
 </div>
 
 <h2 id="backward">Backward Pass</h2>
-<p>Given upstream gradient \(\frac{\partial L}{\partial Y}\), we compute gradients for \(\gamma\), \(\beta\), and the input \(X\). Let \(S\) be the normalization scope size (as defined above).</p>
+<p>Given upstream gradient \(\frac{\partial C}{\partial Y}\), we compute gradients for \(\gamma\), \(\beta\), and the input \(X\). Let \(S\) be the normalization scope size (as defined above).</p>
 
 <h3>Gamma Gradient</h3>
 <div class="math-block">
-\[\frac{\partial L}{\partial \gamma_c} = \sum_{i \in \mathcal{S}} \frac{\partial L}{\partial Y_i} \cdot \hat{X}_i\]
+\[\frac{\partial C}{\partial \gamma_c} = \sum_{i \in \mathcal{S}} \frac{\partial C}{\partial Y_i} \cdot \hat{X}_i\]
 </div>
 
 <h3>Beta Gradient</h3>
 <div class="math-block">
-\[\frac{\partial L}{\partial \beta_c} = \sum_{i \in \mathcal{S}} \frac{\partial L}{\partial Y_i}\]
+\[\frac{\partial C}{\partial \beta_c} = \sum_{i \in \mathcal{S}} \frac{\partial C}{\partial Y_i}\]
 </div>
 
 <h3>Input Gradient</h3>
 <div class="math-block">
-\[\frac{\partial L}{\partial X_i} = \frac{\gamma_c}{\sqrt{\sigma_c^2 + \epsilon}} \left( \frac{\partial L}{\partial Y_i} - \frac{1}{S} \frac{\partial L}{\partial \beta_c} - \frac{\hat{X}_i}{S} \frac{\partial L}{\partial \gamma_c} \right)\]
+\[\frac{\partial C}{\partial X_i} = \frac{\gamma_c}{\sqrt{\sigma_c^2 + \epsilon}} \left( \frac{\partial C}{\partial Y_i} - \frac{1}{S} \frac{\partial C}{\partial \beta_c} - \frac{\hat{X}_i}{S} \frac{\partial C}{\partial \gamma_c} \right)\]
 </div>
 
 <div class="tip-box">

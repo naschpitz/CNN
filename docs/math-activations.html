@@ -70,11 +70,11 @@
 
 <div class="math-block">
 \[
-\frac{\partial L}{\partial X_i} = \begin{cases} \frac{\partial L}{\partial Y_i} & \text{if } X_i > 0 \\ 0 & \text{otherwise} \end{cases}
+\frac{\partial C}{\partial X_i} = \begin{cases} \frac{\partial C}{\partial Y_i} & \text{if } X_i > 0 \\ 0 & \text{otherwise} \end{cases}
 \]
 </div>
 
-<p>This can be written compactly as: \(\frac{\partial L}{\partial X_i} = \mathbb{1}_{X_i > 0} \cdot \frac{\partial L}{\partial Y_i}\), where \(\mathbb{1}\) is the indicator function.</p>
+<p>This can be written compactly as: \(\frac{\partial C}{\partial X_i} = \mathbb{1}_{X_i > 0} \cdot \frac{\partial C}{\partial Y_i}\), where \(\mathbb{1}\) is the indicator function.</p>
 
 <div class="tip-box">
 <strong>Code:</strong> <code>ReLU&lt;T&gt;::propagate(input)</code> and <code>ReLU&lt;T&gt;::backpropagate(dOut, input)</code> in <code>CNN_ReLU.cpp</code>. Backpropagation uses the original input to determine where the gradient passes through (<code>input.data[i] &gt; 0</code>).

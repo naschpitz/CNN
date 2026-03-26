@@ -129,12 +129,12 @@ O_H = \left\lfloor \frac{H + 2P_Y - K_H}{S_Y} \right\rfloor + 1
 </div>
 
 <h2 id="conv-backprop">Backpropagation through Conv2D</h2>
-<p>During backpropagation, gradients flow through the convolution layer in reverse. Given the upstream gradient \(\frac{\partial L}{\partial O[f,o_h,o_w]}\), we compute gradients with respect to filters, biases, and inputs.</p>
+<p>During backpropagation, gradients flow through the convolution layer in reverse. Given the upstream gradient \(\frac{\partial C}{\partial O[f,o_h,o_w]}\), we compute gradients with respect to filters, biases, and inputs.</p>
 
 <h3>Filter Gradient</h3>
 <div class="math-block">
 \[
-\frac{\partial L}{\partial W[f,c,k_h,k_w]} = \sum_{o_h} \sum_{o_w} \frac{\partial L}{\partial O[f,o_h,o_w]} \cdot X[c, o_h \cdot s_y + k_h - p_y, o_w \cdot s_x + k_w - p_x]
+\frac{\partial C}{\partial W[f,c,k_h,k_w]} = \sum_{o_h} \sum_{o_w} \frac{\partial C}{\partial O[f,o_h,o_w]} \cdot X[c, o_h \cdot s_y + k_h - p_y, o_w \cdot s_x + k_w - p_x]
 \]
 </div>
 
@@ -145,7 +145,7 @@ On GPU: <code>im2col</code> + <code>gemm_transB</code> — computes dFilters = d
 
 <h3>Bias Gradient</h3>
 <div class="math-block">
-\[\frac{\partial L}{\partial b[f]} = \sum_{o_h} \sum_{o_w} \frac{\partial L}{\partial O[f,o_h,o_w]}\]
+\[\frac{\partial C}{\partial b[f]} = \sum_{o_h} \sum_{o_w} \frac{\partial C}{\partial O[f,o_h,o_w]}\]
 </div>
 
 <div class="tip-box">
@@ -155,7 +155,7 @@ On GPU: <code>calculate_dCost_dBiases</code> kernel.
 
 <h3>Input Gradient</h3>
 <div class="math-block">
-\[\frac{\partial L}{\partial X[c,i_h,i_w]} = \sum_f \sum_{k_h} \sum_{k_w} \frac{\partial L}{\partial O[f,o_h,o_w]} \cdot W[f,c,k_h,k_w]\]
+\[\frac{\partial C}{\partial X[c,i_h,i_w]} = \sum_f \sum_{k_h} \sum_{k_w} \frac{\partial C}{\partial O[f,o_h,o_w]} \cdot W[f,c,k_h,k_w]\]
 </div>
 <p>where \(o_h = \frac{i_h + p_y - k_h}{s_y}\) (only when evenly divisible).</p>
 
