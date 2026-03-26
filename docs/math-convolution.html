@@ -216,32 +216,45 @@ The tiled approach loads each element from global memory once and reuses it 16 t
 </div>
 
 <h3>Backpropagation with GEMM</h3>
-<p>The backward pass uses transpose variants of GEMM, avoiding the need for separate convolution kernels:</p>
+<p>The backward pass reuses the same GEMM machinery. Each gradient computation is a matrix multiply between the upstream gradient (dOut) and the appropriate matrix — filters or im2col(input) — with the correct one transposed. The "transA" and "transB" variants don't actually transpose data in memory; they simply change the indexing during tile loading to read rows as columns or vice versa.</p>
 
 <table>
   <thead>
-    <tr><th>Gradient</th><th>Formula</th><th>GEMM Variant</th></tr>
+    <tr><th>What We Compute</th><th>Meaning</th><th>Formula</th><th>Kernel</th></tr>
   </thead>
   <tbody>
     <tr>
       <td><strong>dFilters</strong></td>
+      <td>How much each filter weight contributed to the error</td>
       <td>\(\nabla W = \text{dOut} \times \text{im2col(Input)}^T\)</td>
-      <td><code>gemm_transB</code> — B is transposed during tile loading</td>
+      <td><code>gemm_transB</code></td>
     </tr>
     <tr>
       <td><strong>dInput</strong></td>
+      <td>How to distribute the error back to the previous layer</td>
       <td>\(\nabla X = \text{col2im}(\text{Filters}^T \times \text{dOut})\)</td>
-      <td><code>gemm_transA</code> — A is transposed during tile loading, then <code>col2im</code> scatters the result back to input shape</td>
+      <td><code>gemm_transA</code> + <code>col2im</code></td>
     </tr>
     <tr>
       <td><strong>dBiases</strong></td>
+      <td>How much each bias contributed to the error</td>
       <td>\(\nabla b[f] = \sum_{o_h, o_w} \text{dOut}[f, o_h, o_w]\)</td>
-      <td>Simple parallel reduction (unchanged)</td>
+      <td><code>calculate_dCost_dBiases</code></td>
     </tr>
   </tbody>
 </table>
 
-<p>The transpose variants (<code>gemm_transA</code>, <code>gemm_transB</code>) use the same tiled algorithm as the forward GEMM — only the indexing into A or B changes during tile loading. This means all three GEMM kernels share the same performance characteristics.</p>
+<h4>Why transB for dFilters?</h4>
+<p>dFilters asks: "for each filter weight, how much did it contribute to the total error?"
+The answer is the correlation between the upstream gradient (dOut, one value per output position) and the input patches (im2col, one column per output position).
+This is <code>dOut × im2col<sup>T</sup></code> — we transpose im2col because it is stored as (filterVolume, spatialPositions) but we need to correlate along the spatial dimension, so the spatial positions must be the shared K dimension.</p>
+
+<h4>Why transA for dInput?</h4>
+<p>dInput asks: "how should the error be distributed back to each input pixel?"
+The answer requires projecting dOut through the filters in reverse — <code>Filters<sup>T</sup> × dOut</code>.
+We transpose the Filters matrix because it is stored as (numFilters, filterVolume) but we need (filterVolume, numFilters)
+so that we map from output-space errors back into input-space (filterVolume) positions.
+The result is in im2col layout, so <code>col2im</code> scatters it back to the actual input tensor shape, accumulating where patches overlap.</p>
 
 <h3>col2im</h3>
 <p><code>col2im</code> is the inverse of <code>im2col</code>: it scatters the column matrix back into the input tensor shape. Since overlapping patches map multiple column entries to the same input position, <code>col2im</code> <strong>accumulates</strong> (sums) contributions. The gradient buffer must be zeroed before <code>col2im</code> runs.</p>

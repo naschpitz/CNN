@@ -59,35 +59,102 @@
 <div class="toc">
   <h4>On this page</h4>
   <ol>
+    <li><a href="#conv-pipeline">Convolution Kernel Pipeline</a></li>
     <li><a href="#gemm-kernels">GEMM Kernels</a></li>
     <li><a href="#im2col-kernels">im2col / col2im Kernels</a></li>
   </ol>
 </div>
 
+<h2 id="conv-pipeline">Convolution Kernel Pipeline</h2>
+
+<p>Convolution on the GPU is computed via <strong>im2col + GEMM</strong> instead of direct convolution kernels.
+The im2col transformation rearranges the input so that convolution becomes a matrix multiplication — see
+<a href="math-convolution.html#im2col-gemm">Math: im2col + GEMM</a> for the full explanation.
+The tables below show exactly which kernels run for each logical operation per conv layer:</p>
+
+<h3>Forward Pass (per conv layer)</h3>
+<table>
+  <thead>
+    <tr><th>Step</th><th>Logical Operation</th><th>Kernels</th><th>What It Does</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>Compute convolution output</td>
+      <td><code>im2col</code> → <code>gemm</code></td>
+      <td>Rearranges input patches into a column matrix, then computes
+          <strong>Output = Filters × im2col(Input) + Bias</strong>.
+          Each row of the Filters matrix is one filter flattened; each column of the im2col matrix
+          is one input patch. The matrix product computes all filters at all spatial positions in one operation.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Backward Pass (per conv layer)</h3>
+<table>
+  <thead>
+    <tr><th>Step</th><th>Logical Operation</th><th>Kernels</th><th>What It Does</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>Compute filter gradients</td>
+      <td><code>im2col</code> → <code>gemm_transB</code></td>
+      <td>Computes <strong>dFilters = dOut × im2col(Input)<sup>T</sup></strong>.
+          Each element of dFilters is the dot product of one row of dOut (gradient at each spatial position for filter f)
+          and one column of im2col<sup>T</sup> (input values seen by that filter element).
+          B is transposed because im2col is stored as (rows, cols) but we need the input patches as rows, not columns.</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>Compute bias gradients</td>
+      <td><code>calculate_dCost_dBiases</code></td>
+      <td>Sums dOut over all spatial positions per filter:
+          <strong>dBias[f] = Σ dOut[f, o_h, o_w]</strong>. Uses parallel reduction (one work-group per filter).</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>Compute input gradients</td>
+      <td><code>gemm_transA</code> → <code>col2im</code></td>
+      <td>Computes <strong>dInput_cols = Filters<sup>T</sup> × dOut</strong>, then scatters back to input shape.
+          A is transposed because Filters are stored as (numFilters, filterVolume) but we need (filterVolume, numFilters)
+          to project the output gradients back into the input space.
+          The <code>col2im</code> kernel reverses the im2col rearrangement, accumulating overlapping patch contributions.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="info-box">
+<strong>Why transpose variants instead of actually transposing matrices?</strong>
+Transposing a large matrix on GPU is itself an expensive memory operation. Instead, <code>gemm_transA</code> and <code>gemm_transB</code>
+read the matrix elements in transposed order during the tile-loading phase — <code>A[col][row]</code> instead of <code>A[row][col]</code>.
+Same data, different indexing, zero extra memory or kernel launches.
+</div>
+
 <h2 id="gemm-kernels">GEMM Kernels</h2>
 <p><span class="badge badge-blue">CNN_GEMM.cpp.cl</span></p>
-<p>Tiled General Matrix Multiply kernels used for <a href="math-convolution.html#im2col-gemm">im2col-based convolution</a>. All three variants use the same tiled algorithm with local memory — only the indexing into A or B differs for transpose variants.</p>
+<p>Tiled General Matrix Multiply kernels. All three variants use the same tiled algorithm with local memory — only the indexing into A or B differs for transpose variants.</p>
 <p>Dispatch: 2D global work size <code>(ceil(N/TILE)*TILE, ceil(M/TILE)*TILE)</code>, local <code>(TILE, TILE)</code>.</p>
 
 <table>
   <thead>
-    <tr><th>Kernel</th><th>Operation</th><th>Used For</th></tr>
+    <tr><th>Kernel</th><th>Matrix Operation</th><th>Convolution Equivalent</th></tr>
   </thead>
   <tbody>
     <tr>
       <td><code>gemm</code></td>
       <td>C = A × B + bias</td>
-      <td>Forward conv: Output = Filters × im2col(Input) + Bias</td>
-    </tr>
-    <tr>
-      <td><code>gemm_transA</code></td>
-      <td>C = A<sup>T</sup> × B</td>
-      <td>Backward dInput: dInput_cols = Filters<sup>T</sup> × dOut</td>
+      <td>Forward: compute all filter outputs at all spatial positions</td>
     </tr>
     <tr>
       <td><code>gemm_transB</code></td>
       <td>C = A × B<sup>T</sup></td>
-      <td>Backward dFilters: dFilters = dOut × im2col(Input)<sup>T</sup></td>
+      <td>Backward: compute how much each filter weight contributed to the error (dFilters)</td>
+    </tr>
+    <tr>
+      <td><code>gemm_transA</code></td>
+      <td>C = A<sup>T</sup> × B</td>
+      <td>Backward: project output error back into input space (dInput)</td>
     </tr>
   </tbody>
 </table>
