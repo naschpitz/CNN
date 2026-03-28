@@ -142,6 +142,9 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart,
     case LayerType::GLOBALAVGPOOL:
       currentShape = {currentShape.c, 1, 1};
       break;
+    case LayerType::GLOBALDUALPOOL:
+      currentShape = {currentShape.c * 2, 1, 1};
+      break;
     case LayerType::INSTANCENORM:
     case LayerType::BATCHNORM:
       normIdx++;
@@ -304,6 +307,23 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart,
       break;
     }
 
+    case LayerType::GLOBALDUALPOOL: {
+      ulong localWS = 256;
+      ulong gdpGlobalWS = currentShape.c * localWS;
+
+      std::string kernelId = "gdp_propagate" + kernelSuffix;
+      this->core->addKernel(kernelId, "gdp_propagate", gdpGlobalWS, 0, localWS);
+      this->core->template addArgument<T>(kernelId, "cnn_actvs");
+      this->core->template addArgument<ulong>(kernelId, inOffset);
+      this->core->template addArgument<ulong>(kernelId, outOffset);
+      this->core->template addArgument<ulong>(kernelId, currentShape.c);
+      this->core->template addArgument<ulong>(kernelId, currentShape.h);
+      this->core->template addArgument<ulong>(kernelId, currentShape.w);
+
+      currentShape = {currentShape.c * 2, 1, 1};
+      break;
+    }
+
     case LayerType::INSTANCENORM: {
       const auto& bn = std::get<NormLayerConfig>(layerConfig.config);
       ulong size = currentShape.size();
@@ -441,6 +461,9 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
 
     case LayerType::GLOBALAVGPOOL:
       shapes[i + 1] = {inShape.c, 1, 1};
+      break;
+    case LayerType::GLOBALDUALPOOL:
+      shapes[i + 1] = {inShape.c * 2, 1, 1};
       break;
     default:
       shapes[i + 1] = inShape;
@@ -679,6 +702,22 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
       this->core->template addArgument<T>(kernelId, "cnn_grads");
       this->core->template addArgument<ulong>(kernelId, gradInOffset);
       this->core->template addArgument<ulong>(kernelId, gradOutOffset);
+      this->core->template addArgument<ulong>(kernelId, inShape.c);
+      this->core->template addArgument<ulong>(kernelId, inShape.h);
+      this->core->template addArgument<ulong>(kernelId, inShape.w);
+      break;
+    }
+
+    case LayerType::GLOBALDUALPOOL: {
+      ulong size = inShape.size();
+
+      std::string kernelId = "gdp_back" + kernelSuffix;
+      this->core->addKernel(kernelId, "gdp_backpropagate", size, 0);
+      this->core->template addArgument<T>(kernelId, "cnn_grads");
+      this->core->template addArgument<T>(kernelId, "cnn_actvs");
+      this->core->template addArgument<ulong>(kernelId, gradInOffset);
+      this->core->template addArgument<ulong>(kernelId, gradOutOffset);
+      this->core->template addArgument<ulong>(kernelId, actvInOffset);
       this->core->template addArgument<ulong>(kernelId, inShape.c);
       this->core->template addArgument<ulong>(kernelId, inShape.h);
       this->core->template addArgument<ulong>(kernelId, inShape.w);

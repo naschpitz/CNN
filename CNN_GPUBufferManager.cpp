@@ -111,6 +111,12 @@ void GPUBufferManager<T>::computeLayerOffsets()
       break;
     }
 
+    case LayerType::GLOBALDUALPOOL: {
+      // Global dual pooling: avg + max concatenated, (C,H,W) -> (2C,1,1)
+      outShape = {currentShape.c * 2, 1, 1};
+      break;
+    }
+
     case LayerType::INSTANCENORM: {
       // Instance norm doesn't change shape
       InstanceNormInfo bi;
@@ -173,6 +179,7 @@ void GPUBufferManager<T>::loadSources(bool skipDefines)
   this->core->addSourceFile(srcDir + "opencl/CNN_Bridge.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_Normalization.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_GlobalAvgPool.cpp.cl");
+  this->core->addSourceFile(srcDir + "opencl/CNN_GlobalDualPool.cpp.cl");
 
   if (this->workerConfig.logLevel >= CNN::LogLevel::INFO)
     std::cout << "CNN OpenCL kernels loaded.\n";
@@ -364,6 +371,9 @@ void GPUBufferManager<T>::buildANNWorker()
 
     case LayerType::GLOBALAVGPOOL:
       currentShape = {currentShape.c, 1, 1};
+      break;
+    case LayerType::GLOBALDUALPOOL:
+      currentShape = {currentShape.c * 2, 1, 1};
       break;
     case LayerType::INSTANCENORM:
       break;

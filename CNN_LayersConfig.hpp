@@ -46,6 +46,10 @@ namespace CNN
   struct GlobalAvgPoolLayerConfig {
   };
 
+  // Global dual pooling layer configuration (avg + max concatenated, no parameters)
+  struct GlobalDualPoolLayerConfig {
+  };
+
   // Batch normalization layer configuration
   struct NormLayerConfig {
       float epsilon = 1e-5f; // Small constant for numerical stability
@@ -53,12 +57,12 @@ namespace CNN
   };
 
   // A CNN layer can be any of these types
-  enum class LayerType { CONV, RELU, POOL, FLATTEN, GLOBALAVGPOOL, INSTANCENORM, BATCHNORM };
+  enum class LayerType { CONV, RELU, POOL, FLATTEN, GLOBALAVGPOOL, GLOBALDUALPOOL, INSTANCENORM, BATCHNORM };
 
   struct CNNLayerConfig {
       LayerType type;
       std::variant<ConvLayerConfig, ReLULayerConfig, PoolLayerConfig, FlattenLayerConfig, GlobalAvgPoolLayerConfig,
-                   NormLayerConfig>
+                   GlobalDualPoolLayerConfig, NormLayerConfig>
         config;
   };
 

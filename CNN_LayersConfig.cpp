@@ -104,6 +104,12 @@ Shape3D LayersConfig::validateShapes(const Shape3D& inputShape) const
       break;
     }
 
+    case LayerType::GLOBALDUALPOOL: {
+      // Global dual pooling: avg + max concatenated, (C,H,W) -> (2C,1,1)
+      current = {current.c * 2, 1, 1};
+      break;
+    }
+
     case LayerType::INSTANCENORM: {
       // Instance normalization does not change shape
       break;

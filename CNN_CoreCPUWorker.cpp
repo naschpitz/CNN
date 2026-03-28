@@ -4,6 +4,7 @@
 #include "CNN_Pool.hpp"
 #include "CNN_Flatten.hpp"
 #include "CNN_GlobalAvgPool.hpp"
+#include "CNN_GlobalDualPool.hpp"
 #include "CNN_Normalization.hpp"
 
 #include <ANN_Core.hpp>
@@ -288,6 +289,11 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
       break;
     }
 
+    case LayerType::GLOBALDUALPOOL: {
+      GlobalDualPool<T>::propagate(current, current.shape);
+      break;
+    }
+
     case LayerType::FLATTEN: {
       break;
     }
@@ -365,6 +371,11 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::v
 
     case LayerType::GLOBALAVGPOOL: {
       GlobalAvgPool<T>::backpropagate(dCurrent, layerInput.shape);
+      break;
+    }
+
+    case LayerType::GLOBALDUALPOOL: {
+      GlobalDualPool<T>::backpropagate(dCurrent, layerInput, layerInput.shape);
       break;
     }
 
