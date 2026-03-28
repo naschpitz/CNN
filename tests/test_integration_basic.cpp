@@ -619,6 +619,77 @@ static void testBatchPredict()
 
 //===================================================================================================================//
 
+static void testGlobalDualPoolEndToEnd()
+{
+  std::cout << "--- testGlobalDualPoolEndToEnd ---" << std::endl;
+
+  // 1x5x5 → Conv(2 filters 3x3 valid) → 2x3x3 → ReLU → GlobalDualPool → 4x1x1 → Flatten(4) → Dense(1, sigmoid)
+  CNN::CoreConfig<double> config;
+  config.modeType = CNN::ModeType::TRAIN;
+  config.deviceType = CNN::DeviceType::CPU;
+  config.inputShape = {1, 5, 5};
+  config.logLevel = CNN::LogLevel::ERROR;
+
+  CNN::CNNLayerConfig conv1;
+  conv1.type = CNN::LayerType::CONV;
+  conv1.config = CNN::ConvLayerConfig{2, 3, 3, 1, 1, CNN::SlidingStrategyType::VALID};
+
+  CNN::CNNLayerConfig relu1;
+  relu1.type = CNN::LayerType::RELU;
+  relu1.config = CNN::ReLULayerConfig{};
+
+  CNN::CNNLayerConfig gdpLayer;
+  gdpLayer.type = CNN::LayerType::GLOBALDUALPOOL;
+  gdpLayer.config = CNN::GlobalDualPoolLayerConfig{};
+
+  CNN::CNNLayerConfig flattenLayer;
+  flattenLayer.type = CNN::LayerType::FLATTEN;
+  flattenLayer.config = CNN::FlattenLayerConfig{};
+
+  config.layersConfig.cnnLayers = {conv1, relu1, gdpLayer, flattenLayer};
+  config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
+
+  CNN::ConvParameters<double> initConv1;
+  initConv1.numFilters = 2;
+  initConv1.inputC = 1;
+  initConv1.filterH = 3;
+  initConv1.filterW = 3;
+  initConv1.filters.assign(2 * 1 * 3 * 3, 0.1);
+  initConv1.biases.assign(2, 0.0);
+
+  config.parameters.convParams = {initConv1};
+  config.trainingConfig.numEpochs = 200;
+  config.trainingConfig.learningRate = 0.5;
+  config.progressReports = 0;
+
+  CNN::Samples<double> samples(2);
+  samples[0].input = makeGradientInput<double>({1, 5, 5});
+  samples[0].output = {1.0};
+  samples[1].input = CNN::Tensor3D<double>({1, 5, 5}, 0.0);
+  samples[1].output = {0.0};
+
+  CNN::Output<double> pred0, pred1;
+  bool converged = false;
+
+  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
+    if (attempt > 0)
+      std::cout << "  retry #" << attempt << std::endl;
+
+    auto core = CNN::Core<double>::makeCore(config);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
+    pred0 = core->predict(samples[0].input);
+    pred1 = core->predict(samples[1].input);
+
+    if (pred0[0] > pred1[0])
+      converged = true;
+  }
+
+  std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
+  CHECK(converged, "GDP end-to-end: bright > dark (5 attempts)");
+}
+
+//===================================================================================================================//
+
 void runIntegrationBasicTests()
 {
   testEndToEnd();
@@ -628,5 +699,6 @@ void runIntegrationBasicTests()
   testGlobalAvgPoolEndToEnd();
   testGlobalAvgPoolWithNorm();
   testGlobalAvgPoolAfterPool();
+  testGlobalDualPoolEndToEnd();
   testBatchPredict();
 }
