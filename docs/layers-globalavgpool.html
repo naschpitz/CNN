@@ -57,7 +57,52 @@
 </nav></aside>
 <main class="main">
 
+<h1>GlobalAvgPool Layer</h1>
+<p>Global Average Pooling reduces each channel's spatial dimensions (H × W) to a single value by computing the spatial mean. The output shape is (C, 1, 1), collapsing all spatial information into a per-channel summary.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#propagation">Propagation</a></li>
+    <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#parameters">Parameters</a></li>
+  </ol>
+</div>
+
+<h2 id="purpose">Purpose</h2>
+<ul>
+  <li><strong>Replaces flatten + dense</strong> — eliminates the massive parameter count from flattening large spatial feature maps into a dense layer</li>
+  <li><strong>Spatial invariance</strong> — the mean is independent of the exact spatial arrangement of activations</li>
+  <li><strong>Regularization effect</strong> — fewer parameters means less overfitting compared to fully-connected alternatives</li>
+  <li><strong>Input-size agnostic</strong> — works with any spatial dimensions, enabling inference on different image sizes than training</li>
+</ul>
+
+<h2 id="propagation">Propagation</h2>
+<p>For each channel \(c\), compute the mean over all spatial positions:</p>
+<div class="math-block">
+\[ \text{output}[c] = \frac{1}{H \times W} \sum_{h=0}^{H-1} \sum_{w=0}^{W-1} \text{input}[c, h, w] \]
+</div>
+
+<p>The operation modifies the tensor in-place, compacting the data to the first \(C\) elements and setting the shape to \((C, 1, 1)\).</p>
+
+<div class="info-box">
+  <strong>Typical placement:</strong> GlobalAvgPool is placed after the last convolutional block and before flatten. It replaces the traditional stack of max pools that progressively shrink spatial dimensions.
+</div>
+
+<h2 id="backpropagation">Backpropagation</h2>
+<p>The gradient is distributed evenly across all spatial positions in each channel:</p>
+<div class="math-block">
+\[ \frac{\partial L}{\partial x_{c,h,w}} = \frac{1}{H \times W} \frac{\partial L}{\partial y_c} \]
+</div>
+
+<p>The gradient tensor is expanded from \((C, 1, 1)\) back to the original \((C, H, W)\) shape.</p>
+
+<h2 id="parameters">Parameters</h2>
+<p><strong>No learnable parameters.</strong> GlobalAvgPool is a fixed aggregation operation.</p>
+
+<h3>JSON Configuration</h3>
+<pre><code>{ <span class="string">"type"</span>: <span class="string">"globalavgpool"</span> }</code></pre>
 
 </main>
 </div>

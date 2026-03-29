@@ -57,7 +57,82 @@
 </nav></aside>
 <main class="main">
 
+<h1>CNN + ANN Pipeline</h1>
+<p>The complete inference pipeline chains CNN layers (convolutional, activation, pooling) with ANN dense layers. Data flows as a 3D tensor through CNN, flattens to 1D, then flows through ANN.</p>
 
+<div class="diagram">
+  <svg viewBox="0 0 1000 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+        <polygon points="0 0, 10 3, 0 6" fill="#1a73e8" />
+      </marker>
+    </defs>
+
+    <!-- Input -->
+    <rect x="20" y="60" width="80" height="80" fill="#e8f0fe" stroke="#1a73e8" stroke-width="2" rx="4"/>
+    <text x="60" y="95" text-anchor="middle" font-weight="bold" font-size="12">Input</text>
+    <text x="60" y="115" text-anchor="middle" font-size="10">3D Tensor</text>
+    <text x="60" y="130" text-anchor="middle" font-size="9" fill="#666">(C, H, W)</text>
+
+    <!-- Conv2D -->
+    <rect x="130" y="60" width="80" height="80" fill="#e6f4ea" stroke="#34a853" stroke-width="2" rx="4"/>
+    <text x="170" y="100" text-anchor="middle" font-weight="bold" font-size="12">Conv2D</text>
+    <text x="170" y="120" text-anchor="middle" font-size="9" fill="#666">3D → 3D</text>
+
+    <!-- ReLU -->
+    <rect x="240" y="60" width="80" height="80" fill="#e6f4ea" stroke="#34a853" stroke-width="2" rx="4"/>
+    <text x="280" y="100" text-anchor="middle" font-weight="bold" font-size="12">ReLU</text>
+    <text x="280" y="120" text-anchor="middle" font-size="9" fill="#666">3D → 3D</text>
+
+    <!-- Pool -->
+    <rect x="350" y="60" width="80" height="80" fill="#e6f4ea" stroke="#34a853" stroke-width="2" rx="4"/>
+    <text x="390" y="100" text-anchor="middle" font-weight="bold" font-size="12">Pool</text>
+    <text x="390" y="120" text-anchor="middle" font-size="9" fill="#666">3D → 3D</text>
+
+    <!-- ... -->
+    <text x="480" y="105" text-anchor="middle" font-size="16" font-weight="bold">...</text>
+
+    <!-- Flatten -->
+    <rect x="530" y="60" width="80" height="80" fill="#fef7e0" stroke="#f9ab00" stroke-width="2" rx="4"/>
+    <text x="570" y="100" text-anchor="middle" font-weight="bold" font-size="12">Flatten</text>
+    <text x="570" y="120" text-anchor="middle" font-size="9" fill="#666">3D → 1D</text>
+
+    <!-- Dense 1 -->
+    <rect x="640" y="60" width="80" height="80" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="2" rx="4"/>
+    <text x="680" y="100" text-anchor="middle" font-weight="bold" font-size="12">Dense</text>
+    <text x="680" y="120" text-anchor="middle" font-size="9" fill="#666">1D → 1D</text>
+
+    <!-- Dense 2 -->
+    <rect x="750" y="60" width="80" height="80" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="2" rx="4"/>
+    <text x="790" y="100" text-anchor="middle" font-weight="bold" font-size="12">Dense</text>
+    <text x="790" y="120" text-anchor="middle" font-size="9" fill="#666">1D → 1D</text>
+
+    <!-- Output -->
+    <rect x="860" y="60" width="80" height="80" fill="#e8f0fe" stroke="#1a73e8" stroke-width="2" rx="4"/>
+    <text x="900" y="95" text-anchor="middle" font-weight="bold" font-size="12">Output</text>
+    <text x="900" y="115" text-anchor="middle" font-size="10">1D Vector</text>
+
+    <!-- Arrows -->
+    <path d="M 100 100 L 130 100" stroke="#1a73e8" stroke-width="2" fill="none" marker-end="url(#arrow-blue)"/>
+    <path d="M 210 100 L 240 100" stroke="#1a73e8" stroke-width="2" fill="none" marker-end="url(#arrow-blue)"/>
+    <path d="M 320 100 L 350 100" stroke="#1a73e8" stroke-width="2" fill="none" marker-end="url(#arrow-blue)"/>
+    <path d="M 430 100 L 530 100" stroke="#1a73e8" stroke-width="2" fill="none" marker-end="url(#arrow-blue)"/>
+    <path d="M 610 100 L 640 100" stroke="#1a73e8" stroke-width="2" fill="none" marker-end="url(#arrow-blue)"/>
+    <path d="M 720 100 L 750 100" stroke="#1a73e8" stroke-width="2" fill="none" marker-end="url(#arrow-blue)"/>
+    <path d="M 830 100 L 860 100" stroke="#1a73e8" stroke-width="2" fill="none" marker-end="url(#arrow-blue)"/>
+
+    <!-- Labels -->
+    <text x="60" y="30" text-anchor="middle" font-size="10" font-weight="bold" fill="#666">CNN Layers</text>
+    <text x="680" y="30" text-anchor="middle" font-size="10" font-weight="bold" fill="#666">ANN Layers (delegated)</text>
+  </svg>
+  <figcaption>Complete CNN + ANN Inference Pipeline</figcaption>
+</div>
+
+<p>The pipeline consists of two phases:</p>
+<ol>
+  <li><strong>CNN Phase:</strong> Input 3D tensor flows through Conv2D, ReLU, Pool layers in sequence. Each layer outputs a 3D tensor that becomes the input to the next layer.</li>
+  <li><strong>ANN Phase:</strong> The final 3D tensor is flattened to 1D, then passed to ANN's dense layers for final classification/regression.</li>
+</ol>
 
 </main>
 </div>

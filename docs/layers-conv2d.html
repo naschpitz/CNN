@@ -57,7 +57,176 @@
 </nav></aside>
 <main class="main">
 
+<h1>Conv2D Layer</h1>
+<p>The convolutional layer is the core building block of CNNs. It applies learned filters (kernels) to extract spatial features from the input. Each filter slides across the input, computing dot products to produce feature maps.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#propagation">Propagation</a></li>
+    <li><a href="#output-shape">Output Shape Formula</a></li>
+    <li><a href="#padding">Padding Strategies</a></li>
+    <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#parameters">Parameters</a></li>
+  </ol>
+</div>
+
+<h2 id="purpose">Purpose</h2>
+<p>Conv2D layers learn to detect local patterns (edges, textures, shapes) by applying multiple filters. The layer is parameterized by:</p>
+<ul>
+  <li><strong>Number of filters</strong> — how many feature maps to produce</li>
+  <li><strong>Filter size</strong> — typically 3×3 or 5×5</li>
+  <li><strong>Stride</strong> — how many pixels the filter moves each step</li>
+  <li><strong>Padding</strong> — how to handle boundaries (VALID, SAME, FULL)</li>
+</ul>
+
+<h2 id="propagation">Propagation</h2>
+<p>For each filter, propagation computes:</p>
+<div class="math-block">
+\[ \text{output}[f, h, w] = \text{bias}[f] + \sum_{c=0}^{C-1} \sum_{kh=0}^{K_h-1} \sum_{kw=0}^{K_w-1} \text{input}[c, h \cdot s_y + kh - p_y, w \cdot s_x + kw - p_x] \times \text{filter}[f, c, kh, kw] \]
+</div>
+
+<p>Where \(f\) is the filter index, \((h, w)\) is the output position, \(s_y, s_x\) are strides, and \(p_y, p_x\) are padding offsets.</p>
+
+<div class="diagram">
+  <svg viewBox="0 0 600 280" xmlns="http://www.w3.org/2000/svg">
+    <!-- Input feature map -->
+    <g id="input">
+      <text x="20" y="20" font-size="14" font-weight="bold" fill="#202124">Input (5×5)</text>
+      <rect x="20" y="30" width="120" height="120" fill="none" stroke="#1a73e8" stroke-width="2"/>
+      <g stroke="#dadce0" stroke-width="1" fill="none">
+        <line x1="44" y1="30" x2="44" y2="150"/><line x1="68" y1="30" x2="68" y2="150"/><line x1="92" y1="30" x2="92" y2="150"/><line x1="116" y1="30" x2="116" y2="150"/>
+        <line x1="20" y1="54" x2="140" y2="54"/><line x1="20" y1="78" x2="140" y2="78"/><line x1="20" y1="102" x2="140" y2="102"/><line x1="20" y1="126" x2="140" y2="126"/>
+      </g>
+      <!-- Highlight 3x3 window -->
+      <rect x="44" y="54" width="72" height="72" fill="none" stroke="#f9ab00" stroke-width="3" stroke-dasharray="5,5"/>
+    </g>
+
+    <!-- Filter -->
+    <g id="filter">
+      <text x="200" y="20" font-size="14" font-weight="bold" fill="#202124">Filter (3×3)</text>
+      <rect x="200" y="30" width="90" height="90" fill="none" stroke="#34a853" stroke-width="2"/>
+      <g stroke="#dadce0" stroke-width="1" fill="none">
+        <line x1="230" y1="30" x2="230" y2="120"/><line x1="260" y1="30" x2="260" y2="120"/>
+        <line x1="200" y1="60" x2="290" y2="60"/><line x1="200" y1="90" x2="290" y2="90"/>
+      </g>
+      <text x="215" y="75" font-size="12" fill="#202124" text-anchor="middle">w₀₀</text>
+      <text x="245" y="75" font-size="12" fill="#202124" text-anchor="middle">w₀₁</text>
+      <text x="275" y="75" font-size="12" fill="#202124" text-anchor="middle">w₀₂</text>
+    </g>
+
+    <!-- Multiply-accumulate -->
+    <g id="mac">
+      <text x="340" y="20" font-size="14" font-weight="bold" fill="#202124">Multiply &amp; Sum</text>
+      <rect x="340" y="30" width="120" height="90" fill="#e8f0fe" stroke="#1a73e8" stroke-width="1" rx="4"/>
+      <text x="400" y="60" font-size="12" fill="#202124" text-anchor="middle">input × filter</text>
+      <text x="400" y="80" font-size="12" fill="#202124" text-anchor="middle">+ bias</text>
+      <text x="400" y="100" font-size="12" fill="#202124" text-anchor="middle">= output</text>
+    </g>
+
+    <!-- Output -->
+    <g id="output">
+      <text x="500" y="20" font-size="14" font-weight="bold" fill="#202124">Output (3×3)</text>
+      <rect x="500" y="30" width="90" height="90" fill="none" stroke="#c5221f" stroke-width="2"/>
+      <g stroke="#dadce0" stroke-width="1" fill="none">
+        <line x1="530" y1="30" x2="530" y2="120"/><line x1="560" y1="30" x2="560" y2="120"/>
+        <line x1="500" y1="60" x2="590" y2="60"/><line x1="500" y1="90" x2="590" y2="90"/>
+      </g>
+      <circle cx="515" cy="45" r="3" fill="#c5221f"/>
+      <text x="515" y="75" font-size="12" fill="#202124" text-anchor="middle">y₀₀</text>
+    </g>
+
+    <!-- Arrows -->
+    <path d="M 140 90 L 200 75" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+    <path d="M 290 75 L 340 75" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+    <path d="M 460 75 L 500 75" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+
+    <defs>
+      <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+        <polygon points="0 0, 10 3, 0 6" fill="#666"/>
+      </marker>
+    </defs>
+  </svg>
+  <figcaption>Conv2D propagation: filter slides over input, computing dot products at each position</figcaption>
+</div>
+
+<h2 id="output-shape">Output Shape Formula</h2>
+<p>The output spatial dimensions are computed as:</p>
+<div class="math-block">
+\[ \text{outH} = \left\lfloor \frac{\text{inputH} + 2 \cdot p_y - k_h}{s_y} \right\rfloor + 1 \]
+\[ \text{outW} = \left\lfloor \frac{\text{inputW} + 2 \cdot p_x - k_w}{s_x} \right\rfloor + 1 \]
+</div>
+
+<p>The output has \(\text{numFilters}\) channels.</p>
+
+<h2 id="padding">Padding Strategies</h2>
+<p>The library supports three padding modes:</p>
+<table>
+  <tr><th>Mode</th><th>Padding</th><th>Use Case</th><th>Output Size</th></tr>
+  <tr><td><strong>VALID</strong></td><td>\(p = 0\)</td><td>Reduce spatial dimensions</td><td>\(\lfloor (H - k) / s \rfloor + 1\)</td></tr>
+  <tr><td><strong>SAME</strong></td><td>\(p = \lfloor k / 2 \rfloor\)</td><td>Preserve spatial size (stride=1)</td><td>\(H\) (if stride=1)</td></tr>
+  <tr><td><strong>FULL</strong></td><td>\(p = k - 1\)</td><td>Expand output (transposed conv)</td><td>\(H + k - 1\)</td></tr>
+</table>
+
+<div class="diagram">
+  <svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg">
+    <!-- VALID padding -->
+    <g id="valid">
+      <text x="20" y="20" font-size="13" font-weight="bold" fill="#202124">VALID (p=0)</text>
+      <rect x="20" y="30" width="100" height="100" fill="none" stroke="#1a73e8" stroke-width="2"/>
+      <g stroke="#dadce0" stroke-width="1" fill="none">
+        <line x1="45" y1="30" x2="45" y2="130"/><line x1="70" y1="30" x2="70" y2="130"/><line x1="95" y1="30" x2="95" y2="130"/>
+        <line x1="20" y1="55" x2="120" y2="55"/><line x1="20" y1="80" x2="120" y2="80"/><line x1="20" y1="105" x2="120" y2="105"/>
+      </g>
+      <text x="70" y="155" font-size="11" fill="#202124" text-anchor="middle">4×4 input</text>
+    </g>
+
+    <!-- SAME padding -->
+    <g id="same">
+      <text x="200" y="20" font-size="13" font-weight="bold" fill="#202124">SAME (p=1)</text>
+      <rect x="200" y="30" width="120" height="120" fill="none" stroke="#dadce0" stroke-width="1" stroke-dasharray="3,3"/>
+      <rect x="210" y="40" width="100" height="100" fill="none" stroke="#34a853" stroke-width="2"/>
+      <g stroke="#dadce0" stroke-width="1" fill="none">
+        <line x1="235" y1="40" x2="235" y2="140"/><line x1="260" y1="40" x2="260" y2="140"/><line x1="285" y1="40" x2="285" y2="140"/>
+        <line x1="210" y1="65" x2="310" y2="65"/><line x1="210" y1="90" x2="310" y2="90"/><line x1="210" y1="115" x2="310" y2="115"/>
+      </g>
+      <text x="260" y="175" font-size="11" fill="#202124" text-anchor="middle">4×4 padded</text>
+    </g>
+
+    <!-- FULL padding -->
+    <g id="full">
+      <text x="420" y="20" font-size="13" font-weight="bold" fill="#202124">FULL (p=2)</text>
+      <rect x="420" y="30" width="140" height="140" fill="none" stroke="#dadce0" stroke-width="1" stroke-dasharray="3,3"/>
+      <rect x="435" y="45" width="100" height="100" fill="none" stroke="#c5221f" stroke-width="2"/>
+      <g stroke="#dadce0" stroke-width="1" fill="none">
+        <line x1="460" y1="45" x2="460" y2="145"/><line x1="485" y1="45" x2="485" y2="145"/><line x1="510" y1="45" x2="510" y2="145"/>
+        <line x1="435" y1="70" x2="535" y2="70"/><line x1="435" y1="95" x2="535" y2="95"/><line x1="435" y1="120" x2="535" y2="120"/>
+      </g>
+      <text x="490" y="195" font-size="11" fill="#202124" text-anchor="middle">6×6 padded</text>
+    </g>
+  </svg>
+  <figcaption>Padding strategies: VALID (no padding), SAME (preserve size), FULL (expand)</figcaption>
+</div>
+
+<h2 id="backpropagation">Backpropagation</h2>
+<p>Backpropagation computes three gradients simultaneously:</p>
+<ul>
+  <li><strong>dFilters</strong> — gradient w.r.t. filter weights: \(\frac{\partial L}{\partial w_{f,c,kh,kw}}\)</li>
+  <li><strong>dBiases</strong> — gradient w.r.t. biases: \(\frac{\partial L}{\partial b_f}\)</li>
+  <li><strong>dInput</strong> — gradient w.r.t. input: \(\frac{\partial L}{\partial x}\) (passed to previous layer)</li>
+</ul>
+
+<div class="info-box">
+  <strong>Implementation Detail:</strong> Backpropagation uses transposed convolution to compute dInput, allowing efficient gradient computation through the layer.
+</div>
+
+<h2 id="parameters">Parameters</h2>
+<p>A Conv2D layer with \(F\) filters, \(C\) input channels, and \(K_h \times K_w\) kernel size has:</p>
+<div class="math-block">
+\[ \text{Total parameters} = F \times C \times K_h \times K_w + F \]
+</div>
+<p>The first term is filter weights, the second is biases (one per filter).</p>
 
 </main>
 </div>

@@ -57,7 +57,52 @@
 </nav></aside>
 <main class="main">
 
+<h1>GlobalDualPool Layer</h1>
+<p>Global Dual Pooling concatenates the results of Global Average Pooling and Global Max Pooling for each channel, producing a richer spatial summary that captures both the mean activation and the strongest activation per channel.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#propagation">Propagation</a></li>
+    <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#parameters">Parameters</a></li>
+  </ol>
+</div>
+
+<h2 id="purpose">Purpose</h2>
+<ul>
+  <li><strong>Richer representation</strong> — captures both average and peak activations, giving the dense layers two complementary views of each feature</li>
+  <li><strong>Better classification</strong> — max pooling highlights the strongest feature response (is this pattern present?) while avg pooling captures overall feature density (how much of this pattern is present?)</li>
+  <li><strong>Still input-size agnostic</strong> — like GlobalAvgPool, works with any spatial dimensions</li>
+</ul>
+
+<h2 id="propagation">Propagation</h2>
+<p>For input with \(C\) channels and spatial size \(H \times W\), the output has \(2C\) values (shape \(2C, 1, 1\)):</p>
+<div class="math-block">
+\[ \text{output}[c] = \frac{1}{HW} \sum_{h,w} \text{input}[c, h, w] \quad \text{(avg, first C values)} \]
+\[ \text{output}[C + c] = \max_{h,w} \text{input}[c, h, w] \quad \text{(max, second C values)} \]
+</div>
+
+<p>The output <strong>doubles the channel count</strong>: if the input has 128 channels, the output has 256 elements. This must be accounted for in the subsequent flatten and dense layer sizing.</p>
+
+<h2 id="backpropagation">Backpropagation</h2>
+<p>Each pooling component backpropagates independently, and their gradients are summed at the input:</p>
+<div class="math-block">
+\[ \frac{\partial L}{\partial x_{c,h,w}} = \underbrace{\frac{1}{HW} \frac{\partial L}{\partial y_c^{avg}}}_{\text{avg gradient}} + \underbrace{\frac{\partial L}{\partial y_c^{max}} \cdot \mathbf{1}[x_{c,h,w} = \max]}_{\text{max gradient}} \]
+</div>
+
+<p>The max gradient flows only to the spatial position that held the maximum value for that channel. The avg gradient is distributed evenly across all spatial positions.</p>
+
+<h2 id="parameters">Parameters</h2>
+<p><strong>No learnable parameters.</strong> GlobalDualPool is a fixed aggregation operation.</p>
+
+<h3>JSON Configuration</h3>
+<pre><code>{ <span class="string">"type"</span>: <span class="string">"globaldualpool"</span> }</code></pre>
+
+<div class="info-box">
+  <strong>Output size:</strong> If the last convolutional block produces \(C\) channels, GlobalDualPool outputs \(2C\) elements. The first dense layer must accept \(2C\) inputs.
+</div>
 
 </main>
 </div>

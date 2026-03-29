@@ -57,7 +57,77 @@
 </nav></aside>
 <main class="main">
 
+<h1>Layer Pipeline Example</h1>
+<p>Here's a concrete numeric example showing how data flows through a sequence of layers.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#example">Image Classification Pipeline</a></li>
+  </ol>
+</div>
+
+<h2 id="example">Image Classification Pipeline</h2>
+
+<div class="card">
+  <h3>Example: Image Classification Pipeline</h3>
+  <p><strong>Input:</strong> 1 channel, 6×6 image (e.g., grayscale)</p>
+  <div class="math-block">
+    \[ \text{Shape: } 1 \times 6 \times 6 \]
+  </div>
+
+  <h4>Step 1: Conv2D (2 filters, 3×3, stride 1, VALID)</h4>
+  <p>Output shape: \(\text{outH} = (6 + 0 - 3) / 1 + 1 = 4\), \(\text{outW} = 4\)</p>
+  <div class="math-block">
+    \[ \text{Shape: } 2 \times 4 \times 4 \]
+  </div>
+  <p><strong>Parameters:</strong> \(2 \times 1 \times 3 \times 3 + 2 = 20\) (18 weights + 2 biases)</p>
+
+  <h4>Step 2: InstanceNorm</h4>
+  <p>Normalize per channel, scale by \(\gamma\), shift by \(\beta\). Shape unchanged</p>
+  <div class="math-block">
+    \[ \text{Shape: } 2 \times 4 \times 4 \]
+  </div>
+  <p><strong>Parameters:</strong> \(2 \times 2 = 4\) learnable (\(\gamma, \beta\)) + 4 running stats</p>
+
+  <h4>Step 3: ReLU</h4>
+  <p>Element-wise \(\max(0, x)\), shape unchanged</p>
+  <div class="math-block">
+    \[ \text{Shape: } 2 \times 4 \times 4 \]
+  </div>
+  <p><strong>Parameters:</strong> 0 (no learnable parameters)</p>
+
+  <h4>Step 4: MaxPool (2×2, stride 2)</h4>
+  <p>Output shape: \(\text{outH} = (4 - 2) / 2 + 1 = 2\), \(\text{outW} = 2\)</p>
+  <div class="math-block">
+    \[ \text{Shape: } 2 \times 2 \times 2 \]
+  </div>
+  <p><strong>Parameters:</strong> 0 (no learnable parameters)</p>
+
+  <h4>Step 5: Flatten</h4>
+  <p>Reshape to 1D vector: \(2 \times 2 \times 2 = 8\) elements</p>
+  <div class="math-block">
+    \[ \text{Shape: } 8 \]
+  </div>
+  <p><strong>Parameters:</strong> 0 (no learnable parameters)</p>
+
+  <h4>Summary</h4>
+  <table>
+    <tr><th>Layer</th><th>Type</th><th>Output Shape</th><th>Parameters</th></tr>
+    <tr><td>Input</td><td>—</td><td>1×6×6</td><td>—</td></tr>
+    <tr><td>Conv2D</td><td>2 filters, 3×3</td><td>2×4×4</td><td>20</td></tr>
+    <tr><td>InstanceNorm</td><td>Normalization</td><td>2×4×4</td><td>4 + 4 running</td></tr>
+    <tr><td>ReLU</td><td>Activation</td><td>2×4×4</td><td>0</td></tr>
+    <tr><td>MaxPool</td><td>2×2, stride 2</td><td>2×2×2</td><td>0</td></tr>
+    <tr><td>Flatten</td><td>Reshape</td><td>8</td><td>0</td></tr>
+  </table>
+
+  <p>The 8-element vector can now be fed to a dense layer for classification.</p>
+</div>
+
+<div class="warn-box">
+  <strong>Memory Layout:</strong> The CNN library uses NCHW (channels-first) layout. When flattening, elements are ordered as: all values in channel 0, then channel 1, etc. This differs from NHWC (channels-last) used by some frameworks.
+</div>
 
 </main>
 </div>

@@ -57,7 +57,98 @@
 </nav></aside>
 <main class="main">
 
+<h1>Normalization Layers</h1>
+<p>Instance Normalization normalises activations per channel per sample over spatial dimensions (H × W). It stabilises training, allows higher learning rates, and acts as a mild regulariser. It is typically placed after Conv2D and before ReLU.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#propagation-training">Propagation (Training)</a></li>
+    <li><a href="#propagation-inference">Propagation (Inference)</a></li>
+    <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#configuration">Configuration</a></li>
+    <li><a href="#parameters">Parameters</a></li>
+  </ol>
+</div>
+
+<h2 id="purpose">Purpose</h2>
+<ul>
+  <li><strong>Training stability</strong> — normalizing activations prevents them from growing or shrinking across layers</li>
+  <li><strong>Higher learning rates</strong> — the normalized distribution is less sensitive to parameter scale</li>
+  <li><strong>Mild regularization</strong> — batch statistics introduce noise that can reduce overfitting</li>
+</ul>
+
+<h2 id="propagation-training">Propagation (Training)</h2>
+<p>For each channel \(c\), compute mean and variance over the spatial dimensions, normalize, then scale and shift with learnable parameters \(\gamma_c\) and \(\beta_c\):</p>
+<div class="math-block">
+\[
+\mu_c = \frac{1}{HW} \sum_{h,w} x_{c,h,w}
+\qquad
+\sigma^2_c = \frac{1}{HW} \sum_{h,w} (x_{c,h,w} - \mu_c)^2
+\]
+\[
+\hat{x}_{c,h,w} = \frac{x_{c,h,w} - \mu_c}{\sqrt{\sigma^2_c + \epsilon}}
+\qquad
+y_{c,h,w} = \gamma_c \, \hat{x}_{c,h,w} + \beta_c
+\]
+</div>
+
+<p>Running statistics are updated with exponential moving averages for use during inference:</p>
+<div class="math-block">
+\[
+\bar{\mu}_c \leftarrow (1 - m)\,\bar{\mu}_c + m\,\mu_c
+\qquad
+\bar{\sigma}^2_c \leftarrow (1 - m)\,\bar{\sigma}^2_c + m\,\sigma^2_c
+\]
+</div>
+
+<h2 id="propagation-inference">Propagation (Inference)</h2>
+<p>During inference, the fixed running statistics replace the batch statistics:</p>
+<div class="math-block">
+\[
+y_{c,h,w} = \gamma_c \, \frac{x_{c,h,w} - \bar{\mu}_c}{\sqrt{\bar{\sigma}^2_c + \epsilon}} + \beta_c
+\]
+</div>
+
+<h2 id="backpropagation">Backpropagation</h2>
+<p>Gradients for the learnable parameters:</p>
+<div class="math-block">
+\[
+\frac{\partial L}{\partial \gamma_c} = \sum_{h,w} \frac{\partial L}{\partial y_{c,h,w}} \, \hat{x}_{c,h,w}
+\qquad
+\frac{\partial L}{\partial \beta_c} = \sum_{h,w} \frac{\partial L}{\partial y_{c,h,w}}
+\]
+</div>
+
+<p>Input gradient (with \(N = H \times W\)):</p>
+<div class="math-block">
+\[
+\frac{\partial L}{\partial x_{c,i}} = \frac{\gamma_c}{N \sqrt{\sigma^2_c + \epsilon}} \left( N \, \frac{\partial L}{\partial y_{c,i}} - \frac{\partial L}{\partial \beta_c} - \hat{x}_{c,i} \, \frac{\partial L}{\partial \gamma_c} \right)
+\]
+</div>
+
+<h2 id="configuration">Configuration</h2>
+<table>
+  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+  <tr><td><strong>epsilon</strong> (\(\epsilon\))</td><td>1×10⁻⁵</td><td>Numerical stability constant added to variance</td></tr>
+  <tr><td><strong>momentum</strong> (\(m\))</td><td>0.1</td><td>EMA factor for running statistics</td></tr>
+</table>
+
+<h3>JSON Configuration</h3>
+<pre><code>{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
+{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span>, <span class="string">"epsilon"</span>: <span class="number">1e-5</span>, <span class="string">"momentum"</span>: <span class="number">0.1</span> }</code></pre>
+
+<h2 id="parameters">Parameters</h2>
+<p>An InstanceNorm layer with \(C\) input channels has:</p>
+<div class="math-block">
+\[ \text{Total parameters} = 2C \text{ (learnable: } \gamma, \beta\text{)} + 2C \text{ (running: } \bar{\mu}, \bar{\sigma}^2\text{)} \]
+</div>
+<p>The output shape is identical to the input shape — InstanceNorm does not change spatial dimensions or channel count.</p>
+
+<div class="info-box">
+  <strong>Typical placement:</strong> Conv2D → <strong>InstanceNorm</strong> → ReLU. Placing InstanceNorm before the activation ensures the normalized distribution is passed to ReLU, which improves gradient flow.
+</div>
 
 </main>
 </div>

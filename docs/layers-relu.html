@@ -57,7 +57,68 @@
 </nav></aside>
 <main class="main">
 
+<h1>ReLU Layer</h1>
+<p>Rectified Linear Unit (ReLU) is a simple but powerful non-linear activation function. It introduces non-linearity, allowing the network to learn complex patterns.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#propagation">Propagation</a></li>
+    <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#parameters">Parameters</a></li>
+  </ol>
+</div>
+
+<h2 id="purpose">Purpose</h2>
+<p>ReLU breaks the linearity of the network. Without activation functions, stacking multiple linear layers would be equivalent to a single linear transformation. ReLU is computationally efficient and works well with gradient-based optimization.</p>
+
+<h2 id="propagation">Propagation</h2>
+<p>Element-wise operation:</p>
+<div class="math-block">
+\[ \text{output}[i] = \max(0, \text{input}[i]) \]
+</div>
+
+<div class="diagram">
+  <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+    <!-- Axes -->
+    <line x1="50" y1="250" x2="350" y2="250" stroke="#202124" stroke-width="2"/>
+    <line x1="50" y1="50" x2="50" y2="250" stroke="#202124" stroke-width="2"/>
+    <text x="360" y="255" font-size="12" fill="#202124">x</text>
+    <text x="45" y="40" font-size="12" fill="#202124">f(x)</text>
+
+    <!-- Grid -->
+    <g stroke="#dadce0" stroke-width="1">
+      <line x1="50" y1="150" x2="350" y2="150"/><line x1="50" y1="200" x2="350" y2="200"/>
+      <line x1="150" y1="50" x2="150" y2="250"/><line x1="250" y1="50" x2="250" y2="250"/>
+    </g>
+
+    <!-- ReLU curve -->
+    <polyline points="50,250 150,250 350,50" stroke="#1a73e8" stroke-width="3" fill="none"/>
+
+    <!-- Labels -->
+    <text x="140" y="270" font-size="11" fill="#202124" text-anchor="middle">0</text>
+    <text x="35" y="255" font-size="11" fill="#202124" text-anchor="end">0</text>
+
+    <!-- Annotations -->
+    <text x="100" y="230" font-size="11" fill="#34a853" font-weight="bold">f(x) = 0</text>
+    <text x="280" y="100" font-size="11" fill="#34a853" font-weight="bold">f(x) = x</text>
+  </svg>
+  <figcaption>ReLU function: zero for negative inputs, identity for positive inputs</figcaption>
+</div>
+
+<h2 id="backpropagation">Backpropagation</h2>
+<p>Gradient flows only where input was positive:</p>
+<div class="math-block">
+\[ \frac{\partial L}{\partial x_i} = \begin{cases} \frac{\partial L}{\partial y_i} & \text{if } x_i > 0 \\ 0 & \text{otherwise} \end{cases} \]
+</div>
+
+<div class="tip-box">
+  <strong>Dying ReLU Problem:</strong> If a neuron's input is always negative during training, its gradient becomes zero and it never updates. This is rare in practice but can occur with poor initialization or high learning rates.
+</div>
+
+<h2 id="parameters">Parameters</h2>
+<p><strong>No learnable parameters.</strong> ReLU is a fixed non-linearity.</p>
 
 </main>
 </div>

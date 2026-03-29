@@ -35,6 +35,9 @@
   <a href="layers-pool.html">Pool</a>
   <a href="layers-normalization.html">Normalization</a>
   <a href="layers-flatten.html" class="active">Flatten</a>
+  <a href="layers-globalavgpool.html">GlobalAvgPool</a>
+  <a href="layers-globaldualpool.html">GlobalDualPool</a>
+  <a href="layers-residual.html">Residual</a>
   <a href="layers-pipeline.html">Pipeline Example</a>
   <div class="section-title">Math Foundations</div>
   <a href="math.html">Overview</a>
@@ -54,7 +57,38 @@
 </nav></aside>
 <main class="main">
 
+<h1>Flatten Layer</h1>
+<p>Converts a 3D tensor (channels, height, width) into a 1D vector for input to dense layers.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#propagation">Propagation</a></li>
+    <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#parameters">Parameters</a></li>
+  </ol>
+</div>
+
+<h2 id="purpose">Purpose</h2>
+<p>Dense layers expect 1D input. Flatten reshapes the 3D feature maps from convolutional layers into a single vector while preserving the data order (NCHW layout).</p>
+
+<h2 id="propagation">Propagation</h2>
+<p>Returns the underlying 1D data vector. Since the CNN library uses NCHW layout internally, the data is already stored contiguously in memory:</p>
+<div class="math-block">
+\[ \text{output} = \text{input.data} \]
+</div>
+
+<p>This is a <strong>zero-copy operation</strong> — no data movement occurs.</p>
+
+<h2 id="backpropagation">Backpropagation</h2>
+<p>Reshapes the 1D gradient back to the original 3D shape:</p>
+<div class="math-block">
+\[ \frac{\partial L}{\partial x} = \text{reshape}\left(\frac{\partial L}{\partial y}, \text{inputShape}\right) \]
+</div>
+
+<h2 id="parameters">Parameters</h2>
+<p><strong>No learnable parameters.</strong> Flatten is a pure reshape operation.</p>
 
 </main>
 </div>

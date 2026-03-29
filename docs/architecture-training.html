@@ -57,7 +57,134 @@
 </nav></aside>
 <main class="main">
 
+<h1>Training Pipeline</h1>
+<p>Training involves propagation, loss computation, backpropagation, gradient accumulation, and parameter updates. The process repeats for each epoch and sample.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#overview">Training Loop Overview</a></li>
+    <li><a href="#steps">Detailed Steps</a></li>
+  </ol>
+</div>
+
+<h2 id="overview">Training Loop Overview</h2>
+<pre><code><span class="keyword">for</span> epoch <span class="keyword">in</span> [0, numEpochs):
+  shuffle(samples)
+
+  <span class="keyword">for</span> batch <span class="keyword">of</span> batchSize samples:
+    resetCNNAccumulators()
+    <span class="keyword">for</span> sample <span class="keyword">in</span> batch:
+      <span class="comment">// 1. Propagate through CNN (store intermediates)</span>
+      cnnOut = propagateCNN(sample.input, <span class="keyword">true</span>, &amp;intermediates, &amp;poolMaxIndices)
+
+      <span class="comment">// 2. Flatten and propagate through ANN</span>
+      flatInput = Flatten::propagate(cnnOut)
+      annOutput = annCore-&gt;predict(flatInput)
+
+      <span class="comment">// 3. Compute loss (MSE)</span>
+      loss = MSE(annOutput, sample.output)
+
+      <span class="comment">// 4. Backprop through ANN</span>
+      dANNInput = annCore-&gt;backpropagate(dLoss)
+
+      <span class="comment">// 5. Unflatten and backprop through CNN</span>
+      dCNNOut = Flatten::backpropagate(dANNInput)
+      backpropagateCNN(dCNNOut, intermediates, poolMaxIndices, dFilters, dBiases)
+
+      <span class="comment">// 6. Accumulate gradients</span>
+      accumulateCNNGradients(dFilters, dBiases)
+
+    <span class="comment">// 7. Update parameters (SGD, per batch)</span>
+    updateCNNParameters(batchSize)
+    annCore-&gt;updateParameters(batchSize)</code></pre>
+
+<h2 id="steps">Detailed Steps</h2>
+
+<div class="card">
+  <h4>1. Propagation (CNN)</h4>
+  <p>Input flows through CNN layers in order. Intermediates (layer inputs) are stored for backpropagation. Pool layer max indices are recorded for gradient routing.</p>
+  <pre><code>Tensor3D&lt;<span class="type">T</span>&gt; current = input;
+<span class="keyword">for</span> (<span class="keyword">const</span> <span class="keyword">auto</span>&amp; layerConfig : layersConfig.cnnLayers) {
+  <span class="keyword">switch</span> (layerConfig.type) {
+    <span class="keyword">case</span> LayerType::CONV:
+      intermediates.push_back(current);
+      current = Conv2D&lt;<span class="type">T</span>&gt;::propagate(current, config, params);
+      <span class="keyword">break</span>;
+    <span class="keyword">case</span> LayerType::RELU:
+      intermediates.push_back(current);
+      current = ReLU&lt;<span class="type">T</span>&gt;::propagate(current);
+      <span class="keyword">break</span>;
+    <span class="comment">// ... Pool, Flatten</span>
+  }
+}</code></pre>
+</div>
+
+<div class="card">
+  <h4>2. Propagation (ANN)</h4>
+  <p>Flattened CNN output becomes input to ANN dense layers. ANN handles its own propagation and gradient computation.</p>
+  <pre><code>Tensor1D&lt;<span class="type">T</span>&gt; flatInput = Flatten&lt;<span class="type">T</span>&gt;::propagate(cnnOut);
+ANN::Input&lt;<span class="type">T</span>&gt; annInput(flatInput.begin(), flatInput.end());
+ANN::Output&lt;<span class="type">T</span>&gt; annOutput = annCore-&gt;predict(annInput);</code></pre>
+</div>
+
+<div class="card">
+  <h4>3. Loss Computation</h4>
+  <p>Mean Squared Error (MSE) between predicted and expected output.</p>
+  <pre><code><span class="type">T</span> calculateLoss(<span class="keyword">const</span> Output&lt;<span class="type">T</span>&gt;&amp; predicted, <span class="keyword">const</span> Output&lt;<span class="type">T</span>&gt;&amp; expected) {
+  <span class="type">T</span> loss = 0;
+  <span class="keyword">for</span> (<span class="type">ulong</span> i = 0; i &lt; predicted.size(); i++) {
+    <span class="type">T</span> diff = predicted[i] - expected[i];
+    loss += diff * diff;
+  }
+  <span class="keyword">return</span> loss / predicted.size();
+}</code></pre>
+</div>
+
+<div class="card">
+  <h4>4. Backpropagation (ANN)</h4>
+  <p>ANN computes gradient of loss w.r.t. its input (the flattened CNN output). ANN also updates its own parameters internally.</p>
+  <pre><code><span class="comment">// ANN backprop returns gradient w.r.t. its input</span>
+ANN::Output&lt;<span class="type">T</span>&gt; dANNInput = annCore-&gt;backpropagate(dLoss);</code></pre>
+</div>
+
+<div class="card">
+  <h4>5. Backpropagation (CNN)</h4>
+  <p>Gradient flows through CNN layers in reverse order. Each layer computes gradient w.r.t. its input and accumulates gradient w.r.t. its parameters.</p>
+  <pre><code><span class="comment">// Unflatten gradient from ANN</span>
+Tensor3D&lt;<span class="type">T</span>&gt; dCNNOut = Flatten&lt;<span class="type">T</span>&gt;::backpropagate(dANNInput);
+
+<span class="comment">// Backprop through CNN layers in reverse</span>
+Tensor3D&lt;<span class="type">T</span>&gt; dCurrent = dCNNOut;
+<span class="keyword">for</span> (<span class="keyword">int</span> i = cnnLayers.size() - 1; i &gt;= 0; i--) {
+  <span class="keyword">switch</span> (cnnLayers[i].type) {
+    <span class="keyword">case</span> LayerType::CONV:
+      dCurrent = Conv2D&lt;<span class="type">T</span>&gt;::backpropagate(
+        dCurrent, intermediates[i], config, params, dFilters, dBiases);
+      <span class="keyword">break</span>;
+    <span class="comment">// ... ReLU, Pool</span>
+  }
+}</code></pre>
+</div>
+
+<div class="card">
+  <h4>6. Gradient Accumulation</h4>
+  <p>Gradients from each sample are accumulated across the epoch. This enables batch-like updates without storing all samples in memory simultaneously.</p>
+</div>
+
+<div class="card">
+  <h4>7. Parameter Update (SGD)</h4>
+  <p>After processing all samples in a mini-batch, accumulated gradients are used to update parameters via Stochastic Gradient Descent.</p>
+  <pre><code><span class="keyword">void</span> updateCNNParameters(<span class="type">ulong</span> numSamples) {
+  <span class="type">T</span> learningRate = trainingConfig.learningRate;
+  <span class="keyword">for</span> (<span class="type">ulong</span> i = 0; i &lt; parameters.convParams.size(); i++) {
+    <span class="keyword">for</span> (<span class="type">ulong</span> j = 0; j &lt; parameters.convParams[i].filters.size(); j++) {
+      parameters.convParams[i].filters[j] -=
+        learningRate * accumDConvFilters[i][j] / numSamples;
+    }
+  }
+}</code></pre>
+</div>
 
 </main>
 </div>

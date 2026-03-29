@@ -57,7 +57,54 @@
 </nav></aside>
 <main class="main">
 
+<h1>Memory Layout</h1>
+<p>The CNN library uses a channels-first (NCHW) memory layout where all spatial elements for a single channel are stored contiguously before the next channel begins.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#nchw">NCHW Layout</a></li>
+    <li><a href="#tensors">Tensor Storage</a></li>
+    <li><a href="#filters">Filter Storage</a></li>
+  </ol>
+</div>
+
+<h2 id="nchw">NCHW Layout</h2>
+<p>All tensors use NCHW (channels-first) memory ordering:</p>
+<div class="math-block">
+\[ \text{data}[c \times H \times W + h \times W + w] = \text{tensor}[c, h, w] \]
+</div>
+
+<p>For a tensor with shape (2 channels, 3 height, 4 width), the memory layout is:</p>
+<table>
+  <tr><th>Index</th><th>Element</th><th>Description</th></tr>
+  <tr><td>0</td><td>tensor[0,0,0]</td><td>Channel 0, Row 0, Col 0</td></tr>
+  <tr><td>1</td><td>tensor[0,0,1]</td><td>Channel 0, Row 0, Col 1</td></tr>
+  <tr><td>...</td><td>...</td><td>...</td></tr>
+  <tr><td>11</td><td>tensor[0,2,3]</td><td>Channel 0, Row 2, Col 3</td></tr>
+  <tr><td>12</td><td>tensor[1,0,0]</td><td>Channel 1, Row 0, Col 0</td></tr>
+  <tr><td>...</td><td>...</td><td>...</td></tr>
+  <tr><td>23</td><td>tensor[1,2,3]</td><td>Channel 1, Row 2, Col 3</td></tr>
+</table>
+
+<div class="info-box">
+  <strong>Why NCHW?</strong> Channels-first layout enables efficient convolution computation — spatial elements that are convolved together are contiguous in memory, improving cache performance.
+</div>
+
+<h2 id="tensors">Tensor Storage</h2>
+<p>The <code>Tensor3D&lt;T&gt;</code> class stores data as a flat <code>std::vector&lt;T&gt;</code> paired with a <code>Shape3D</code> struct (channels, height, width). This enables:</p>
+<ul>
+  <li><strong>Zero-cost flattening</strong> — the underlying 1D vector can be directly passed to dense layers</li>
+  <li><strong>Efficient resizing</strong> — shape changes without reallocating when new size ≤ capacity</li>
+  <li><strong>Direct data access</strong> — <code>.data()</code> returns a pointer for raw memory operations (used by GPU)</li>
+</ul>
+
+<h2 id="filters">Filter Storage</h2>
+<p>Convolution filter weights are stored in a single flat vector with layout:</p>
+<div class="math-block">
+\[ \text{filters}[f \times C_{in} \times K_h \times K_w + c \times K_h \times K_w + kh \times K_w + kw] \]
+</div>
+<p>Where \(f\) is the filter index, \(c\) is the input channel, and \((kh, kw)\) is the position within the kernel. The <code>filterAt(f, c, h, w)</code> method provides convenient indexed access.</p>
 
 </main>
 </div>

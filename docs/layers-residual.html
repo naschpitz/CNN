@@ -57,7 +57,91 @@
 </nav></aside>
 <main class="main">
 
+<h1>Residual (Skip Connection) Layers</h1>
+<p>Residual connections add the input of a block directly to its output, enabling gradient flow through very deep networks. The library uses two marker layers — <code>RESIDUAL_START</code> and <code>RESIDUAL_END</code> — to define residual blocks.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#identity">Identity Shortcut</a></li>
+    <li><a href="#projection">Projection Shortcut</a></li>
+    <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#nesting">Nesting Rules</a></li>
+    <li><a href="#parameters">Parameters</a></li>
+  </ol>
+</div>
+
+<h2 id="purpose">Purpose</h2>
+<ul>
+  <li><strong>Gradient highway</strong> — the skip path lets gradients bypass intermediate layers, preventing vanishing gradients in deep networks</li>
+  <li><strong>Easier optimization</strong> — the network only needs to learn the <em>residual</em> (difference from identity), which is often simpler</li>
+  <li><strong>Deeper architectures</strong> — enables training networks with dozens or hundreds of layers</li>
+</ul>
+
+<h2 id="identity">Identity Shortcut</h2>
+<p>When the input and output have the <strong>same number of channels</strong>, the skip connection is a simple element-wise addition:</p>
+<div class="math-block">
+\[ \text{output} = \text{block}(x) + x \]
+</div>
+
+<p>No extra parameters are needed — this is a pure addition.</p>
+
+<h2 id="projection">Projection Shortcut</h2>
+<p>When the block changes the number of channels (e.g., from 32 to 64), the skip input must be projected to match via a learned 1×1 convolution:</p>
+<div class="math-block">
+\[ \text{output}[oc, s] = \text{block}(x)[oc, s] + \text{bias}[oc] + \sum_{ic=0}^{C_{in}-1} W[oc, ic] \cdot x[ic, s] \]
+</div>
+
+<p>The projection is automatically created during initialization when the channel counts differ. The projection weights are He-initialized and biases are zero-initialized.</p>
+
+<div class="info-box">
+  <strong>Spatial dimensions:</strong> The skip input and block output must have the <strong>same spatial dimensions</strong> (H × W). If you need to downsample spatially, place a pool layer <em>outside</em> the residual block (after <code>RESIDUAL_END</code>).
+</div>
+
+<h2 id="backpropagation">Backpropagation</h2>
+<p><strong>Identity:</strong> The gradient is simply copied to both paths:</p>
+<div class="math-block">
+\[ \frac{\partial L}{\partial x_{skip}} \mathrel{+}= \frac{\partial L}{\partial y} \]
+</div>
+
+<p><strong>Projection:</strong> Three gradients are computed:</p>
+<ul>
+  <li><strong>dSkip</strong> — gradient through the projection: \(\frac{\partial L}{\partial x_{skip}} \mathrel{+}= W^T \cdot \frac{\partial L}{\partial y}\)</li>
+  <li><strong>dW</strong> — gradient for projection weights: \(\frac{\partial L}{\partial W} = \frac{\partial L}{\partial y} \cdot x_{skip}^T\)</li>
+  <li><strong>dBias</strong> — gradient for projection biases: \(\frac{\partial L}{\partial b} = \sum_s \frac{\partial L}{\partial y}\)</li>
+</ul>
+
+<h2 id="nesting">Nesting Rules</h2>
+<ul>
+  <li>Every <code>RESIDUAL_START</code> must have a matching <code>RESIDUAL_END</code></li>
+  <li>Residual blocks can be nested (inner block completes before outer block ends)</li>
+  <li>Spatial dimensions must match between start and end of each block</li>
+  <li>Multiple residual blocks can be chained sequentially</li>
+</ul>
+
+<h3>Example Architecture</h3>
+<pre><code><span class="comment">// Identity block (channels unchanged)</span>
+{ <span class="string">"type"</span>: <span class="string">"residual_start"</span> }
+{ <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">32</span>, ... }
+{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
+{ <span class="string">"type"</span>: <span class="string">"relu"</span> }
+{ <span class="string">"type"</span>: <span class="string">"residual_end"</span> }
+
+<span class="comment">// Projection block (channels change: 32 → 64)</span>
+{ <span class="string">"type"</span>: <span class="string">"residual_start"</span> }
+{ <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">64</span>, ... }
+{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
+{ <span class="string">"type"</span>: <span class="string">"relu"</span> }
+{ <span class="string">"type"</span>: <span class="string">"residual_end"</span> }</code></pre>
+
+<h2 id="parameters">Parameters</h2>
+<p><strong>Identity shortcut:</strong> No learnable parameters.</p>
+<p><strong>Projection shortcut:</strong> A 1×1 convolution with:</p>
+<div class="math-block">
+\[ \text{Parameters} = C_{out} \times C_{in} + C_{out} \]
+</div>
+<p>Where \(C_{in}\) is the skip input channels and \(C_{out}\) is the block output channels. The first term is weights, the second is biases.</p>
 
 </main>
 </div>

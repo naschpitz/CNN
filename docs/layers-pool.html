@@ -57,7 +57,122 @@
 </nav></aside>
 <main class="main">
 
+<h1>Pool Layer</h1>
+<p>Pooling layers reduce spatial dimensions while preserving important features. The library supports Max Pooling and Average Pooling.</p>
 
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#max-pooling">Max Pooling</a></li>
+    <li><a href="#avg-pooling">Average Pooling</a></li>
+    <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#parameters">Parameters</a></li>
+  </ol>
+</div>
+
+<h2 id="purpose">Purpose</h2>
+<ul>
+  <li><strong>Spatial downsampling</strong> — reduce computation and memory</li>
+  <li><strong>Translation invariance</strong> — small shifts in input don't change output much</li>
+  <li><strong>Feature aggregation</strong> — combine local information</li>
+</ul>
+
+<h2 id="max-pooling">Max Pooling</h2>
+<p>Takes the maximum value in each pooling window:</p>
+<div class="math-block">
+\[ \text{output}[c, h, w] = \max_{kh, kw} \text{input}[c, h \cdot s_y + kh, w \cdot s_x + kw] \]
+</div>
+
+<p>The index of the maximum element is stored for backpropagation.</p>
+
+<h2 id="avg-pooling">Average Pooling</h2>
+<p>Computes the mean of each pooling window:</p>
+<div class="math-block">
+\[ \text{output}[c, h, w] = \frac{1}{K_h \times K_w} \sum_{kh, kw} \text{input}[c, h \cdot s_y + kh, w \cdot s_x + kw] \]
+</div>
+
+<div class="diagram">
+  <svg viewBox="0 0 600 280" xmlns="http://www.w3.org/2000/svg">
+    <!-- Input -->
+    <g id="pool-input">
+      <text x="20" y="20" font-size="13" font-weight="bold" fill="#202124">Input (4×4)</text>
+      <rect x="20" y="30" width="120" height="120" fill="none" stroke="#1a73e8" stroke-width="2"/>
+      <g stroke="#dadce0" stroke-width="1" fill="none">
+        <line x1="50" y1="30" x2="50" y2="150"/><line x1="80" y1="30" x2="80" y2="150"/><line x1="110" y1="30" x2="110" y2="150"/>
+        <line x1="20" y1="60" x2="140" y2="60"/><line x1="20" y1="90" x2="140" y2="90"/><line x1="20" y1="120" x2="140" y2="120"/>
+      </g>
+      <!-- Values -->
+      <text x="35" y="50" font-size="11" fill="#202124" text-anchor="middle">1</text>
+      <text x="65" y="50" font-size="11" fill="#202124" text-anchor="middle">2</text>
+      <text x="95" y="50" font-size="11" fill="#202124" text-anchor="middle">3</text>
+      <text x="125" y="50" font-size="11" fill="#202124" text-anchor="middle">4</text>
+      <text x="35" y="80" font-size="11" fill="#202124" text-anchor="middle">5</text>
+      <text x="65" y="80" font-size="11" fill="#202124" text-anchor="middle">6</text>
+      <text x="95" y="80" font-size="11" fill="#202124" text-anchor="middle">7</text>
+      <text x="125" y="80" font-size="11" fill="#202124" text-anchor="middle">8</text>
+      <text x="35" y="110" font-size="11" fill="#202124" text-anchor="middle">9</text>
+      <text x="65" y="110" font-size="11" fill="#202124" text-anchor="middle">10</text>
+      <text x="95" y="110" font-size="11" fill="#202124" text-anchor="middle">11</text>
+      <text x="125" y="110" font-size="11" fill="#202124" text-anchor="middle">12</text>
+      <text x="35" y="140" font-size="11" fill="#202124" text-anchor="middle">13</text>
+      <text x="65" y="140" font-size="11" fill="#202124" text-anchor="middle">14</text>
+      <text x="95" y="140" font-size="11" fill="#202124" text-anchor="middle">15</text>
+      <text x="125" y="140" font-size="11" fill="#202124" text-anchor="middle">16</text>
+
+      <!-- Highlight first 2x2 window -->
+      <rect x="20" y="30" width="60" height="60" fill="none" stroke="#f9ab00" stroke-width="3" stroke-dasharray="5,5"/>
+    </g>
+
+    <!-- Arrow -->
+    <path d="M 140 90 L 200 90" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+
+    <!-- Output -->
+    <g id="pool-output">
+      <text x="200" y="20" font-size="13" font-weight="bold" fill="#202124">Output (2×2)</text>
+      <rect x="200" y="30" width="80" height="80" fill="none" stroke="#c5221f" stroke-width="2"/>
+      <g stroke="#dadce0" stroke-width="1" fill="none">
+        <line x1="240" y1="30" x2="240" y2="110"/>
+        <line x1="200" y1="70" x2="280" y2="70"/>
+      </g>
+      <!-- Values -->
+      <text x="220" y="55" font-size="11" fill="#202124" text-anchor="middle">6</text>
+      <text x="260" y="55" font-size="11" fill="#202124" text-anchor="middle">8</text>
+      <text x="220" y="95" font-size="11" fill="#202124" text-anchor="middle">14</text>
+      <text x="260" y="95" font-size="11" fill="#202124" text-anchor="middle">16</text>
+    </g>
+
+    <!-- Legend -->
+    <g id="legend">
+      <text x="320" y="50" font-size="12" font-weight="bold" fill="#202124">Max Pooling (2×2, stride 2)</text>
+      <text x="320" y="75" font-size="11" fill="#202124">Window [1,2,5,6] → max = 6</text>
+      <text x="320" y="95" font-size="11" fill="#202124">Window [3,4,7,8] → max = 8</text>
+      <text x="320" y="115" font-size="11" fill="#202124">Window [9,10,13,14] → max = 14</text>
+      <text x="320" y="135" font-size="11" fill="#202124">Window [11,12,15,16] → max = 16</text>
+    </g>
+
+    <defs>
+      <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+        <polygon points="0 0, 10 3, 0 6" fill="#666"/>
+      </marker>
+    </defs>
+  </svg>
+  <figcaption>Max pooling: 2×2 window on 4×4 input produces 2×2 output</figcaption>
+</div>
+
+<h2 id="backpropagation">Backpropagation</h2>
+<p><strong>Max Pooling:</strong> Gradient flows only to the position that had the maximum value:</p>
+<div class="math-block">
+\[ \frac{\partial L}{\partial x_{max}} = \frac{\partial L}{\partial y}, \quad \frac{\partial L}{\partial x_{other}} = 0 \]
+</div>
+
+<p><strong>Average Pooling:</strong> Gradient is distributed evenly across all positions in the window:</p>
+<div class="math-block">
+\[ \frac{\partial L}{\partial x_{i,j}} = \frac{1}{K_h \times K_w} \frac{\partial L}{\partial y} \]
+</div>
+
+<h2 id="parameters">Parameters</h2>
+<p><strong>No learnable parameters.</strong> Pooling is a fixed operation.</p>
 
 </main>
 </div>
