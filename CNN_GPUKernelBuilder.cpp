@@ -454,6 +454,8 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart,
         this->core->template addArgument<ulong>(kernelId, skipActvOffset);
         this->core->template addArgument<T>(kernelId, "cnn_res_proj_w");
         this->core->template addArgument<T>(kernelId, "cnn_res_proj_b");
+        this->core->template addArgument<ulong>(kernelId, wOffset);
+        this->core->template addArgument<ulong>(kernelId, bOffset);
         this->core->template addArgument<ulong>(kernelId, rpi.inC);
         this->core->template addArgument<ulong>(kernelId, rpi.outC);
         this->core->template addArgument<ulong>(kernelId, rpi.spatialSize);
@@ -876,6 +878,7 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
         this->core->addKernel(dSkipKernelId, "residual_bwd_proj_dskip", totalIn, 0);
         this->core->template addArgument<T>(dSkipKernelId, "cnn_grads");
         this->core->template addArgument<T>(dSkipKernelId, "cnn_res_proj_w");
+        this->core->template addArgument<ulong>(dSkipKernelId, wOffset);
         this->core->template addArgument<ulong>(dSkipKernelId, gradInOffset); // dSkip destination
         this->core->template addArgument<ulong>(dSkipKernelId, dSkipOutOffset); // dOut source
         this->core->template addArgument<ulong>(dSkipKernelId, rpi.inC);
@@ -889,6 +892,8 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
         this->core->template addArgument<T>(dwKernelId, "cnn_actvs");
         this->core->template addArgument<T>(dwKernelId, "cnn_res_dproj_w");
         this->core->template addArgument<T>(dwKernelId, "cnn_res_dproj_b");
+        this->core->template addArgument<ulong>(dwKernelId, wOffset);
+        this->core->template addArgument<ulong>(dwKernelId, bOffset);
         this->core->template addArgument<ulong>(dwKernelId, dSkipOutOffset);
         this->core->template addArgument<ulong>(dwKernelId, rpi.skipOffset);
         this->core->template addArgument<ulong>(dwKernelId, rpi.inC);

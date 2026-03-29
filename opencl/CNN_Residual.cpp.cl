@@ -31,6 +31,7 @@ kernel void residual_add(global TYPE* actvs, ulong outOffset, ulong skipOffset, 
 // Projection shortcut: 1x1 conv. One work-item per output element (oc, s).
 kernel void residual_add_proj(global TYPE* actvs, ulong outOffset, ulong skipOffset,
                               global const TYPE* projW, global const TYPE* projB,
+                              ulong wOffset, ulong bOffset,
                               ulong inC, ulong outC, ulong spatialSize)
 {
   size_t gid = get_global_id(0);
@@ -42,10 +43,10 @@ kernel void residual_add_proj(global TYPE* actvs, ulong outOffset, ulong skipOff
   ulong oc = gid / spatialSize;
   ulong s = gid % spatialSize;
 
-  TYPE projected = projB[oc];
+  TYPE projected = projB[bOffset + oc];
 
   for (ulong ic = 0; ic < inC; ic++)
-    projected += projW[oc * inC + ic] * actvs[skipOffset + ic * spatialSize + s];
+    projected += projW[wOffset + oc * inC + ic] * actvs[skipOffset + ic * spatialSize + s];
 
   actvs[outOffset + gid] += projected;
 }
@@ -70,6 +71,7 @@ kernel void residual_bwd(global TYPE* grads, ulong dSkipOffset, ulong dOutOffset
 
 // Projection backward: compute dSkip = W^T * dOut. One work-item per skip element (ic, s).
 kernel void residual_bwd_proj_dskip(global TYPE* grads, global const TYPE* projW,
+                                     ulong wOffset,
                                      ulong dSkipOffset, ulong dOutOffset,
                                      ulong inC, ulong outC, ulong spatialSize)
 {
@@ -85,7 +87,7 @@ kernel void residual_bwd_proj_dskip(global TYPE* grads, global const TYPE* projW
   TYPE sum = (TYPE)0;
 
   for (ulong oc = 0; oc < outC; oc++)
-    sum += projW[oc * inC + ic] * grads[dOutOffset + oc * spatialSize + s];
+    sum += projW[wOffset + oc * inC + ic] * grads[dOutOffset + oc * spatialSize + s];
 
   grads[dSkipOffset + gid] += sum;
 }
@@ -95,6 +97,7 @@ kernel void residual_bwd_proj_dskip(global TYPE* grads, global const TYPE* projW
 // Projection backward: accumulate weight gradients. One work-item per weight (oc, ic).
 kernel void residual_bwd_proj_dw(global const TYPE* grads, global const TYPE* actvs,
                                   global TYPE* dProjW, global TYPE* dProjB,
+                                  ulong wOffset, ulong bOffset,
                                   ulong dOutOffset, ulong skipOffset,
                                   ulong inC, ulong outC, ulong spatialSize)
 {
@@ -111,7 +114,7 @@ kernel void residual_bwd_proj_dw(global const TYPE* grads, global const TYPE* ac
   for (ulong s = 0; s < spatialSize; s++)
     dw += grads[dOutOffset + oc * spatialSize + s] * actvs[skipOffset + ic * spatialSize + s];
 
-  dProjW[gid] += dw;
+  dProjW[wOffset + gid] += dw;
 
   // Accumulate bias gradient (only for ic == 0 to avoid duplicate adds)
   if (ic == 0) {
@@ -120,7 +123,7 @@ kernel void residual_bwd_proj_dw(global const TYPE* grads, global const TYPE* ac
     for (ulong s = 0; s < spatialSize; s++)
       db += grads[dOutOffset + oc * spatialSize + s];
 
-    dProjB[oc] += db;
+    dProjB[bOffset + oc] += db;
   }
 }
 
