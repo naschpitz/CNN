@@ -63,23 +63,49 @@
 <div class="toc">
   <h4>On this page</h4>
   <ol>
+    <li><a href="#why-learn">Why Neural Networks Learn</a></li>
     <li><a href="#concepts">Key Concepts</a></li>
     <li><a href="#overview">Training Loop Overview</a></li>
     <li><a href="#steps">Detailed Steps</a></li>
+    <li><a href="#what-each-layer-learns">What Each Layer Learns</a></li>
     <li><a href="#convergence">Convergence &amp; Monitoring</a></li>
   </ol>
 </div>
 
+<h2 id="why-learn">Why Neural Networks Learn</h2>
+<p>A neural network starts as a meaningless pile of random numbers — thousands of filter weights, biases, normalization parameters, and dense layer weights, all initialized to small random values. Its initial predictions are pure noise. Yet after training, those same weights somehow encode sophisticated knowledge about how to recognize objects, classify images, or make predictions. How does this happen?</p>
+
+<p>The answer rests on a beautifully simple loop:</p>
+
+<div class="card">
+  <h3>The Learning Loop</h3>
+  <ol>
+    <li><strong>Forward pass</strong> — feed an image through the network and get a prediction. With random weights, the prediction is garbage.</li>
+    <li><strong>Measure the error</strong> — compare the prediction to the known correct answer using a <em>loss function</em>. The loss is a single number measuring "how wrong" the prediction is. Higher = worse.</li>
+    <li><strong>Trace the blame</strong> — use <em>backpropagation</em> to compute, for <strong>every single weight in the entire network</strong>, how much that weight contributed to the error. The result is a gradient: a number saying "if this weight increased by a tiny amount, the loss would change by this much."</li>
+    <li><strong>Adjust the weights</strong> — nudge each weight in the direction that <em>reduces</em> the loss. If increasing a weight would increase the loss (positive gradient), decrease it slightly. If increasing it would decrease the loss (negative gradient), increase it slightly.</li>
+    <li><strong>Repeat</strong> — do this for every training image, epoch after epoch. Each iteration makes the weights slightly better. Over thousands of iterations, the weights converge to values that produce accurate predictions.</li>
+  </ol>
+</div>
+
+<p>This process is called <strong>gradient descent</strong> — you're "descending" the loss landscape by following the gradient downhill. It's the same principle as a ball rolling downhill: it naturally moves toward the lowest point (minimum loss).</p>
+
+<p>The remarkable thing is that <strong>nobody tells the network what to look for</strong>. Nobody programs "look for edges in layer 1 and textures in layer 2." The network discovers these representations on its own because they happen to be the weight values that minimize the loss on the training data. The loss function (e.g., "penalize wrong classifications") is the only supervision the network receives.</p>
+
+<div class="info-box">
+  <strong>Why does backpropagation work across so many layers?</strong> Backpropagation applies the <em>chain rule</em> from calculus. Each layer knows its own local gradient (how its output changes with respect to its input and parameters). By multiplying these local gradients backward through the network, we get the gradient of the loss with respect to any weight, no matter how many layers deep. It's like tracing responsibility through a chain of events: "the loss was high because layer 5's output was wrong, which happened because layer 4's output was wrong, which happened because layer 3's filter weight was too large."
+</div>
+
 <h2 id="concepts">Key Concepts</h2>
-<p>Before diving into the training loop, here are the essential concepts:</p>
+<p>With the learning loop in mind, here are the essential terms used throughout the training pipeline:</p>
 
 <ul>
-  <li><strong>Epoch</strong> — one complete pass through the entire training dataset. If you have 1,000 images and train for 50 epochs, the network sees each image 50 times (in different random orders).</li>
+  <li><strong>Epoch</strong> — one complete pass through the entire training dataset. If you have 1,000 images and train for 50 epochs, the network sees each image 50 times (in different random orders). Each epoch gives the weights another chance to improve.</li>
   <li><strong>Sample</strong> — a single input-output pair: an image (input) and its correct label (expected output). The network learns by comparing its prediction to the expected output.</li>
-  <li><strong>Loss</strong> — a number measuring how wrong the prediction is. Lower loss = better predictions. Common loss functions include Mean Squared Error (MSE) and Cross-Entropy.</li>
-  <li><strong>Gradient</strong> — the direction and magnitude by which each parameter should change to reduce the loss. Computed via backpropagation (the chain rule applied layer by layer).</li>
-  <li><strong>Learning rate</strong> — controls how big a step the optimizer takes in the gradient direction. Too high → training diverges. Too low → training is painfully slow.</li>
-  <li><strong>Shuffling</strong> — randomizing the order of training samples each epoch. This prevents the network from memorizing patterns based on sample ordering and improves generalization.</li>
+  <li><strong>Loss</strong> — a number measuring how wrong the prediction is. Lower loss = better predictions. Common loss functions include Mean Squared Error (MSE) for regression and Cross-Entropy for classification. The loss is the signal that drives all learning.</li>
+  <li><strong>Gradient</strong> — for each weight, the gradient says "how much the loss would change if this weight changed by a tiny amount." Positive gradient means increasing the weight would increase the loss (bad); negative gradient means increasing the weight would decrease the loss (good). Computed via backpropagation.</li>
+  <li><strong>Learning rate</strong> — controls how big a step the optimizer takes in the gradient direction. Too high → weights overshoot and training diverges. Too low → training is painfully slow. Typical values: 0.001 to 0.01.</li>
+  <li><strong>Shuffling</strong> — randomizing the order of training samples each epoch. This prevents the network from memorizing patterns based on sample ordering (e.g., "all cats come first") and improves generalization to new data.</li>
 </ul>
 
 <h2 id="overview">Training Loop Overview</h2>
@@ -198,6 +224,45 @@ Tensor3D&lt;<span class="type">T</span>&gt; dCurrent = dCNNOut;
     }
   }
 }</code></pre>
+</div>
+
+
+<h2 id="what-each-layer-learns">What Each Layer Learns</h2>
+<p>During training, different layers develop different specializations. This happens automatically — the loss signal propagates backward through the chain, and each layer adjusts its weights to best serve its role in the pipeline:</p>
+
+<table>
+  <tr><th>Layer</th><th>What it learns</th><th>How</th></tr>
+  <tr>
+    <td><strong>Conv2D (early)</strong></td>
+    <td>Simple, local patterns: edges, color gradients, spots</td>
+    <td>Filter weights converge to small patterns (like edge detectors) that are broadly useful across many images. These patterns are often visually interpretable.</td>
+  </tr>
+  <tr>
+    <td><strong>Conv2D (deep)</strong></td>
+    <td>Complex, compositional patterns: textures, object parts, shapes</td>
+    <td>Deep filters operate on the feature maps from earlier layers, combining simple features into complex ones. A "face detector" filter might activate when it sees two eye-like patches above a mouth-like patch.</td>
+  </tr>
+  <tr>
+    <td><strong>InstanceNorm</strong></td>
+    <td>Optimal scale (γ) and offset (β) for each feature channel</td>
+    <td>Some channels work best with amplified activations (high γ), others with suppressed activations. The network learns these per-channel scaling factors to optimize the activation distribution for the subsequent ReLU.</td>
+  </tr>
+  <tr>
+    <td><strong>Residual (projection)</strong></td>
+    <td>How to map feature channels when dimensions change</td>
+    <td>The 1×1 projection learns which combinations of input channels should map to which output channels in the skip connection.</td>
+  </tr>
+  <tr>
+    <td><strong>Dense layers (ANN)</strong></td>
+    <td>How to map the extracted features to output classes</td>
+    <td>Dense layer weights learn which combinations of features (from the final CNN output) are indicative of each class. For cat vs. dog classification, specific feature combinations activate for cats and different ones for dogs.</td>
+  </tr>
+</table>
+
+<p>Layers without learnable parameters (ReLU, Pool, GlobalAvgPool, Flatten) don't "learn" anything — they apply fixed transformations. But they are essential because they shape the data flow: ReLU introduces the non-linearity that makes learning complex patterns possible, Pool provides translation invariance and downsampling, and GlobalAvgPool eliminates spatial information to produce a compact representation.</p>
+
+<div class="tip-box">
+  <strong>The feature hierarchy:</strong> The progression from simple → complex features is not programmed; it emerges naturally from the network structure. Early layers see small spatial regions (3×3 or 5×5 pixels) and can only detect simple patterns. Deeper layers see larger effective regions (because each layer's receptive field builds on the previous layer's) and can detect correspondingly more complex patterns. This hierarchical feature extraction is the fundamental reason CNNs work so well for vision tasks.
 </div>
 
 <h2 id="convergence">Convergence &amp; Monitoring</h2>

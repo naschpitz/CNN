@@ -64,9 +64,12 @@
   <h4>On this page</h4>
   <ol>
     <li><a href="#purpose">Purpose &amp; Intuition</a></li>
-    <li><a href="#propagation">Propagation</a></li>
+    <li><a href="#how-filters-work">How Filters Detect Patterns</a></li>
+    <li><a href="#multichannel">Multi-Channel Convolution</a></li>
+    <li><a href="#propagation">Propagation Formula</a></li>
     <li><a href="#output-shape">Output Shape Formula</a></li>
     <li><a href="#padding">Padding Strategies</a></li>
+    <li><a href="#why-filters-learn">Why Filters Learn</a></li>
     <li><a href="#backpropagation">Backpropagation</a></li>
     <li><a href="#initialization">Weight Initialization</a></li>
     <li><a href="#parameters">Parameters</a></li>
@@ -91,8 +94,139 @@
   <li><strong>Padding</strong> — how to handle the image boundaries where the filter would extend beyond the edge (VALID, SAME, or FULL).</li>
 </ul>
 
-<h2 id="propagation">Propagation</h2>
-<p>For each filter, propagation computes:</p>
+<h2 id="how-filters-work">How Filters Detect Patterns</h2>
+<p>A filter is a small grid of numbers (weights) — typically 3×3. To apply it, the filter is placed over a region of the input image, and at each position we perform an <strong>element-wise multiply-and-sum</strong>: multiply each filter weight by the corresponding input pixel, then sum all the products. This produces a single output number that indicates how well the input region matches the pattern encoded in the filter.</p>
+
+<p>Let's see this concretely. Consider a 5×5 grayscale input image with a vertical edge (bright on the left, dark on the right):</p>
+
+<table>
+  <tr><th colspan="5">Input Image (5×5)</th></tr>
+  <tr><td>200</td><td>200</td><td>200</td><td>50</td><td>50</td></tr>
+  <tr><td>200</td><td>200</td><td>200</td><td>50</td><td>50</td></tr>
+  <tr><td>200</td><td>200</td><td>200</td><td>50</td><td>50</td></tr>
+  <tr><td>200</td><td>200</td><td>200</td><td>50</td><td>50</td></tr>
+  <tr><td>200</td><td>200</td><td>200</td><td>50</td><td>50</td></tr>
+</table>
+
+<p>Now consider a 3×3 <strong>vertical edge detector</strong> filter:</p>
+
+<table>
+  <tr><th colspan="3">Filter (3×3)</th></tr>
+  <tr><td>-1</td><td>0</td><td>1</td></tr>
+  <tr><td>-1</td><td>0</td><td>1</td></tr>
+  <tr><td>-1</td><td>0</td><td>1</td></tr>
+</table>
+
+<p>This filter has negative weights on the left and positive weights on the right. When placed over a region where values <em>increase</em> from left to right (a dark-to-bright edge), the positive right side multiplied by bright values and the negative left side multiplied by dark values produce a large positive sum. When placed over a uniform region, the positive and negative sides cancel out to approximately zero.</p>
+
+<h3>Step-by-step computation</h3>
+<p><strong>Position (0,0):</strong> The filter covers the top-left 3×3 region of the input:</p>
+<pre><code>(-1×200) + (0×200) + (1×200) +
+(-1×200) + (0×200) + (1×200) +
+(-1×200) + (0×200) + (1×200)
+= (-200 + 0 + 200) + (-200 + 0 + 200) + (-200 + 0 + 200)
+= 0 + 0 + 0 = <strong>0</strong>     ← uniform region, no edge detected</code></pre>
+
+<p><strong>Position (0,1):</strong> The filter shifts right by one pixel, covering columns 1–3:</p>
+<pre><code>(-1×200) + (0×200) + (1×50) +
+(-1×200) + (0×200) + (1×50) +
+(-1×200) + (0×200) + (1×50)
+= (-200 + 0 + 50) + (-200 + 0 + 50) + (-200 + 0 + 50)
+= -150 + -150 + -150 = <strong>-450</strong>     ← bright-to-dark transition detected</code></pre>
+
+<p><strong>Position (0,2):</strong> The filter covers columns 2–4:</p>
+<pre><code>(-1×200) + (0×50) + (1×50) +
+(-1×200) + (0×50) + (1×50) +
+(-1×200) + (0×50) + (1×50)
+= (-200 + 0 + 50) + (-200 + 0 + 50) + (-200 + 0 + 50)
+= -150 + -150 + -150 = <strong>-450</strong>     ← still at the edge</code></pre>
+
+<p>The full 3×3 output feature map is:</p>
+<table>
+  <tr><th colspan="3">Output Feature Map (3×3)</th></tr>
+  <tr><td>0</td><td><strong>-450</strong></td><td>0</td></tr>
+  <tr><td>0</td><td><strong>-450</strong></td><td>0</td></tr>
+  <tr><td>0</td><td><strong>-450</strong></td><td>0</td></tr>
+</table>
+
+<p>The large negative values in the middle column clearly highlight the vertical edge location. The sign tells us the direction (bright→dark produces negative; dark→bright would produce positive). The zero values indicate uniform regions where no edge was found.</p>
+
+<div class="info-box">
+  <strong>Key insight:</strong> The filter's weight pattern determines <em>what</em> it detects. A horizontal edge filter would have negative weights on top and positive on the bottom. A corner detector would have a more complex weight pattern. In a trained CNN, the network <strong>discovers these patterns automatically</strong> — the filter weights are adjusted by gradient descent to detect whatever patterns are most useful for the task.
+</div>
+
+<h2 id="multichannel">Multi-Channel Convolution</h2>
+<p>The example above used a single-channel (grayscale) input. Real images have multiple channels (e.g., RGB with 3 channels), and deeper layers in the network have dozens or hundreds of channels. Multi-channel convolution works the same way, but the filter has a separate 2D kernel for <em>each input channel</em>:</p>
+
+<ul>
+  <li>A filter applied to a 3-channel RGB input is actually <strong>three</strong> 3×3 grids (one per channel), totaling 27 weights.</li>
+  <li>At each position, the filter computes the multiply-and-sum separately for each channel, then <strong>sums across channels</strong> to produce a single output value.</li>
+  <li>This means one filter can learn patterns that combine information from all channels — for example, detecting a "red-to-blue transition" by having positive weights in the red channel kernel and negative weights in the blue channel kernel.</li>
+</ul>
+
+<p>When there are multiple filters (say 32), each filter produces its own feature map. The output tensor has 32 channels — one per filter. Each filter has independently learned to detect a different pattern.</p>
+
+<div class="diagram">
+  <svg viewBox="0 0 800 240" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arr-mc" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+        <polygon points="0 0, 10 3, 0 6" fill="#666"/>
+      </marker>
+    </defs>
+
+    <!-- 3-channel input -->
+    <rect x="20" y="30" width="70" height="70" fill="#fce8e6" stroke="#c5221f" stroke-width="2" rx="3"/>
+    <rect x="30" y="40" width="70" height="70" fill="#e6f4ea" stroke="#34a853" stroke-width="2" rx="3"/>
+    <rect x="40" y="50" width="70" height="70" fill="#e8f0fe" stroke="#1a73e8" stroke-width="2" rx="3"/>
+    <text x="60" y="15" text-anchor="middle" font-size="12" font-weight="bold">Input</text>
+    <text x="60" y="145" text-anchor="middle" font-size="10" fill="#666">(3ch, H, W)</text>
+
+    <!-- Filter 0: 3 kernels -->
+    <text x="240" y="15" text-anchor="middle" font-size="12" font-weight="bold">Filter 0</text>
+    <rect x="190" y="30" width="40" height="40" fill="#fce8e6" stroke="#c5221f" stroke-width="1.5" rx="2"/>
+    <rect x="200" y="40" width="40" height="40" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5" rx="2"/>
+    <rect x="210" y="50" width="40" height="40" fill="#e8f0fe" stroke="#1a73e8" stroke-width="1.5" rx="2"/>
+    <text x="220" y="115" text-anchor="middle" font-size="9" fill="#666">(3ch, 3×3)</text>
+
+    <!-- Arrow to sum -->
+    <path d="M 260 60 L 310 60" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arr-mc)"/>
+    <text x="285" y="50" text-anchor="middle" font-size="9" fill="#666">×, Σ</text>
+
+    <!-- Output ch 0 -->
+    <rect x="320" y="40" width="50" height="50" fill="#fef7e0" stroke="#f9ab00" stroke-width="2" rx="3"/>
+    <text x="345" y="70" text-anchor="middle" font-size="10">ch 0</text>
+
+    <!-- Filter 1 -->
+    <text x="470" y="15" text-anchor="middle" font-size="12" font-weight="bold">Filter 1</text>
+    <rect x="420" y="30" width="40" height="40" fill="#fce8e6" stroke="#c5221f" stroke-width="1.5" rx="2"/>
+    <rect x="430" y="40" width="40" height="40" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5" rx="2"/>
+    <rect x="440" y="50" width="40" height="40" fill="#e8f0fe" stroke="#1a73e8" stroke-width="1.5" rx="2"/>
+    <text x="450" y="115" text-anchor="middle" font-size="9" fill="#666">(3ch, 3×3)</text>
+
+    <!-- Arrow to sum -->
+    <path d="M 490 60 L 540 60" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arr-mc)"/>
+    <text x="515" y="50" text-anchor="middle" font-size="9" fill="#666">×, Σ</text>
+
+    <!-- Output ch 1 -->
+    <rect x="550" y="40" width="50" height="50" fill="#fef7e0" stroke="#f9ab00" stroke-width="2" rx="3"/>
+    <text x="575" y="70" text-anchor="middle" font-size="10">ch 1</text>
+
+    <!-- Dots -->
+    <text x="650" y="70" font-size="20" fill="#666">...</text>
+
+    <!-- Combined output -->
+    <rect x="700" y="25" width="60" height="80" fill="#fef7e0" stroke="#f9ab00" stroke-width="2" rx="3"/>
+    <text x="730" y="55" text-anchor="middle" font-size="10">ch 0</text>
+    <text x="730" y="70" text-anchor="middle" font-size="10">ch 1</text>
+    <text x="730" y="85" text-anchor="middle" font-size="10">...</text>
+    <text x="730" y="130" text-anchor="middle" font-size="10" fill="#666">(F ch, H', W')</text>
+    <text x="730" y="15" text-anchor="middle" font-size="12" font-weight="bold">Output</text>
+  </svg>
+  <figcaption>Each filter has one kernel per input channel. Each filter produces one output channel. F filters → F output channels.</figcaption>
+</div>
+
+<h2 id="propagation">Propagation Formula</h2>
+<p>The full convolution formula puts the multiply-and-sum from the example above into mathematical notation. For each filter \(f\), at each output position \((h, w)\):</p>
 <div class="math-block">
 \[ \text{output}[f, h, w] = \text{bias}[f] + \sum_{c=0}^{C-1} \sum_{kh=0}^{K_h-1} \sum_{kw=0}^{K_w-1} \text{input}[c, h \cdot s_y + kh - p_y, w \cdot s_x + kw - p_x] \times \text{filter}[f, c, kh, kw] \]
 </div>
@@ -217,6 +351,35 @@
     </g>
   </svg>
   <figcaption>Padding strategies: VALID (no padding), SAME (preserve size), FULL (expand)</figcaption>
+</div>
+
+<h2 id="why-filters-learn">Why Filters Learn</h2>
+<p>The vertical edge filter in the example above was hand-designed — we chose the weights [-1, 0, 1] because we <em>knew</em> what pattern we wanted to detect. But in a real CNN, the filter weights start as random numbers. How do they end up detecting useful patterns?</p>
+
+<p>The answer is <strong>gradient descent</strong>, and the logic works like this:</p>
+
+<ol>
+  <li><strong>The network makes a prediction</strong> — the input image flows through all the layers and produces an output (e.g., "90% cat, 10% dog").</li>
+  <li><strong>We measure the error</strong> — the loss function compares the prediction to the correct answer. If the image was actually a dog, the loss is high because the network was confidently wrong.</li>
+  <li><strong>We ask: "which filter weights contributed to this error?"</strong> — this is what backpropagation computes. For every single filter weight in every layer, it calculates a <em>gradient</em>: a number telling us how much that weight contributed to the loss, and in which direction.</li>
+  <li><strong>We adjust the weights to reduce the error</strong> — each weight is nudged slightly in the direction that would have reduced the loss. Weights that made the prediction worse are adjusted; weights that didn't contribute much stay roughly the same.</li>
+</ol>
+
+<p>Over thousands of training images, this process converges: filter weights that detect genuinely useful patterns (edges, textures, shapes that help distinguish cats from dogs) are reinforced, while useless weights fade toward values that don't interfere.</p>
+
+<div class="card">
+  <h3>Concrete example: how a filter weight gets updated</h3>
+  <p>Suppose filter weight \(w_{0,0}\) (top-left corner of filter 0) currently has value 0.3. During training on one image:</p>
+  <ol>
+    <li>The gradient computation reveals \(\frac{\partial L}{\partial w_{0,0}} = +0.05\) — meaning this weight made the loss slightly <em>higher</em> (positive gradient = increasing loss).</li>
+    <li>With learning rate 0.01, the weight update is: \(w_{0,0} \leftarrow 0.3 - 0.01 \times 0.05 = 0.2995\)</li>
+    <li>The weight decreased slightly. If this happens consistently across many images, the weight will keep decreasing, moving toward whatever value minimizes the loss.</li>
+  </ol>
+  <p>Now multiply this by thousands of weights across dozens of filters and thousands of training images. Each weight is independently nudged toward its optimal value. The emergent result is that filters self-organize into meaningful pattern detectors.</p>
+</div>
+
+<div class="info-box">
+  <strong>What patterns emerge?</strong> Research consistently shows that early-layer filters learn simple patterns: horizontal edges, vertical edges, diagonal edges, color blobs, gradients. Deeper layers combine these into textures, then object parts, then whole objects. The network discovers its own feature hierarchy — no one tells it to look for edges first.
 </div>
 
 <h2 id="backpropagation">Backpropagation</h2>
