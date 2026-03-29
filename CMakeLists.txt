@@ -106,21 +106,21 @@ target_compile_definitions(CNN PRIVATE CNN_LIBRARY)
 # Test executable
 add_executable(test_cnn
   tests/test_main.cpp
-  tests/test_conv2d.cpp
-  tests/test_layers.cpp
-  tests/test_layers2.cpp
-  tests/test_instancenorm.cpp
-  tests/test_globalavgpool.cpp
-  tests/test_globaldualpool.cpp
-  tests/test_residual.cpp
-  tests/test_integration_basic.cpp
-  tests/test_integration_basic2.cpp
-  tests/test_integration_basic3.cpp
-  tests/test_integration_globalpool.cpp
-  tests/test_integration_residual.cpp
-  tests/test_integration_costfunc.cpp
-  tests/test_integration_exact.cpp
-  tests/test_integration_batchnorm.cpp
+  tests/test_cpu_conv2d.cpp
+  tests/test_cpu_layers.cpp
+  tests/test_cpu_layers2.cpp
+  tests/test_cpu_instancenorm.cpp
+  tests/test_cpu_globalavgpool.cpp
+  tests/test_cpu_globaldualpool.cpp
+  tests/test_cpu_residual.cpp
+  tests/test_cpu_integration_basic.cpp
+  tests/test_cpu_integration_basic2.cpp
+  tests/test_cpu_integration_basic3.cpp
+  tests/test_cpu_integration_globalpool.cpp
+  tests/test_cpu_integration_residual.cpp
+  tests/test_cpu_integration_costfunc.cpp
+  tests/test_cpu_integration_exact.cpp
+  tests/test_cpu_integration_batchnorm.cpp
   tests/test_gpu_basic.cpp
   tests/test_gpu_basic2.cpp
   tests/test_gpu_basic3.cpp
