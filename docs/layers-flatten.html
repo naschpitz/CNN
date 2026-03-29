@@ -58,37 +58,73 @@
 <main class="main">
 
 <h1>Flatten Layer</h1>
-<p>Converts a 3D tensor (channels, height, width) into a 1D vector for input to dense layers.</p>
+<p>The Flatten layer converts a 3D tensor (channels × height × width) into a 1D vector. This is the bridge between convolutional layers, which work with spatial feature maps, and dense (fully-connected) layers, which expect a flat input vector. Without flatten, the network cannot transition from feature extraction (CNN) to classification (ANN).</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
     <li><a href="#purpose">Purpose</a></li>
     <li><a href="#propagation">Propagation</a></li>
+    <li><a href="#example">Numeric Example</a></li>
     <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#placement">Placement in the Network</a></li>
     <li><a href="#parameters">Parameters</a></li>
   </ol>
 </div>
 
 <h2 id="purpose">Purpose</h2>
-<p>Dense layers expect 1D input. Flatten reshapes the 3D feature maps from convolutional layers into a single vector while preserving the data order (NCHW layout).</p>
+<p>Convolutional layers output 3D tensors — each element has a channel, row, and column coordinate. Dense layers, however, treat their input as a simple 1D list of numbers, where each input connects to every neuron. The flatten layer performs this dimensionality change.</p>
+
+<p>Conceptually, flatten takes all the values in the 3D tensor and lays them out in a single row. The order follows the NCHW memory layout: all spatial values for channel 0 come first, then all values for channel 1, and so on.</p>
 
 <h2 id="propagation">Propagation</h2>
-<p>Returns the underlying 1D data vector. Since the CNN library uses NCHW layout internally, the data is already stored contiguously in memory:</p>
+<p>Because the CNN library stores tensors in NCHW layout internally — meaning the underlying <code>std::vector&lt;T&gt;</code> is already a flat, contiguous array — flatten is effectively a <strong>zero-copy operation</strong>. It simply returns the existing data vector with a reinterpretation of its shape:</p>
 <div class="math-block">
-\[ \text{output} = \text{input.data} \]
+\[ \text{output} = \text{input.data} \qquad \text{(same memory, different shape interpretation)} \]
 </div>
 
-<p>This is a <strong>zero-copy operation</strong> — no data movement occurs.</p>
+<p>The output vector has \(C \times H \times W\) elements. No memory allocation, no data copying.</p>
+
+<h2 id="example">Numeric Example</h2>
+<p>Consider a tensor with shape (2 channels, 2 height, 3 width):</p>
+
+<table>
+  <tr><th>Channel 0</th><th></th><th></th><th>Channel 1</th><th></th><th></th></tr>
+  <tr><td>1.0</td><td>2.0</td><td>3.0</td><td>7.0</td><td>8.0</td><td>9.0</td></tr>
+  <tr><td>4.0</td><td>5.0</td><td>6.0</td><td>10.0</td><td>11.0</td><td>12.0</td></tr>
+</table>
+
+<p>Flattened output (NCHW order):</p>
+<pre><code>[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0]</code></pre>
+
+<p>Notice that channel 0's values (1–6) come before channel 1's values (7–12). Within each channel, values are laid out row by row.</p>
 
 <h2 id="backpropagation">Backpropagation</h2>
-<p>Reshapes the 1D gradient back to the original 3D shape:</p>
+<p>During backpropagation, the gradient arrives as a 1D vector from the dense layers. Flatten's backward pass simply reshapes it back to the original 3D shape so the preceding CNN layer can process it:</p>
 <div class="math-block">
 \[ \frac{\partial L}{\partial x} = \text{reshape}\left(\frac{\partial L}{\partial y}, \text{inputShape}\right) \]
 </div>
 
+<p>Like the forward pass, this is a zero-copy operation — the data doesn't move, only the shape metadata changes. The gradient values are unchanged; they're just reinterpreted as a 3D tensor with the original (C, H, W) dimensions.</p>
+
+<h2 id="placement">Placement in the Network</h2>
+<p>Flatten must appear <strong>exactly once</strong> in the network, at the boundary between CNN and dense layers. Typical placement patterns:</p>
+
+<ul>
+  <li><strong>After the last Pool:</strong> <code>... → Pool → <strong>Flatten</strong> → Dense</code></li>
+  <li><strong>After GlobalAvgPool:</strong> <code>... → GlobalAvgPool → <strong>Flatten</strong> → Dense</code></li>
+  <li><strong>After GlobalDualPool:</strong> <code>... → GlobalDualPool → <strong>Flatten</strong> → Dense</code></li>
+</ul>
+
+<div class="warn-box">
+  <strong>Dense layer sizing:</strong> The first dense layer's input size must exactly match the flattened vector size. If the last CNN layer outputs shape \((C, H, W)\), the first dense layer must accept \(C \times H \times W\) inputs. When using GlobalAvgPool, this reduces to just \(C\). When using GlobalDualPool, it's \(2C\).
+</div>
+
 <h2 id="parameters">Parameters</h2>
-<p><strong>No learnable parameters.</strong> Flatten is a pure reshape operation.</p>
+<p><strong>No learnable parameters.</strong> Flatten is a pure reshape operation — it adds zero parameters to the model.</p>
+
+<h3>JSON Configuration</h3>
+<pre><code>{ <span class="string">"type"</span>: <span class="string">"flatten"</span> }</code></pre>
 
 </main>
 </div>

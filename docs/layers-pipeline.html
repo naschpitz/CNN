@@ -58,20 +58,23 @@
 <main class="main">
 
 <h1>Layer Pipeline Example</h1>
-<p>Here's a concrete numeric example showing how data flows through a sequence of layers.</p>
+<p>This page provides concrete, step-by-step examples showing how data flows through a sequence of CNN layers. Understanding the shape transformations and parameter counts at each stage is essential for designing effective architectures. We walk through two examples: a simple classification pipeline and a modern architecture using residual blocks and global pooling.</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
-    <li><a href="#example">Image Classification Pipeline</a></li>
+    <li><a href="#simple">Simple Classification Pipeline</a></li>
+    <li><a href="#modern">Modern Architecture Pipeline</a></li>
+    <li><a href="#guidelines">Architecture Design Guidelines</a></li>
   </ol>
 </div>
 
-<h2 id="example">Image Classification Pipeline</h2>
+<h2 id="simple">Simple Classification Pipeline</h2>
+<p>This example shows a minimal but complete pipeline for classifying a small grayscale image. Each step shows the shape transformation, the math involved, and the parameter count.</p>
 
 <div class="card">
-  <h3>Example: Image Classification Pipeline</h3>
-  <p><strong>Input:</strong> 1 channel, 6×6 image (e.g., grayscale)</p>
+  <h3>Example: Grayscale Image → Class Prediction</h3>
+  <p><strong>Input:</strong> 1 channel, 6×6 image (e.g., grayscale digit)</p>
   <div class="math-block">
     \[ \text{Shape: } 1 \times 6 \times 6 \]
   </div>
@@ -125,8 +128,92 @@
   <p>The 8-element vector can now be fed to a dense layer for classification.</p>
 </div>
 
+<h2 id="modern">Modern Architecture Pipeline</h2>
+<p>This example uses residual blocks, InstanceNorm, and GlobalAvgPool — the modern pattern that enables deeper, better-performing networks.</p>
+
+<div class="card">
+  <h3>Example: RGB Image → 10-Class Classification</h3>
+  <p><strong>Input:</strong> 3 channels (RGB), 32×32 image</p>
+  <div class="math-block">
+    \[ \text{Shape: } 3 \times 32 \times 32 \]
+  </div>
+
+  <h4>Step 1: Conv2D (32 filters, 3×3, SAME padding)</h4>
+  <p>Initial feature extraction. SAME padding preserves spatial dimensions.</p>
+  <div class="math-block">
+    \[ \text{Shape: } 32 \times 32 \times 32 \]
+  </div>
+  <p><strong>Parameters:</strong> \(32 \times 3 \times 3 \times 3 + 32 = 896\)</p>
+
+  <h4>Step 2: InstanceNorm + ReLU</h4>
+  <p>Normalize and activate. Shape unchanged: \(32 \times 32 \times 32\)</p>
+  <p><strong>Parameters:</strong> 64 learnable (γ, β) + 64 running stats</p>
+
+  <h4>Step 3: Residual Block (32 → 32, identity shortcut)</h4>
+  <p>Conv2D(32, 3×3, SAME) → InstanceNorm → ReLU, with skip connection. No projection needed since channels stay at 32.</p>
+  <div class="math-block">
+    \[ \text{Shape: } 32 \times 32 \times 32 \]
+  </div>
+  <p><strong>Parameters:</strong> \(32 \times 32 \times 3 \times 3 + 32 = 9{,}248\) (conv) + 64 (norm) = 9,312</p>
+
+  <h4>Step 4: MaxPool (2×2, stride 2)</h4>
+  <p>Spatial downsampling outside the residual block.</p>
+  <div class="math-block">
+    \[ \text{Shape: } 32 \times 16 \times 16 \]
+  </div>
+
+  <h4>Step 5: Residual Block (32 → 64, projection shortcut)</h4>
+  <p>Conv2D(64, 3×3, SAME) → InstanceNorm → ReLU. Channel count increases, so a 1×1 projection is auto-created.</p>
+  <div class="math-block">
+    \[ \text{Shape: } 64 \times 16 \times 16 \]
+  </div>
+  <p><strong>Parameters:</strong> \(64 \times 32 \times 3 \times 3 + 64 = 18{,}496\) (conv) + 128 (norm) + \(64 \times 32 + 64 = 2{,}112\) (projection) = 20,736</p>
+
+  <h4>Step 6: GlobalAvgPool</h4>
+  <p>Collapse each 16×16 feature map to a single value. This is the key — without GlobalAvgPool, flatten would produce \(64 \times 16 \times 16 = 16{,}384\) elements.</p>
+  <div class="math-block">
+    \[ \text{Shape: } 64 \times 1 \times 1 \]
+  </div>
+
+  <h4>Step 7: Flatten</h4>
+  <p>Reshape to 1D vector: just 64 elements.</p>
+  <div class="math-block">
+    \[ \text{Shape: } 64 \]
+  </div>
+
+  <h4>Summary</h4>
+  <table>
+    <tr><th>Layer</th><th>Output Shape</th><th>Parameters</th></tr>
+    <tr><td>Input</td><td>3×32×32</td><td>—</td></tr>
+    <tr><td>Conv2D (initial)</td><td>32×32×32</td><td>896</td></tr>
+    <tr><td>InstanceNorm + ReLU</td><td>32×32×32</td><td>64</td></tr>
+    <tr><td>Residual Block (identity)</td><td>32×32×32</td><td>9,312</td></tr>
+    <tr><td>MaxPool</td><td>32×16×16</td><td>0</td></tr>
+    <tr><td>Residual Block (projection)</td><td>64×16×16</td><td>20,736</td></tr>
+    <tr><td>GlobalAvgPool</td><td>64×1×1</td><td>0</td></tr>
+    <tr><td>Flatten</td><td>64</td><td>0</td></tr>
+    <tr><td colspan="2"><strong>Total CNN Parameters</strong></td><td><strong>31,008</strong></td></tr>
+  </table>
+
+  <p>The 64-element vector feeds into ANN dense layers (e.g., 64→32→10) for final classification.</p>
+</div>
+
+<h2 id="guidelines">Architecture Design Guidelines</h2>
+
+<div class="tip-box">
+  <strong>General principles for designing CNN architectures:</strong>
+  <ul>
+    <li><strong>Increase channels, decrease spatial:</strong> As you go deeper, increase the number of filters (32→64→128) while decreasing spatial dimensions with pooling. This maintains roughly constant computation per layer.</li>
+    <li><strong>Use SAME padding inside residual blocks:</strong> Residual connections require matching spatial dimensions. Use SAME padding for convolutions inside residual blocks.</li>
+    <li><strong>Pool outside residual blocks:</strong> Place MaxPool <em>after</em> RESIDUAL_END, not inside the block. Spatial downsampling inside a residual block breaks the skip connection.</li>
+    <li><strong>Use GlobalAvgPool before flatten:</strong> This dramatically reduces the number of dense layer parameters and provides regularization.</li>
+    <li><strong>InstanceNorm before ReLU:</strong> Always place normalization before the activation function for best results.</li>
+    <li><strong>Start with fewer channels:</strong> Begin with 16 or 32 filters and increase gradually. More initial filters means more parameters and slower training.</li>
+  </ul>
+</div>
+
 <div class="warn-box">
-  <strong>Memory Layout:</strong> The CNN library uses NCHW (channels-first) layout. When flattening, elements are ordered as: all values in channel 0, then channel 1, etc. This differs from NHWC (channels-last) used by some frameworks.
+  <strong>Memory Layout:</strong> The CNN library uses NCHW (channels-first) layout. When flattening, elements are ordered as: all values in channel 0, then channel 1, etc. This differs from NHWC (channels-last) used by some frameworks like TensorFlow.
 </div>
 
 </main>

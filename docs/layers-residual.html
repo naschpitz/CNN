@@ -58,90 +58,192 @@
 <main class="main">
 
 <h1>Residual (Skip Connection) Layers</h1>
-<p>Residual connections add the input of a block directly to its output, enabling gradient flow through very deep networks. The library uses two marker layers — <code>RESIDUAL_START</code> and <code>RESIDUAL_END</code> — to define residual blocks.</p>
+<p>Residual connections, introduced in the landmark ResNet paper (He et al., 2015), are one of the most important innovations in deep learning. They add the input of a block directly to its output, creating a "shortcut" that allows information and gradients to bypass intermediate layers. The CNN library uses two marker layers — <code>RESIDUAL_START</code> and <code>RESIDUAL_END</code> — to define residual blocks in the layer configuration.</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
-    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#purpose">Why Residual Connections Matter</a></li>
+    <li><a href="#how-it-works">How It Works</a></li>
     <li><a href="#identity">Identity Shortcut</a></li>
     <li><a href="#projection">Projection Shortcut</a></li>
     <li><a href="#backpropagation">Backpropagation</a></li>
-    <li><a href="#nesting">Nesting Rules</a></li>
+    <li><a href="#nesting">Nesting &amp; Stacking</a></li>
     <li><a href="#parameters">Parameters</a></li>
   </ol>
 </div>
 
-<h2 id="purpose">Purpose</h2>
+<h2 id="purpose">Why Residual Connections Matter</h2>
+<p>In theory, deeper networks should always perform at least as well as shallower ones — the extra layers could simply learn the identity function (pass input through unchanged). In practice, however, training very deep networks (more than ~20 layers) without residual connections leads to <strong>degradation</strong>: the deeper network actually performs <em>worse</em> than the shallower one.</p>
+
+<p>This happens because:</p>
 <ul>
-  <li><strong>Gradient highway</strong> — the skip path lets gradients bypass intermediate layers, preventing vanishing gradients in deep networks</li>
-  <li><strong>Easier optimization</strong> — the network only needs to learn the <em>residual</em> (difference from identity), which is often simpler</li>
-  <li><strong>Deeper architectures</strong> — enables training networks with dozens or hundreds of layers</li>
+  <li><strong>Vanishing gradients</strong> — as gradients flow backward through many layers, they get multiplied by small numbers at each step, eventually becoming too tiny to drive meaningful weight updates. The early layers barely learn.</li>
+  <li><strong>Optimization difficulty</strong> — learning the identity function through multiple non-linear layers is surprisingly hard for gradient descent. The optimizer gets stuck in bad local minima.</li>
 </ul>
 
-<h2 id="identity">Identity Shortcut</h2>
-<p>When the input and output have the <strong>same number of channels</strong>, the skip connection is a simple element-wise addition:</p>
-<div class="math-block">
-\[ \text{output} = \text{block}(x) + x \]
+<p>Residual connections solve both problems elegantly:</p>
+<ul>
+  <li><strong>Gradient highway</strong> — the skip path creates a direct route for gradients to flow backward without being multiplied by layer weights. Even in a 100-layer network, gradients can reach the first layer undiminished through the skip connections.</li>
+  <li><strong>Learning residuals is easier</strong> — instead of learning the full transformation \(H(x)\), the block only needs to learn the <em>residual</em> \(F(x) = H(x) - x\). If the ideal transformation is close to the identity, the residual \(F(x)\) is close to zero, which is much easier for the optimizer to discover.</li>
+</ul>
+
+<h2 id="how-it-works">How It Works</h2>
+<p>A residual block wraps a sequence of layers (typically Conv2D → InstanceNorm → ReLU) between <code>RESIDUAL_START</code> and <code>RESIDUAL_END</code> markers. At the end of the block, the original input (saved at <code>RESIDUAL_START</code>) is <strong>added element-wise</strong> to the block's output:</p>
+
+<div class="diagram">
+  <svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrow-res" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+        <polygon points="0 0, 10 3, 0 6" fill="#1a73e8"/>
+      </marker>
+    </defs>
+
+    <!-- Input -->
+    <rect x="30" y="90" width="80" height="50" fill="#e8f0fe" stroke="#1a73e8" stroke-width="2" rx="4"/>
+    <text x="70" y="120" text-anchor="middle" font-weight="bold" font-size="12">x (input)</text>
+
+    <!-- Block layers -->
+    <rect x="180" y="90" width="80" height="50" fill="#e6f4ea" stroke="#34a853" stroke-width="2" rx="4"/>
+    <text x="220" y="120" text-anchor="middle" font-size="11">Conv2D</text>
+
+    <rect x="280" y="90" width="80" height="50" fill="#e6f4ea" stroke="#34a853" stroke-width="2" rx="4"/>
+    <text x="320" y="108" text-anchor="middle" font-size="11">Instance</text>
+    <text x="320" y="125" text-anchor="middle" font-size="11">Norm</text>
+
+    <rect x="380" y="90" width="80" height="50" fill="#e6f4ea" stroke="#34a853" stroke-width="2" rx="4"/>
+    <text x="420" y="120" text-anchor="middle" font-size="11">ReLU</text>
+
+    <!-- Addition circle -->
+    <circle cx="530" cy="115" r="22" fill="#fef7e0" stroke="#f9ab00" stroke-width="2"/>
+    <text x="530" y="122" text-anchor="middle" font-weight="bold" font-size="18">+</text>
+
+    <!-- Output -->
+    <rect x="590" y="90" width="80" height="50" fill="#e8f0fe" stroke="#1a73e8" stroke-width="2" rx="4"/>
+    <text x="630" y="120" text-anchor="middle" font-weight="bold" font-size="12">output</text>
+
+    <!-- Main path arrows -->
+    <path d="M 110 115 L 180 115" stroke="#1a73e8" stroke-width="2" fill="none" marker-end="url(#arrow-res)"/>
+    <path d="M 260 115 L 280 115" stroke="#34a853" stroke-width="2" fill="none" marker-end="url(#arrow-res)"/>
+    <path d="M 360 115 L 380 115" stroke="#34a853" stroke-width="2" fill="none" marker-end="url(#arrow-res)"/>
+    <path d="M 460 115 L 508 115" stroke="#34a853" stroke-width="2" fill="none" marker-end="url(#arrow-res)"/>
+    <path d="M 552 115 L 590 115" stroke="#1a73e8" stroke-width="2" fill="none" marker-end="url(#arrow-res)"/>
+
+    <!-- Skip connection -->
+    <path d="M 70 90 L 70 30 L 530 30 L 530 93" stroke="#c5221f" stroke-width="2.5" fill="none" stroke-dasharray="8,4" marker-end="url(#arrow-res)"/>
+    <text x="300" y="22" text-anchor="middle" font-size="11" font-weight="bold" fill="#c5221f">Skip Connection (identity or projection)</text>
+
+    <!-- Labels -->
+    <text x="300" y="165" text-anchor="middle" font-size="11" fill="#666">F(x) = block output</text>
+    <text x="630" y="165" text-anchor="middle" font-size="11" fill="#666">y = F(x) + x</text>
+  </svg>
+  <figcaption>Residual block: the skip connection adds the original input to the block's output</figcaption>
 </div>
 
-<p>No extra parameters are needed — this is a pure addition.</p>
+<p>The library automatically determines whether to use an identity shortcut (simple addition) or a projection shortcut (1×1 convolution) based on whether the channel count changes inside the block.</p>
+
+<h2 id="identity">Identity Shortcut</h2>
+<p>When the block's output has the <strong>same number of channels</strong> as its input (and the same spatial dimensions), the skip connection is a simple element-wise addition. No extra parameters are needed:</p>
+<div class="math-block">
+\[ \text{output}[c, h, w] = \text{block}(x)[c, h, w] + x[c, h, w] \]
+</div>
+
+<p>This is the most common case and the most efficient — it adds zero parameters and negligible computation. For example, a block with 64 input channels and a Conv2D that also produces 64 channels (using SAME padding to preserve spatial dimensions) uses an identity shortcut.</p>
 
 <h2 id="projection">Projection Shortcut</h2>
-<p>When the block changes the number of channels (e.g., from 32 to 64), the skip input must be projected to match via a learned 1×1 convolution:</p>
+<p>When the block changes the number of channels (e.g., from 32 to 64), the skip input and block output have different shapes and <em>cannot</em> be added directly. The skip input must first be <strong>projected</strong> to match the output's channel count via a learned 1×1 convolution:</p>
 <div class="math-block">
-\[ \text{output}[oc, s] = \text{block}(x)[oc, s] + \text{bias}[oc] + \sum_{ic=0}^{C_{in}-1} W[oc, ic] \cdot x[ic, s] \]
+\[ \text{output}[oc, s] = \text{block}(x)[oc, s] + \underbrace{\text{bias}[oc] + \sum_{ic=0}^{C_{in}-1} W[oc, ic] \cdot x[ic, s]}_{\text{1×1 projection of skip input}} \]
 </div>
 
-<p>The projection is automatically created during initialization when the channel counts differ. The projection weights are He-initialized and biases are zero-initialized.</p>
+<p>The 1×1 convolution linearly maps each spatial position from \(C_{in}\) channels to \(C_{out}\) channels. It is automatically created during initialization when the channel counts differ:</p>
+<ul>
+  <li><strong>Projection weights</strong> \(W\) — shape \((C_{out}, C_{in})\), initialized using He initialization</li>
+  <li><strong>Projection biases</strong> \(b\) — shape \((C_{out})\), initialized to zero</li>
+</ul>
 
 <div class="info-box">
-  <strong>Spatial dimensions:</strong> The skip input and block output must have the <strong>same spatial dimensions</strong> (H × W). If you need to downsample spatially, place a pool layer <em>outside</em> the residual block (after <code>RESIDUAL_END</code>).
+  <strong>Spatial dimensions must match:</strong> The skip input and block output must have the <strong>same spatial dimensions</strong> (H × W). The projection only handles channel mismatches. If you need to downsample spatially, place a pool layer <em>outside</em> the residual block (after <code>RESIDUAL_END</code>), not inside it.
 </div>
 
 <h2 id="backpropagation">Backpropagation</h2>
-<p><strong>Identity:</strong> The gradient is simply copied to both paths:</p>
+
+<h3>Identity Shortcut Backward</h3>
+<p>The gradient is simply <strong>added</strong> to the gradient flowing through the main path. This is the key insight — the skip connection ensures the gradient always has a direct path back to earlier layers:</p>
 <div class="math-block">
 \[ \frac{\partial L}{\partial x_{skip}} \mathrel{+}= \frac{\partial L}{\partial y} \]
 </div>
 
-<p><strong>Projection:</strong> Three gradients are computed:</p>
+<p>The \(\mathrel{+}=\) is important: the skip gradient is <em>added to</em> whatever gradient already flows back through the main path (Conv2D → Norm → ReLU). This means the total gradient at the block input is always at least as large as the output gradient — it never vanishes.</p>
+
+<h3>Projection Shortcut Backward</h3>
+<p>Three gradients must be computed:</p>
 <ul>
-  <li><strong>dSkip</strong> — gradient through the projection: \(\frac{\partial L}{\partial x_{skip}} \mathrel{+}= W^T \cdot \frac{\partial L}{\partial y}\)</li>
-  <li><strong>dW</strong> — gradient for projection weights: \(\frac{\partial L}{\partial W} = \frac{\partial L}{\partial y} \cdot x_{skip}^T\)</li>
-  <li><strong>dBias</strong> — gradient for projection biases: \(\frac{\partial L}{\partial b} = \sum_s \frac{\partial L}{\partial y}\)</li>
+  <li><strong>dSkip</strong> — gradient through the projection back to the skip input: \(\frac{\partial L}{\partial x_{skip}} \mathrel{+}= W^T \cdot \frac{\partial L}{\partial y}\). This uses the transposed projection weights to map the gradient back from \(C_{out}\) to \(C_{in}\) channels.</li>
+  <li><strong>dW</strong> — gradient for the projection weights (used to update them): \(\frac{\partial L}{\partial W} = \frac{\partial L}{\partial y} \cdot x_{skip}^T\). Each weight gradient is the product of the output gradient and the skip input.</li>
+  <li><strong>dBias</strong> — gradient for the projection biases: \(\frac{\partial L}{\partial b} = \sum_s \frac{\partial L}{\partial y}\). The bias gradient is the sum of output gradients across all spatial positions.</li>
 </ul>
 
-<h2 id="nesting">Nesting Rules</h2>
+<h2 id="nesting">Nesting &amp; Stacking</h2>
+<p>Residual blocks follow precise structural rules:</p>
+
 <ul>
-  <li>Every <code>RESIDUAL_START</code> must have a matching <code>RESIDUAL_END</code></li>
-  <li>Residual blocks can be nested (inner block completes before outer block ends)</li>
-  <li>Spatial dimensions must match between start and end of each block</li>
-  <li>Multiple residual blocks can be chained sequentially</li>
+  <li><strong>Matching pairs</strong> — every <code>RESIDUAL_START</code> must have a corresponding <code>RESIDUAL_END</code>. The library validates this during initialization.</li>
+  <li><strong>Nesting is supported</strong> — you can place a residual block inside another residual block. The inner block must complete (both start and end markers) before the outer block ends.</li>
+  <li><strong>Sequential stacking</strong> — multiple residual blocks can follow each other. This is the typical ResNet pattern: stack many residual blocks in sequence for progressively deeper feature extraction.</li>
+  <li><strong>Spatial dimension constraint</strong> — all layers inside a residual block must preserve spatial dimensions (H × W). Use SAME padding on Conv2D layers inside residual blocks.</li>
 </ul>
 
-<h3>Example Architecture</h3>
-<pre><code><span class="comment">// Identity block (channels unchanged)</span>
+<h3>Example: Complete ResNet-style Architecture</h3>
+<pre><code><span class="comment">// Initial feature extraction (no residual)</span>
+{ <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">32</span>, <span class="string">"filterSize"</span>: <span class="number">3</span>, <span class="string">"padding"</span>: <span class="string">"same"</span> }
+{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
+{ <span class="string">"type"</span>: <span class="string">"relu"</span> }
+
+<span class="comment">// Identity residual block (32 → 32 channels, no projection needed)</span>
 { <span class="string">"type"</span>: <span class="string">"residual_start"</span> }
-{ <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">32</span>, ... }
+{ <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">32</span>, <span class="string">"filterSize"</span>: <span class="number">3</span>, <span class="string">"padding"</span>: <span class="string">"same"</span> }
 { <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
 { <span class="string">"type"</span>: <span class="string">"relu"</span> }
 { <span class="string">"type"</span>: <span class="string">"residual_end"</span> }
 
-<span class="comment">// Projection block (channels change: 32 → 64)</span>
+<span class="comment">// Projection residual block (32 → 64 channels, projection auto-created)</span>
 { <span class="string">"type"</span>: <span class="string">"residual_start"</span> }
-{ <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">64</span>, ... }
+{ <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">64</span>, <span class="string">"filterSize"</span>: <span class="number">3</span>, <span class="string">"padding"</span>: <span class="string">"same"</span> }
 { <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
 { <span class="string">"type"</span>: <span class="string">"relu"</span> }
-{ <span class="string">"type"</span>: <span class="string">"residual_end"</span> }</code></pre>
+{ <span class="string">"type"</span>: <span class="string">"residual_end"</span> }
+
+<span class="comment">// Downsample OUTSIDE the residual block</span>
+{ <span class="string">"type"</span>: <span class="string">"maxpool"</span>, <span class="string">"size"</span>: <span class="number">2</span>, <span class="string">"stride"</span>: <span class="number">2</span> }
+
+<span class="comment">// Another identity block at 64 channels</span>
+{ <span class="string">"type"</span>: <span class="string">"residual_start"</span> }
+{ <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">64</span>, <span class="string">"filterSize"</span>: <span class="number">3</span>, <span class="string">"padding"</span>: <span class="string">"same"</span> }
+{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
+{ <span class="string">"type"</span>: <span class="string">"relu"</span> }
+{ <span class="string">"type"</span>: <span class="string">"residual_end"</span> }
+
+<span class="comment">// Global pooling and dense layers</span>
+{ <span class="string">"type"</span>: <span class="string">"globalavgpool"</span> }
+{ <span class="string">"type"</span>: <span class="string">"flatten"</span> }</code></pre>
 
 <h2 id="parameters">Parameters</h2>
-<p><strong>Identity shortcut:</strong> No learnable parameters.</p>
-<p><strong>Projection shortcut:</strong> A 1×1 convolution with:</p>
+<p><strong>Identity shortcut:</strong> No learnable parameters — it's a pure element-wise addition.</p>
+<p><strong>Projection shortcut:</strong> A 1×1 convolution adds parameters:</p>
 <div class="math-block">
 \[ \text{Parameters} = C_{out} \times C_{in} + C_{out} \]
 </div>
-<p>Where \(C_{in}\) is the skip input channels and \(C_{out}\) is the block output channels. The first term is weights, the second is biases.</p>
+<p>Where \(C_{in}\) is the skip input channels and \(C_{out}\) is the block output channels. The first term is the projection weight matrix; the second term is the bias vector (one per output channel).</p>
+
+<p>For example, projecting from 32 to 64 channels adds \(64 \times 32 + 64 = 2{,}112\) parameters — a modest number compared to the conv layers inside the block.</p>
+
+<h3>JSON Configuration</h3>
+<pre><code><span class="comment">// Start a residual block</span>
+{ <span class="string">"type"</span>: <span class="string">"residual_start"</span> }
+
+<span class="comment">// End a residual block (skip input is added to current tensor)</span>
+{ <span class="string">"type"</span>: <span class="string">"residual_end"</span> }</code></pre>
 
 </main>
 </div>

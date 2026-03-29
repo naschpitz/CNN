@@ -58,26 +58,38 @@
 <main class="main">
 
 <h1>ReLU Layer</h1>
-<p>Rectified Linear Unit (ReLU) is a simple but powerful non-linear activation function. It introduces non-linearity, allowing the network to learn complex patterns.</p>
+<p>Rectified Linear Unit (ReLU) is the most widely used activation function in modern neural networks. Despite its simplicity — it just zeroes out negative values — it is the key ingredient that allows deep networks to learn complex, non-linear relationships in data.</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
-    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#purpose">Why Non-Linearity Matters</a></li>
     <li><a href="#propagation">Propagation</a></li>
+    <li><a href="#example">Numeric Example</a></li>
     <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#placement">Placement in the Network</a></li>
     <li><a href="#parameters">Parameters</a></li>
   </ol>
 </div>
 
-<h2 id="purpose">Purpose</h2>
-<p>ReLU breaks the linearity of the network. Without activation functions, stacking multiple linear layers would be equivalent to a single linear transformation. ReLU is computationally efficient and works well with gradient-based optimization.</p>
+<h2 id="purpose">Why Non-Linearity Matters</h2>
+<p>Without activation functions, a neural network would be entirely linear — no matter how many layers you stack, the output is always a linear function of the input. Mathematically, a sequence of linear transformations \(W_3 \cdot W_2 \cdot W_1 \cdot x\) can always be collapsed into a single matrix multiplication \(W' \cdot x\). This severely limits what the network can learn.</p>
+
+<p>ReLU breaks this linearity by introducing a simple non-linear operation: it passes positive values unchanged and zeroes out negative values. This is enough to allow the network to learn arbitrarily complex decision boundaries when layers are stacked.</p>
+
+<p>Compared to older activation functions like sigmoid or tanh, ReLU has two major advantages:</p>
+<ul>
+  <li><strong>No gradient saturation</strong> — sigmoid/tanh have gradients that approach zero for large inputs, causing the "vanishing gradient" problem. ReLU's gradient is exactly 1 for positive inputs, enabling strong gradient flow through deep networks.</li>
+  <li><strong>Computational efficiency</strong> — ReLU is just a comparison and selection (<code>max(0, x)</code>), much cheaper than the exponentials required by sigmoid/tanh. This matters when applied millions of times per forward pass.</li>
+</ul>
 
 <h2 id="propagation">Propagation</h2>
-<p>Element-wise operation:</p>
+<p>ReLU applies an element-wise operation to every value in the 3D tensor. The spatial shape is unchanged — only individual values are modified:</p>
 <div class="math-block">
-\[ \text{output}[i] = \max(0, \text{input}[i]) \]
+\[ \text{output}[c, h, w] = \max(0, \text{input}[c, h, w]) \]
 </div>
+
+<p>Positive values pass through unchanged. Negative values become zero. The operation can be visualized as "clipping" the bottom of the activation distribution:</p>
 
 <div class="diagram">
   <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
@@ -107,18 +119,56 @@
   <figcaption>ReLU function: zero for negative inputs, identity for positive inputs</figcaption>
 </div>
 
+<h2 id="example">Numeric Example</h2>
+<p>Consider a feature map with shape (1 channel, 2×3):</p>
+
+<table>
+  <tr><th colspan="3">Input</th><th></th><th colspan="3">After ReLU</th></tr>
+  <tr><td>-2.0</td><td>3.5</td><td>-0.1</td><td>→</td><td>0.0</td><td>3.5</td><td>0.0</td></tr>
+  <tr><td>1.2</td><td>-4.0</td><td>0.8</td><td>→</td><td>1.2</td><td>0.0</td><td>0.8</td></tr>
+</table>
+
+<p>Three out of six values were negative and got zeroed out. The positive values (3.5, 1.2, 0.8) pass through unchanged. In practice, roughly 50% of activations are zeroed out by ReLU, creating a sparse representation that helps the network focus on the most relevant features.</p>
+
 <h2 id="backpropagation">Backpropagation</h2>
-<p>Gradient flows only where input was positive:</p>
+<p>ReLU's gradient is extremely simple: it acts as a binary gate. If the input was positive during the forward pass, the gradient flows through unchanged. If the input was negative (and was zeroed out), the gradient is blocked:</p>
 <div class="math-block">
 \[ \frac{\partial L}{\partial x_i} = \begin{cases} \frac{\partial L}{\partial y_i} & \text{if } x_i > 0 \\ 0 & \text{otherwise} \end{cases} \]
 </div>
 
+<p>Using the numeric example above, if the incoming gradient is:</p>
+<table>
+  <tr><th colspan="3">Incoming gradient ∂L/∂y</th><th></th><th colspan="3">Outgoing gradient ∂L/∂x</th></tr>
+  <tr><td>0.5</td><td>1.0</td><td>0.3</td><td>→</td><td>0.0</td><td>1.0</td><td>0.0</td></tr>
+  <tr><td>0.7</td><td>0.2</td><td>0.9</td><td>→</td><td>0.7</td><td>0.0</td><td>0.9</td></tr>
+</table>
+
+<p>The gradient at positions where the input was negative (-2.0, -0.1, -4.0) is zeroed out. The gradient at positive positions passes through unchanged.</p>
+
 <div class="tip-box">
-  <strong>Dying ReLU Problem:</strong> If a neuron's input is always negative during training, its gradient becomes zero and it never updates. This is rare in practice but can occur with poor initialization or high learning rates.
+  <strong>Dying ReLU Problem:</strong> If a neuron's input is <em>always</em> negative across all training samples, its gradient is permanently zero and its weights never update. This "dead neuron" can occur with poor weight initialization or excessively high learning rates that push weights into a region where the output is always negative. In practice, this is rare and can be mitigated by using He initialization (the default in this library) and reasonable learning rates.
+</div>
+
+<h2 id="placement">Placement in the Network</h2>
+<p>ReLU is placed <strong>after</strong> the linear operation (Conv2D) and <strong>after</strong> normalization (if used). The standard ordering is:</p>
+<pre><code>Conv2D → InstanceNorm → <strong>ReLU</strong> → Pool (optional)</code></pre>
+
+<p>This ordering ensures that:</p>
+<ul>
+  <li>The convolution computes the raw weighted sum (z-values)</li>
+  <li>InstanceNorm normalizes these values to have stable mean and variance</li>
+  <li>ReLU then introduces non-linearity on the normalized values</li>
+</ul>
+
+<div class="info-box">
+  <strong>ReLU after normalization, not before:</strong> Placing ReLU after InstanceNorm ensures the normalization sees the full distribution of values (both positive and negative). If ReLU came first, half the values would be zero, creating a skewed distribution that makes normalization less effective.
 </div>
 
 <h2 id="parameters">Parameters</h2>
-<p><strong>No learnable parameters.</strong> ReLU is a fixed non-linearity.</p>
+<p><strong>No learnable parameters.</strong> ReLU is a fixed, element-wise operation. It adds zero parameters to the model and negligible computation cost.</p>
+
+<h3>JSON Configuration</h3>
+<pre><code>{ <span class="string">"type"</span>: <span class="string">"relu"</span> }</code></pre>
 
 </main>
 </div>

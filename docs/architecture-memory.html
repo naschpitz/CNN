@@ -58,53 +58,115 @@
 <main class="main">
 
 <h1>Memory Layout</h1>
-<p>The CNN library uses a channels-first (NCHW) memory layout where all spatial elements for a single channel are stored contiguously before the next channel begins.</p>
+<p>Understanding how the CNN library stores data in memory is essential for reasoning about performance, debugging numerical issues, and extending the library. This page explains the NCHW tensor layout, how parameters are stored, and the implications for GPU computation.</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
-    <li><a href="#nchw">NCHW Layout</a></li>
+    <li><a href="#nchw">NCHW vs. NHWC</a></li>
+    <li><a href="#indexing">Address Computation</a></li>
     <li><a href="#tensors">Tensor Storage</a></li>
     <li><a href="#filters">Filter Storage</a></li>
+    <li><a href="#normalization">Normalization Parameter Storage</a></li>
+    <li><a href="#residual">Residual Projection Storage</a></li>
+    <li><a href="#gpu-buffers">GPU Buffer Layout</a></li>
   </ol>
 </div>
 
-<h2 id="nchw">NCHW Layout</h2>
-<p>All tensors use NCHW (channels-first) memory ordering:</p>
-<div class="math-block">
-\[ \text{data}[c \times H \times W + h \times W + w] = \text{tensor}[c, h, w] \]
+<h2 id="nchw">NCHW vs. NHWC</h2>
+<p>There are two common ways to lay out multi-dimensional image data in memory:</p>
+<ul>
+  <li><strong>NCHW (channels-first):</strong> All spatial values for channel 0 come first, then all values for channel 1, etc. This is what the CNN library uses.</li>
+  <li><strong>NHWC (channels-last):</strong> At each spatial position, all channel values are stored together. This is used by TensorFlow and some other frameworks.</li>
+</ul>
+
+<p>For a 3-channel, 2×2 image with RGB values, the difference is:</p>
+<table>
+  <tr><th>Layout</th><th>Memory Order</th></tr>
+  <tr><td><strong>NCHW</strong></td><td>[R₀₀, R₀₁, R₁₀, R₁₁, G₀₀, G₀₁, G₁₀, G₁₁, B₀₀, B₀₁, B₁₀, B₁₁]</td></tr>
+  <tr><td><strong>NHWC</strong></td><td>[R₀₀, G₀₀, B₀₀, R₀₁, G₀₁, B₀₁, R₁₀, G₁₀, B₁₀, R₁₁, G₁₁, B₁₁]</td></tr>
+</table>
+
+<div class="info-box">
+  <strong>Why NCHW?</strong> Convolution processes one channel at a time — it slides a 2D filter over the 2D spatial grid of a single channel, then moves to the next channel. With NCHW, the spatial values being convolved are <strong>contiguous in memory</strong>, which maximizes CPU cache hits and GPU memory coalescing. With NHWC, the convolution would need to "skip" across channels at each spatial position, causing poor cache behavior.
 </div>
 
-<p>For a tensor with shape (2 channels, 3 height, 4 width), the memory layout is:</p>
+<h2 id="indexing">Address Computation</h2>
+<p>Given a 3D tensor with shape \((C, H, W)\), the flat array index for element \((c, h, w)\) is:</p>
+<div class="math-block">
+\[ \text{index}(c, h, w) = c \times H \times W + h \times W + w \]
+</div>
+
+<p>This formula is used throughout the library and in GPU kernels. For a concrete example with shape (2 channels, 3 rows, 4 columns):</p>
 <table>
   <tr><th>Index</th><th>Element</th><th>Description</th></tr>
   <tr><td>0</td><td>tensor[0,0,0]</td><td>Channel 0, Row 0, Col 0</td></tr>
   <tr><td>1</td><td>tensor[0,0,1]</td><td>Channel 0, Row 0, Col 1</td></tr>
-  <tr><td>...</td><td>...</td><td>...</td></tr>
-  <tr><td>11</td><td>tensor[0,2,3]</td><td>Channel 0, Row 2, Col 3</td></tr>
-  <tr><td>12</td><td>tensor[1,0,0]</td><td>Channel 1, Row 0, Col 0</td></tr>
-  <tr><td>...</td><td>...</td><td>...</td></tr>
-  <tr><td>23</td><td>tensor[1,2,3]</td><td>Channel 1, Row 2, Col 3</td></tr>
+  <tr><td>2</td><td>tensor[0,0,2]</td><td>Channel 0, Row 0, Col 2</td></tr>
+  <tr><td>3</td><td>tensor[0,0,3]</td><td>Channel 0, Row 0, Col 3</td></tr>
+  <tr><td>4</td><td>tensor[0,1,0]</td><td>Channel 0, Row 1, Col 0</td></tr>
+  <tr><td>...</td><td>...</td><td>(continues row by row)</td></tr>
+  <tr><td>11</td><td>tensor[0,2,3]</td><td>Channel 0, Row 2, Col 3 (last element of channel 0)</td></tr>
+  <tr><td>12</td><td>tensor[1,0,0]</td><td>Channel 1, Row 0, Col 0 (first element of channel 1)</td></tr>
+  <tr><td>...</td><td>...</td><td>(continues for channel 1)</td></tr>
+  <tr><td>23</td><td>tensor[1,2,3]</td><td>Channel 1, Row 2, Col 3 (last element)</td></tr>
 </table>
 
-<div class="info-box">
-  <strong>Why NCHW?</strong> Channels-first layout enables efficient convolution computation — spatial elements that are convolved together are contiguous in memory, improving cache performance.
-</div>
+<p>The total number of elements is \(C \times H \times W = 2 \times 3 \times 4 = 24\).</p>
 
 <h2 id="tensors">Tensor Storage</h2>
-<p>The <code>Tensor3D&lt;T&gt;</code> class stores data as a flat <code>std::vector&lt;T&gt;</code> paired with a <code>Shape3D</code> struct (channels, height, width). This enables:</p>
+<p>The <code>Tensor3D&lt;T&gt;</code> class is the fundamental data structure. It stores data as a flat <code>std::vector&lt;T&gt;</code> paired with a <code>Shape3D</code> struct containing channels, height, and width. This design has several important properties:</p>
+
 <ul>
-  <li><strong>Zero-cost flattening</strong> — the underlying 1D vector can be directly passed to dense layers</li>
-  <li><strong>Efficient resizing</strong> — shape changes without reallocating when new size ≤ capacity</li>
-  <li><strong>Direct data access</strong> — <code>.data()</code> returns a pointer for raw memory operations (used by GPU)</li>
+  <li><strong>Zero-cost flattening</strong> — since the underlying storage is already a 1D vector, the Flatten layer can hand it directly to ANN's dense layers without any data copying or reallocation.</li>
+  <li><strong>Efficient resizing</strong> — when a layer changes the tensor's shape (e.g., after pooling reduces spatial dimensions), only the shape metadata is updated if the new size fits within the existing vector's capacity. No reallocation occurs until the tensor grows beyond its current capacity.</li>
+  <li><strong>Direct data access</strong> — the <code>.data()</code> method returns a raw pointer to the underlying array. This is used by GPU code to efficiently transfer data between host and device memory.</li>
+  <li><strong>Element access</strong> — the <code>at(c, h, w)</code> method computes the flat index and returns a reference, providing a convenient 3D interface over the flat storage.</li>
 </ul>
 
 <h2 id="filters">Filter Storage</h2>
-<p>Convolution filter weights are stored in a single flat vector with layout:</p>
+<p>Convolution filter weights for all filters in a layer are stored in a single contiguous flat vector. The layout follows a 4D indexing scheme: <code>(filter, inputChannel, kernelRow, kernelCol)</code>:</p>
 <div class="math-block">
-\[ \text{filters}[f \times C_{in} \times K_h \times K_w + c \times K_h \times K_w + kh \times K_w + kw] \]
+\[ \text{index}(f, c, kh, kw) = f \times C_{in} \times K_h \times K_w + c \times K_h \times K_w + kh \times K_w + kw \]
 </div>
-<p>Where \(f\) is the filter index, \(c\) is the input channel, and \((kh, kw)\) is the position within the kernel. The <code>filterAt(f, c, h, w)</code> method provides convenient indexed access.</p>
+
+<p>For a layer with \(F = 2\) filters, \(C_{in} = 3\) input channels, and \(3 \times 3\) kernels, the total filter storage is \(2 \times 3 \times 3 \times 3 = 54\) elements. All of filter 0's weights come first (27 elements), then all of filter 1's weights (27 elements).</p>
+
+<p>Biases are stored separately as a 1D vector of length \(F\) — one bias per filter.</p>
+
+<h2 id="normalization">Normalization Parameter Storage</h2>
+<p>Each InstanceNorm layer stores four vectors, each of length \(C\) (number of channels):</p>
+<table>
+  <tr><th>Vector</th><th>Purpose</th><th>Updated By</th></tr>
+  <tr><td><code>gamma</code></td><td>Learnable scale factor per channel</td><td>Gradient descent</td></tr>
+  <tr><td><code>beta</code></td><td>Learnable shift factor per channel</td><td>Gradient descent</td></tr>
+  <tr><td><code>runningMean</code></td><td>Running average of channel means</td><td>Exponential moving average</td></tr>
+  <tr><td><code>runningVar</code></td><td>Running average of channel variances</td><td>Exponential moving average</td></tr>
+</table>
+
+<p>All four vectors are indexed by channel: <code>gamma[c]</code>, <code>beta[c]</code>, etc. They are stored per-layer in the <code>Parameters</code> struct.</p>
+
+<h2 id="residual">Residual Projection Storage</h2>
+<p>When a residual block uses a projection shortcut (channel count changes), the projection parameters are stored as:</p>
+<ul>
+  <li><strong>Weights</strong> — a flat vector of \(C_{out} \times C_{in}\) elements, representing a 1×1 convolution. Indexed as \(W[oc \times C_{in} + ic]\).</li>
+  <li><strong>Biases</strong> — a vector of \(C_{out}\) elements, one per output channel.</li>
+</ul>
+
+<h2 id="gpu-buffers">GPU Buffer Layout</h2>
+<p>On the GPU, the same NCHW layout is used in OpenCL buffers. The <code>GPUBufferManager</code> allocates flat OpenCL buffers that mirror the CPU tensor layout. Key buffer categories:</p>
+
+<ul>
+  <li><strong>Activation buffers</strong> — store layer outputs (the "activation" at each layer). These are reused across layers during propagation.</li>
+  <li><strong>Gradient buffers</strong> — store the gradient at each layer during backpropagation. Also reused.</li>
+  <li><strong>Parameter buffers</strong> — store filter weights, biases, normalization parameters, and residual projection parameters. These persist across training steps.</li>
+  <li><strong>Accumulator buffers</strong> — store accumulated gradients (dFilters, dBiases, dGamma, dBeta, dW, dBias) across samples within an epoch.</li>
+  <li><strong>Auxiliary buffers</strong> — max pool indices, normalization intermediate values (mean, variance, normalized activations), residual skip input snapshots.</li>
+</ul>
+
+<div class="info-box">
+  <strong>Buffer offsets:</strong> Rather than allocating separate buffers for each layer, the library uses a single large buffer per category (e.g., one big filter buffer for all conv layers). Each layer is assigned an offset within this buffer. This reduces OpenCL memory allocation overhead and simplifies buffer management.
+</div>
 
 </main>
 </div>

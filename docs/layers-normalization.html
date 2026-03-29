@@ -58,29 +58,45 @@
 <main class="main">
 
 <h1>Normalization Layers</h1>
-<p>Instance Normalization normalises activations per channel per sample over spatial dimensions (H × W). It stabilises training, allows higher learning rates, and acts as a mild regulariser. It is typically placed after Conv2D and before ReLU.</p>
+<p>Instance Normalization is a technique that normalizes activations independently for each channel of each sample, computing statistics over the spatial dimensions (H × W). It stabilizes training by preventing activations from growing or shrinking uncontrollably across layers, allows the use of higher learning rates, and acts as a mild regularizer. It is typically placed between Conv2D and ReLU in the network architecture.</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
-    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#purpose">Why Normalization Matters</a></li>
+    <li><a href="#how-it-works">How It Works (Step by Step)</a></li>
     <li><a href="#propagation-training">Propagation (Training)</a></li>
     <li><a href="#propagation-inference">Propagation (Inference)</a></li>
+    <li><a href="#example">Numeric Example</a></li>
     <li><a href="#backpropagation">Backpropagation</a></li>
     <li><a href="#configuration">Configuration</a></li>
     <li><a href="#parameters">Parameters</a></li>
   </ol>
 </div>
 
-<h2 id="purpose">Purpose</h2>
+<h2 id="purpose">Why Normalization Matters</h2>
+<p>Deep neural networks suffer from a phenomenon called <strong>internal covariate shift</strong> — as earlier layers update their weights during training, the distribution of inputs to later layers constantly changes. This makes training unstable and requires very small learning rates.</p>
+
+<p>Normalization solves this by ensuring that the input to each layer always has a consistent statistical distribution (approximately zero mean and unit variance). This has several powerful effects:</p>
+
 <ul>
-  <li><strong>Training stability</strong> — normalizing activations prevents them from growing or shrinking across layers</li>
-  <li><strong>Higher learning rates</strong> — the normalized distribution is less sensitive to parameter scale</li>
-  <li><strong>Mild regularization</strong> — batch statistics introduce noise that can reduce overfitting</li>
+  <li><strong>Training stability</strong> — activations are kept in a well-behaved range, preventing numerical issues like gradient explosion (values growing to infinity) or gradient vanishing (values shrinking to near-zero).</li>
+  <li><strong>Higher learning rates</strong> — because the activation distribution is stable, the optimizer can take larger steps without overshooting. This dramatically speeds up convergence.</li>
+  <li><strong>Mild regularization</strong> — the normalization process introduces slight noise (because statistics are computed from finite spatial dimensions), which has a regularizing effect similar to dropout.</li>
+  <li><strong>Better gradient flow</strong> — normalized activations produce gradients that are neither too large nor too small, enabling effective learning even in deep networks.</li>
 </ul>
 
+<h2 id="how-it-works">How It Works (Step by Step)</h2>
+<p>For each channel independently, InstanceNorm performs four operations:</p>
+<ol>
+  <li><strong>Compute mean</strong> (\(\mu\)) — average all spatial values (H×W elements) in that channel</li>
+  <li><strong>Compute variance</strong> (\(\sigma^2\)) — measure how spread out the values are from the mean</li>
+  <li><strong>Normalize</strong> (\(\hat{x}\)) — subtract the mean and divide by the standard deviation, producing values with approximately zero mean and unit variance</li>
+  <li><strong>Scale and shift</strong> (\(y\)) — multiply by a learned scale factor \(\gamma\) and add a learned offset \(\beta\). This allows the network to undo the normalization if that's beneficial — it learns the optimal distribution for each channel.</li>
+</ol>
+
 <h2 id="propagation-training">Propagation (Training)</h2>
-<p>For each channel \(c\), compute mean and variance over the spatial dimensions, normalize, then scale and shift with learnable parameters \(\gamma_c\) and \(\beta_c\):</p>
+<p>For each channel \(c\), the complete forward pass computes:</p>
 <div class="math-block">
 \[
 \mu_c = \frac{1}{HW} \sum_{h,w} x_{c,h,w}
@@ -104,15 +120,43 @@ y_{c,h,w} = \gamma_c \, \hat{x}_{c,h,w} + \beta_c
 </div>
 
 <h2 id="propagation-inference">Propagation (Inference)</h2>
-<p>During inference, the fixed running statistics replace the batch statistics:</p>
+<p>During inference (prediction), the network must produce deterministic outputs — the same input should always give the same output. Therefore, instead of computing fresh statistics from the current input, the layer uses the <strong>running averages</strong> accumulated during training:</p>
 <div class="math-block">
 \[
 y_{c,h,w} = \gamma_c \, \frac{x_{c,h,w} - \bar{\mu}_c}{\sqrt{\bar{\sigma}^2_c + \epsilon}} + \beta_c
 \]
 </div>
 
+<p>This ensures consistent behavior at inference time. The running statistics represent the "average" statistics seen across all training samples and are more stable than any single sample's statistics.</p>
+
+<h2 id="example">Numeric Example</h2>
+<p>Consider a single channel with spatial dimensions 2×2 and values:</p>
+<table>
+  <tr><td>2.0</td><td>4.0</td></tr>
+  <tr><td>6.0</td><td>8.0</td></tr>
+</table>
+
+<ol>
+  <li><strong>Mean:</strong> \(\mu = \frac{2+4+6+8}{4} = 5.0\)</li>
+  <li><strong>Variance:</strong> \(\sigma^2 = \frac{(2-5)^2 + (4-5)^2 + (6-5)^2 + (8-5)^2}{4} = \frac{9+1+1+9}{4} = 5.0\)</li>
+  <li><strong>Normalize:</strong> (with \(\epsilon = 0\) for simplicity)
+    <ul>
+      <li>\(\hat{x}_{0,0} = (2-5)/\sqrt{5} = -1.342\)</li>
+      <li>\(\hat{x}_{0,1} = (4-5)/\sqrt{5} = -0.447\)</li>
+      <li>\(\hat{x}_{1,0} = (6-5)/\sqrt{5} = 0.447\)</li>
+      <li>\(\hat{x}_{1,1} = (8-5)/\sqrt{5} = 1.342\)</li>
+    </ul>
+  </li>
+  <li><strong>Scale &amp; shift:</strong> With \(\gamma=1, \beta=0\) (initial values), the output equals the normalized values.</li>
+</ol>
+
+<p>The values now have mean ≈ 0 and variance ≈ 1, regardless of their original scale. Whether the input values were in the range [2, 8] or [200, 800], the normalized values would have the same distribution.</p>
+
 <h2 id="backpropagation">Backpropagation</h2>
-<p>Gradients for the learnable parameters:</p>
+<p>Backpropagation through InstanceNorm computes three sets of gradients:</p>
+
+<h3>Gradients for learnable parameters</h3>
+<p>The scale (\(\gamma\)) and shift (\(\beta\)) parameters each get a gradient accumulated over all spatial positions:</p>
 <div class="math-block">
 \[
 \frac{\partial L}{\partial \gamma_c} = \sum_{h,w} \frac{\partial L}{\partial y_{c,h,w}} \, \hat{x}_{c,h,w}
@@ -121,33 +165,56 @@ y_{c,h,w} = \gamma_c \, \frac{x_{c,h,w} - \bar{\mu}_c}{\sqrt{\bar{\sigma}^2_c + 
 \]
 </div>
 
-<p>Input gradient (with \(N = H \times W\)):</p>
+<h3>Input gradient</h3>
+<p>The gradient with respect to the input is the most complex part. It accounts for the fact that each input element affects the output not only directly but also through the mean and variance computations. With \(N = H \times W\):</p>
 <div class="math-block">
 \[
 \frac{\partial L}{\partial x_{c,i}} = \frac{\gamma_c}{N \sqrt{\sigma^2_c + \epsilon}} \left( N \, \frac{\partial L}{\partial y_{c,i}} - \frac{\partial L}{\partial \beta_c} - \hat{x}_{c,i} \, \frac{\partial L}{\partial \gamma_c} \right)
 \]
 </div>
 
+<p>The three terms inside the parentheses correspond to:</p>
+<ul>
+  <li>\(N \cdot \frac{\partial L}{\partial y_{c,i}}\) — the direct contribution of this input to its output</li>
+  <li>\(- \frac{\partial L}{\partial \beta_c}\) — correction for this input's contribution to the mean</li>
+  <li>\(- \hat{x}_{c,i} \cdot \frac{\partial L}{\partial \gamma_c}\) — correction for this input's contribution to the variance</li>
+</ul>
+
+<div class="info-box">
+  <strong>Why so complex?</strong> Unlike ReLU or pooling where each output depends on just one (or a few) inputs, InstanceNorm's output at every position depends on <em>all</em> positions in that channel (through the mean and variance). This coupling makes the gradient computation significantly more involved.
+</div>
+
 <h2 id="configuration">Configuration</h2>
 <table>
   <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
-  <tr><td><strong>epsilon</strong> (\(\epsilon\))</td><td>1×10⁻⁵</td><td>Numerical stability constant added to variance</td></tr>
-  <tr><td><strong>momentum</strong> (\(m\))</td><td>0.1</td><td>EMA factor for running statistics</td></tr>
+  <tr><td><strong>epsilon</strong> (\(\epsilon\))</td><td>1×10⁻⁵</td><td>A tiny constant added inside the square root to prevent division by zero when the variance is very small. Should never need changing.</td></tr>
+  <tr><td><strong>momentum</strong> (\(m\))</td><td>0.1</td><td>Controls how quickly running statistics adapt. Higher values (e.g., 0.5) make running stats change faster; lower values (e.g., 0.01) make them more stable but slower to adapt.</td></tr>
 </table>
 
 <h3>JSON Configuration</h3>
-<pre><code>{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
+<pre><code><span class="comment">// With default settings (most common)</span>
+{ <span class="string">"type"</span>: <span class="string">"instancenorm"</span> }
+
+<span class="comment">// With explicit settings</span>
 { <span class="string">"type"</span>: <span class="string">"instancenorm"</span>, <span class="string">"epsilon"</span>: <span class="number">1e-5</span>, <span class="string">"momentum"</span>: <span class="number">0.1</span> }</code></pre>
 
 <h2 id="parameters">Parameters</h2>
-<p>An InstanceNorm layer with \(C\) input channels has:</p>
-<div class="math-block">
-\[ \text{Total parameters} = 2C \text{ (learnable: } \gamma, \beta\text{)} + 2C \text{ (running: } \bar{\mu}, \bar{\sigma}^2\text{)} \]
-</div>
-<p>The output shape is identical to the input shape — InstanceNorm does not change spatial dimensions or channel count.</p>
+<p>An InstanceNorm layer with \(C\) input channels has two types of stored values:</p>
 
-<div class="info-box">
-  <strong>Typical placement:</strong> Conv2D → <strong>InstanceNorm</strong> → ReLU. Placing InstanceNorm before the activation ensures the normalized distribution is passed to ReLU, which improves gradient flow.
+<table>
+  <tr><th>Type</th><th>Count</th><th>Description</th></tr>
+  <tr><td><strong>Learnable</strong></td><td>\(2C\)</td><td>\(\gamma_c\) (scale) and \(\beta_c\) (shift) — updated by gradient descent during training</td></tr>
+  <tr><td><strong>Running statistics</strong></td><td>\(2C\)</td><td>\(\bar{\mu}_c\) (running mean) and \(\bar{\sigma}^2_c\) (running variance) — updated by EMA, not gradient descent</td></tr>
+</table>
+
+<div class="math-block">
+\[ \text{Total stored values} = 4C \qquad \text{(only } 2C \text{ are trainable)} \]
+</div>
+
+<p>The output shape is identical to the input shape — InstanceNorm does not change spatial dimensions or channel count. It is purely a per-element transformation.</p>
+
+<div class="tip-box">
+  <strong>Typical placement:</strong> Conv2D → <strong>InstanceNorm</strong> → ReLU. Placing InstanceNorm before the activation ensures the normalized distribution is passed to ReLU, which improves gradient flow. The combination Conv2D + InstanceNorm + ReLU forms the fundamental building block of modern CNN architectures.
 </div>
 
 </main>

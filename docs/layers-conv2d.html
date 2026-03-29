@@ -58,27 +58,37 @@
 <main class="main">
 
 <h1>Conv2D Layer</h1>
-<p>The convolutional layer is the core building block of CNNs. It applies learned filters (kernels) to extract spatial features from the input. Each filter slides across the input, computing dot products to produce feature maps.</p>
+<p>The 2D convolutional layer is the fundamental building block of Convolutional Neural Networks. It learns a set of small filters (also called kernels) that slide across the input image, detecting local patterns like edges, textures, and shapes. Each filter produces a <strong>feature map</strong> — a spatial map showing where in the image the filter's pattern was detected. By stacking many filters, the network builds up increasingly complex and abstract representations of the input.</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
-    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#purpose">Purpose &amp; Intuition</a></li>
     <li><a href="#propagation">Propagation</a></li>
     <li><a href="#output-shape">Output Shape Formula</a></li>
     <li><a href="#padding">Padding Strategies</a></li>
     <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#initialization">Weight Initialization</a></li>
     <li><a href="#parameters">Parameters</a></li>
   </ol>
 </div>
 
-<h2 id="purpose">Purpose</h2>
-<p>Conv2D layers learn to detect local patterns (edges, textures, shapes) by applying multiple filters. The layer is parameterized by:</p>
+<h2 id="purpose">Purpose &amp; Intuition</h2>
+<p>Imagine holding a small magnifying glass (the filter) and moving it across a photograph. At each position, you check whether the small region under the glass matches a specific pattern — say, a vertical edge. If it matches well, you record a high value at that position; if not, a low value. The result is a heat map showing where vertical edges appear in the image.</p>
+
+<p>That's exactly what Conv2D does, except:</p>
 <ul>
-  <li><strong>Number of filters</strong> — how many feature maps to produce</li>
-  <li><strong>Filter size</strong> — typically 3×3 or 5×5</li>
-  <li><strong>Stride</strong> — how many pixels the filter moves each step</li>
-  <li><strong>Padding</strong> — how to handle boundaries (VALID, SAME, FULL)</li>
+  <li>The patterns aren't predefined — they're <strong>learned automatically</strong> from training data</li>
+  <li>Multiple filters run simultaneously, each detecting a different pattern</li>
+  <li>Filters look at <strong>all input channels</strong> (e.g., R, G, and B simultaneously), not just one</li>
+</ul>
+
+<p>The layer is parameterized by:</p>
+<ul>
+  <li><strong>Number of filters</strong> — how many different patterns to detect (and therefore how many output feature maps to produce). More filters = richer representation but more computation.</li>
+  <li><strong>Filter size</strong> — the spatial extent of each filter, typically 3×3 or 5×5 pixels. Smaller filters detect finer-grained patterns; larger filters see more context.</li>
+  <li><strong>Stride</strong> — how many pixels the filter moves between positions. Stride 1 examines every position; stride 2 skips every other position, halving the output spatial dimensions.</li>
+  <li><strong>Padding</strong> — how to handle the image boundaries where the filter would extend beyond the edge (VALID, SAME, or FULL).</li>
 </ul>
 
 <h2 id="propagation">Propagation</h2>
@@ -210,23 +220,57 @@
 </div>
 
 <h2 id="backpropagation">Backpropagation</h2>
-<p>Backpropagation computes three gradients simultaneously:</p>
-<ul>
-  <li><strong>dFilters</strong> — gradient w.r.t. filter weights: \(\frac{\partial L}{\partial w_{f,c,kh,kw}}\)</li>
-  <li><strong>dBiases</strong> — gradient w.r.t. biases: \(\frac{\partial L}{\partial b_f}\)</li>
-  <li><strong>dInput</strong> — gradient w.r.t. input: \(\frac{\partial L}{\partial x}\) (passed to previous layer)</li>
-</ul>
+<p>During training, backpropagation through Conv2D computes <strong>three separate gradients</strong> that are needed for different purposes:</p>
+
+<h3>1. Filter weight gradient (dFilters)</h3>
+<p>How should each filter weight change to reduce the loss? This is computed by correlating the input with the output gradient:</p>
+<div class="math-block">
+\[ \frac{\partial L}{\partial w_{f,c,kh,kw}} = \sum_{h,w} \frac{\partial L}{\partial y_{f,h,w}} \cdot x_{c, h \cdot s_y + kh, w \cdot s_x + kw} \]
+</div>
+<p>Intuitively, a filter weight should increase if the input and the output gradient have the same sign at the corresponding positions — meaning that increasing this weight would have reduced the loss.</p>
+
+<h3>2. Bias gradient (dBiases)</h3>
+<p>The bias gradient is simply the sum of the output gradient over all spatial positions:</p>
+<div class="math-block">
+\[ \frac{\partial L}{\partial b_f} = \sum_{h,w} \frac{\partial L}{\partial y_{f,h,w}} \]
+</div>
+
+<h3>3. Input gradient (dInput)</h3>
+<p>This gradient is passed backward to the previous layer. It answers: "how would changing the input affect the loss?" It is computed using a <strong>transposed (full) convolution</strong> of the output gradient with the filters:</p>
+<div class="math-block">
+\[ \frac{\partial L}{\partial x_{c,h,w}} = \sum_{f} \sum_{kh,kw} \frac{\partial L}{\partial y_{f, h', w'}} \cdot w_{f,c,kh,kw} \]
+</div>
+<p>where \((h', w')\) are the output positions that used input position \((h, w)\) during the forward pass.</p>
 
 <div class="info-box">
-  <strong>Implementation Detail:</strong> Backpropagation uses transposed convolution to compute dInput, allowing efficient gradient computation through the layer.
+  <strong>Implementation detail:</strong> The input gradient computation is equivalent to convolving the output gradient with the <em>flipped</em> filters using FULL padding. This elegant relationship between forward convolution and backward gradient computation is one of the mathematical foundations of CNN training.
 </div>
+
+<h2 id="initialization">Weight Initialization</h2>
+<p>Good weight initialization is critical for training convergence. The library uses <strong>He initialization</strong> (also called Kaiming initialization), which is designed specifically for layers followed by ReLU:</p>
+<div class="math-block">
+\[ w \sim \mathcal{N}\left(0, \sqrt{\frac{2}{C_{in} \times K_h \times K_w}}\right) \]
+</div>
+
+<p>The variance is scaled by the number of inputs to each neuron (<em>fan-in</em>). This ensures that the output variance is approximately 1.0 after ReLU activation, preventing signals from exploding or vanishing as they propagate through many layers.</p>
+
+<p>Biases are initialized to zero.</p>
 
 <h2 id="parameters">Parameters</h2>
 <p>A Conv2D layer with \(F\) filters, \(C\) input channels, and \(K_h \times K_w\) kernel size has:</p>
 <div class="math-block">
 \[ \text{Total parameters} = F \times C \times K_h \times K_w + F \]
 </div>
-<p>The first term is filter weights, the second is biases (one per filter).</p>
+<p>The first term is filter weights (each filter has \(C \times K_h \times K_w\) weights), the second term is biases (one per filter).</p>
+
+<p>For example, a layer with 64 filters, 32 input channels, and 3×3 kernels has \(64 \times 32 \times 3 \times 3 + 64 = 18{,}496\) parameters.</p>
+
+<h3>JSON Configuration</h3>
+<pre><code><span class="comment">// Minimal: 16 filters, 3×3, stride 1, VALID padding</span>
+{ <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">16</span>, <span class="string">"filterSize"</span>: <span class="number">3</span> }
+
+<span class="comment">// Full specification: SAME padding, stride 2</span>
+{ <span class="string">"type"</span>: <span class="string">"conv"</span>, <span class="string">"numFilters"</span>: <span class="number">64</span>, <span class="string">"filterSize"</span>: <span class="number">3</span>, <span class="string">"stride"</span>: <span class="number">1</span>, <span class="string">"padding"</span>: <span class="string">"same"</span> }</code></pre>
 
 </main>
 </div>

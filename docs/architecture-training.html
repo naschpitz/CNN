@@ -58,15 +58,29 @@
 <main class="main">
 
 <h1>Training Pipeline</h1>
-<p>Training involves propagation, loss computation, backpropagation, gradient accumulation, and parameter updates. The process repeats for each epoch and sample.</p>
+<p>Training is the process by which the CNN learns to transform input images into correct predictions. It works by repeatedly showing the network training examples, measuring how wrong its predictions are (the <em>loss</em>), and adjusting the network's parameters to reduce that error. This page walks through every step of the training loop in detail.</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
+    <li><a href="#concepts">Key Concepts</a></li>
     <li><a href="#overview">Training Loop Overview</a></li>
     <li><a href="#steps">Detailed Steps</a></li>
+    <li><a href="#convergence">Convergence &amp; Monitoring</a></li>
   </ol>
 </div>
+
+<h2 id="concepts">Key Concepts</h2>
+<p>Before diving into the training loop, here are the essential concepts:</p>
+
+<ul>
+  <li><strong>Epoch</strong> — one complete pass through the entire training dataset. If you have 1,000 images and train for 50 epochs, the network sees each image 50 times (in different random orders).</li>
+  <li><strong>Sample</strong> — a single input-output pair: an image (input) and its correct label (expected output). The network learns by comparing its prediction to the expected output.</li>
+  <li><strong>Loss</strong> — a number measuring how wrong the prediction is. Lower loss = better predictions. Common loss functions include Mean Squared Error (MSE) and Cross-Entropy.</li>
+  <li><strong>Gradient</strong> — the direction and magnitude by which each parameter should change to reduce the loss. Computed via backpropagation (the chain rule applied layer by layer).</li>
+  <li><strong>Learning rate</strong> — controls how big a step the optimizer takes in the gradient direction. Too high → training diverges. Too low → training is painfully slow.</li>
+  <li><strong>Shuffling</strong> — randomizing the order of training samples each epoch. This prevents the network from memorizing patterns based on sample ordering and improves generalization.</li>
+</ul>
 
 <h2 id="overview">Training Loop Overview</h2>
 <pre><code><span class="keyword">for</span> epoch <span class="keyword">in</span> [0, numEpochs):
@@ -184,6 +198,29 @@ Tensor3D&lt;<span class="type">T</span>&gt; dCurrent = dCNNOut;
     }
   }
 }</code></pre>
+</div>
+
+<h2 id="convergence">Convergence &amp; Monitoring</h2>
+<p>Training is monitored through the loss value reported at each epoch. A healthy training run shows:</p>
+
+<ul>
+  <li><strong>Steady decrease</strong> — the loss should generally decrease over epochs, though small fluctuations are normal.</li>
+  <li><strong>Diminishing returns</strong> — the loss decreases rapidly at first, then more slowly. This is expected — easy patterns are learned first.</li>
+  <li><strong>Plateau</strong> — eventually the loss stops decreasing significantly. This usually means the model has learned what it can from the data. Additional epochs provide no benefit.</li>
+</ul>
+
+<p>Warning signs during training:</p>
+<table>
+  <tr><th>Symptom</th><th>Likely Cause</th><th>Fix</th></tr>
+  <tr><td>Loss increases or oscillates wildly</td><td>Learning rate too high</td><td>Reduce learning rate by 10×</td></tr>
+  <tr><td>Loss decreases extremely slowly</td><td>Learning rate too low</td><td>Increase learning rate by 2-5×</td></tr>
+  <tr><td>Loss becomes NaN or Inf</td><td>Numerical instability (exploding gradients)</td><td>Add InstanceNorm layers, reduce learning rate</td></tr>
+  <tr><td>Training loss is good but test loss is bad</td><td>Overfitting</td><td>More training data, add regularization, simplify network</td></tr>
+  <tr><td>Loss stays constant from epoch 1</td><td>Dead network (all ReLUs saturated)</td><td>Check weight initialization, reduce learning rate</td></tr>
+</table>
+
+<div class="tip-box">
+  <strong>Practical tip:</strong> Start with a learning rate of 0.001 and adjust from there. If using InstanceNorm, you can often use higher learning rates (0.01 or even 0.1). Monitor the loss for the first few epochs — if it's not decreasing, the learning rate is likely wrong.
 </div>
 
 </main>

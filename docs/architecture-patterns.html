@@ -58,53 +58,121 @@
 <main class="main">
 
 <h1>Design Patterns</h1>
-<p>The CNN library employs several key design patterns to achieve flexibility, extensibility, and clean separation of concerns.</p>
+<p>The CNN library employs several well-known software design patterns to achieve flexibility, extensibility, and clean separation of concerns. Understanding these patterns is valuable both for using the library effectively and for extending it with new layer types or backends.</p>
 
-<div class="card">
-  <h3>🏭 Factory Pattern</h3>
-  <p><strong>Purpose:</strong> Transparent CPU/GPU backend selection at runtime.</p>
-  <p><strong>Implementation:</strong> <code>Core&lt;T&gt;::makeCore(const CoreConfig&lt;T&gt;&amp; config)</code> examines <code>config.deviceType</code> and returns either <code>CoreCPU&lt;T&gt;</code> or <code>CoreGPU&lt;T&gt;</code>.</p>
-  <pre><code><span class="keyword">auto</span> core = Core&lt;<span class="type">float</span>&gt;::makeCore(config);
-<span class="comment">// Returns CoreCPU or CoreGPU transparently</span>
-core-&gt;train(samples.size(), CNN::makeSampleProvider(samples));  <span class="comment">// Works with either backend</span></code></pre>
-  <p><strong>Benefit:</strong> Client code doesn't need to know which backend is in use. Easy to switch between CPU and GPU without code changes.</p>
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#factory">Factory Pattern</a></li>
+    <li><a href="#delegation">ANN Delegation Pattern</a></li>
+    <li><a href="#stateless">Stateless Layer Pattern</a></li>
+    <li><a href="#template">Template Pattern</a></li>
+    <li><a href="#extending">Extending the Library</a></li>
+  </ol>
 </div>
 
+<h2 id="factory">🏭 Factory Pattern</h2>
 <div class="card">
-  <h3>🔗 ANN Delegation Pattern</h3>
-  <p><strong>Purpose:</strong> Reuse the ANN library for dense layer computation instead of reimplementing.</p>
-  <p><strong>Implementation:</strong> <code>CoreCPU&lt;T&gt;</code> contains a <code>std::unique_ptr&lt;ANN::Core&lt;T&gt;&gt; annCore</code> member. After CNN propagation and flatten, the flattened vector is passed to ANN for dense layer processing.</p>
+  <p><strong>Problem:</strong> The library supports two completely different execution backends — CPU and GPU. Client code (like NN-CLI) should not need to know which backend is in use, nor should it need different code paths for each backend.</p>
+
+  <p><strong>Solution:</strong> <code>Core&lt;T&gt;::makeCore(const CoreConfig&lt;T&gt;&amp; config)</code> is a static factory method that examines <code>config.deviceType</code> and returns a <code>std::unique_ptr&lt;Core&lt;T&gt;&gt;</code> pointing to either <code>CoreCPU&lt;T&gt;</code> or <code>CoreGPU&lt;T&gt;</code>. The caller interacts only with the abstract <code>Core&lt;T&gt;</code> interface.</p>
+
+  <pre><code><span class="comment">// Client code — works identically with CPU or GPU</span>
+<span class="keyword">auto</span> core = Core&lt;<span class="type">float</span>&gt;::makeCore(config);
+
+<span class="comment">// Train — the factory already chose the right backend</span>
+core-&gt;train(samples.size(), CNN::makeSampleProvider(samples));
+
+<span class="comment">// Predict — same interface regardless of backend</span>
+<span class="keyword">auto</span> result = core-&gt;predict(input);</code></pre>
+
+  <p><strong>Benefit:</strong> Switching between CPU and GPU requires only changing <code>config.deviceType</code> from <code>"cpu"</code> to <code>"gpu"</code> in the JSON configuration. Zero code changes. The factory handles all the complexity of creating the appropriate backend with its buffers, kernels, and workers.</p>
+</div>
+
+<h2 id="delegation">🔗 ANN Delegation Pattern</h2>
+<div class="card">
+  <p><strong>Problem:</strong> A complete CNN pipeline needs dense (fully-connected) layers for the final classification/regression. Re-implementing dense layers inside the CNN library would duplicate the existing, well-tested ANN library.</p>
+
+  <p><strong>Solution:</strong> Both <code>CoreCPU&lt;T&gt;</code> and <code>CoreGPUWorker&lt;T&gt;</code> contain an <code>ANN::Core&lt;T&gt;</code> instance. After CNN layers process the input and flatten it to a 1D vector, this vector is handed to ANN for dense layer processing. ANN handles its own propagation, backpropagation, and parameter updates.</p>
+
   <pre><code><span class="comment">// In CoreCPU::predict()</span>
+<span class="comment">// 1. CNN layers process the image</span>
 Tensor3D&lt;<span class="type">T</span>&gt; cnnOut = propagateCNN(input);
+
+<span class="comment">// 2. Flatten to 1D</span>
 Tensor1D&lt;<span class="type">T</span>&gt; flatInput = Flatten&lt;<span class="type">T</span>&gt;::propagate(cnnOut);
+
+<span class="comment">// 3. Hand off to ANN for dense layers</span>
 ANN::Input&lt;<span class="type">T</span>&gt; annInput(flatInput.begin(), flatInput.end());
 ANN::Output&lt;<span class="type">T</span>&gt; annOutput = annCore-&gt;predict(annInput);</code></pre>
-  <p><strong>Benefit:</strong> Avoids code duplication, leverages ANN's optimized dense layer implementation.</p>
+
+  <p><strong>Benefit:</strong> No code duplication. The ANN library's dense layer implementation — including activation functions (ReLU, sigmoid, softmax, etc.), cost functions (MSE, cross-entropy), and optimizers — is reused directly. Bug fixes and improvements to ANN automatically benefit CNN.</p>
+
+  <p><strong>Trade-off:</strong> During GPU training, data must be transferred between GPU (CNN) and CPU (ANN) at each sample. This transfer is small (the flattened vector is typically hundreds to thousands of elements) and does not significantly impact performance.</p>
 </div>
 
+<h2 id="stateless">📦 Stateless Layer Pattern</h2>
 <div class="card">
-  <h3>📦 Stateless Layer Pattern</h3>
-  <p><strong>Purpose:</strong> Layer operations are pure functions with no mutable state.</p>
-  <p><strong>Implementation:</strong> All layer classes (Conv2D, ReLU, Pool, Flatten) contain only static methods. Parameters are passed as arguments, not stored in instance variables.</p>
-  <pre><code><span class="keyword">static</span> Tensor3D&lt;<span class="type">T</span>&gt; Conv2D&lt;<span class="type">T</span>&gt;::propagate(
-  <span class="keyword">const</span> Tensor3D&lt;<span class="type">T</span>&gt;&amp; input,
-  <span class="keyword">const</span> ConvLayerConfig&amp; config,
-  <span class="keyword">const</span> ConvParameters&lt;<span class="type">T</span>&gt;&amp; params);</code></pre>
-  <p><strong>Benefit:</strong> Thread-safe, composable, easy to test. No hidden state to manage.</p>
+  <p><strong>Problem:</strong> Traditional OOP would make each layer an object with internal state (weights, activations, gradients). This creates ownership issues, makes threading harder, and tightly couples layers to specific positions in the network.</p>
+
+  <p><strong>Solution:</strong> All CNN layer classes (Conv2D, ReLU, Pool, InstanceNorm, Flatten, GlobalAvgPool, GlobalDualPool, Residual) contain <strong>only static methods</strong>. They have no instance state. Everything needed — input tensor, configuration, parameters — is passed as function arguments.</p>
+
+  <pre><code><span class="comment">// No object creation needed — just call the static method</span>
+<span class="keyword">static</span> Tensor3D&lt;<span class="type">T</span>&gt; Conv2D&lt;<span class="type">T</span>&gt;::propagate(
+  <span class="keyword">const</span> Tensor3D&lt;<span class="type">T</span>&gt;&amp; input,       <span class="comment">// Input tensor</span>
+  <span class="keyword">const</span> ConvLayerConfig&amp; config,    <span class="comment">// Layer configuration</span>
+  <span class="keyword">const</span> ConvParameters&lt;<span class="type">T</span>&gt;&amp; params); <span class="comment">// Learned parameters</span></code></pre>
+
+  <p><strong>Benefits:</strong></p>
+  <ul>
+    <li><strong>Thread-safe</strong> — no shared mutable state means multiple threads can call the same layer function concurrently without locks.</li>
+    <li><strong>Composable</strong> — layers can be chained in any order without worrying about initialization order or internal state dependencies.</li>
+    <li><strong>Testable</strong> — each layer function can be tested in isolation by passing specific inputs and checking outputs. No setup ceremony required.</li>
+    <li><strong>Flexible parameter management</strong> — parameters live in the Core classes, not in layers. This makes serialization, gradient accumulation, and multi-GPU synchronization much simpler.</li>
+  </ul>
 </div>
 
+<h2 id="template">🎯 Template Pattern</h2>
 <div class="card">
-  <h3>🎯 Template Pattern</h3>
-  <p><strong>Purpose:</strong> Support multiple numeric types (int, float, double) with a single codebase.</p>
-  <p><strong>Implementation:</strong> All classes are templated on <code>T</code>. The template parameter flows through the entire architecture: <code>Core&lt;T&gt;</code>, <code>CoreCPU&lt;T&gt;</code>, <code>Conv2D&lt;T&gt;</code>, etc.</p>
+  <p><strong>Problem:</strong> Different applications need different numeric precision — float for speed, double for accuracy, int for quantized inference. Writing separate implementations for each type is error-prone and unmaintainable.</p>
+
+  <p><strong>Solution:</strong> All classes are C++ templates parameterized on the numeric type <code>T</code>. The template parameter flows through the entire class hierarchy and all function signatures.</p>
+
   <pre><code><span class="keyword">template</span> &lt;<span class="keyword">typename</span> <span class="type">T</span>&gt;
-<span class="keyword">class</span> Conv2D { ... };
+<span class="keyword">class</span> Core { ... };
+
+<span class="keyword">template</span> &lt;<span class="keyword">typename</span> <span class="type">T</span>&gt;
+<span class="keyword">class</span> Conv2D {
+  <span class="keyword">static</span> Tensor3D&lt;<span class="type">T</span>&gt; propagate(<span class="keyword">const</span> Tensor3D&lt;<span class="type">T</span>&gt;&amp; input, ...);
+};
 
 <span class="comment">// Instantiate for different types</span>
-Conv2D&lt;<span class="type">float</span>&gt;::propagate(...);
-Conv2D&lt;<span class="type">double</span>&gt;::propagate(...);</code></pre>
-  <p><strong>Benefit:</strong> Type safety, compile-time specialization, no runtime type checking overhead.</p>
+<span class="keyword">auto</span> floatCore = Core&lt;<span class="type">float</span>&gt;::makeCore(config);   <span class="comment">// Fast, lower precision</span>
+<span class="keyword">auto</span> doubleCore = Core&lt;<span class="type">double</span>&gt;::makeCore(config); <span class="comment">// Slower, higher precision</span></code></pre>
+
+  <p><strong>Benefits:</strong></p>
+  <ul>
+    <li><strong>Type safety</strong> — the compiler catches type mismatches at compile time. You can't accidentally mix float weights with double activations.</li>
+    <li><strong>Zero overhead</strong> — templates generate specialized code for each type at compile time. No runtime type checking or virtual dispatch.</li>
+    <li><strong>Single source of truth</strong> — one implementation handles all numeric types. Bug fixes apply everywhere.</li>
+  </ul>
+
+  <p><strong>For GPU:</strong> The template parameter also drives the OpenCL <code>#define TYPE</code> macro, ensuring GPU kernels use the same precision as the host code.</p>
 </div>
+
+<h2 id="extending">Extending the Library</h2>
+<p>Thanks to these patterns, adding a new layer type is straightforward:</p>
+
+<ol>
+  <li><strong>Create a new stateless layer class</strong> with static <code>propagate()</code> and <code>backpropagate()</code> methods.</li>
+  <li><strong>Add a case</strong> in <code>CoreCPU::propagateCNN()</code> and <code>CoreCPU::backpropagateCNN()</code>.</li>
+  <li><strong>Write OpenCL kernels</strong> in the appropriate <code>.cl</code> file.</li>
+  <li><strong>Register the kernel</strong> in <code>GPUKernelBuilder</code>.</li>
+  <li><strong>Add buffer allocation</strong> in <code>GPUBufferManager</code> if the layer needs new GPU buffers.</li>
+  <li><strong>Add the layer type</strong> to the JSON parser in the configuration module.</li>
+</ol>
+
+<p>The factory pattern ensures no changes to client code. The stateless pattern ensures the new layer integrates cleanly. The template pattern ensures it works with all numeric types.</p>
 
 </main>
 </div>

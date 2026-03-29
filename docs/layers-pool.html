@@ -58,39 +58,55 @@
 <main class="main">
 
 <h1>Pool Layer</h1>
-<p>Pooling layers reduce spatial dimensions while preserving important features. The library supports Max Pooling and Average Pooling.</p>
+<p>Pooling layers progressively reduce the spatial dimensions of feature maps while retaining the most important information. By shrinking the height and width, pooling reduces the number of computations and parameters in subsequent layers, and also introduces a degree of translation invariance — the network becomes less sensitive to the exact position of features. The library supports two pooling variants: <strong>Max Pooling</strong> and <strong>Average Pooling</strong>.</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
-    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#purpose">Purpose &amp; Intuition</a></li>
+    <li><a href="#output-shape">Output Shape Formula</a></li>
     <li><a href="#max-pooling">Max Pooling</a></li>
     <li><a href="#avg-pooling">Average Pooling</a></li>
     <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#choosing">Choosing Max vs. Average</a></li>
     <li><a href="#parameters">Parameters</a></li>
   </ol>
 </div>
 
-<h2 id="purpose">Purpose</h2>
+<h2 id="purpose">Purpose &amp; Intuition</h2>
+<p>After a Conv2D + ReLU block detects features (edges, textures, patterns), the feature maps are typically large — often the same spatial size as the input image. Pooling serves three critical purposes:</p>
+
 <ul>
-  <li><strong>Spatial downsampling</strong> — reduce computation and memory</li>
-  <li><strong>Translation invariance</strong> — small shifts in input don't change output much</li>
-  <li><strong>Feature aggregation</strong> — combine local information</li>
+  <li><strong>Spatial downsampling</strong> — a 2×2 pool with stride 2 cuts each dimension in half, reducing the number of elements by 4×. This dramatically reduces computation and memory in subsequent layers. Without pooling, deeper layers would be prohibitively expensive.</li>
+  <li><strong>Translation invariance</strong> — if an edge is detected at pixel (10, 15) versus (11, 15), the 2×2 pool over that region produces the same output. This helps the network recognize objects regardless of small positional shifts.</li>
+  <li><strong>Feature aggregation</strong> — pooling combines nearby activations into a single summary value, creating a more abstract representation. Lower layers detect fine details; pooling progressively abstracts these into higher-level concepts.</li>
 </ul>
 
-<h2 id="max-pooling">Max Pooling</h2>
-<p>Takes the maximum value in each pooling window:</p>
+<h2 id="output-shape">Output Shape Formula</h2>
+<p>Pooling preserves the number of channels and reduces spatial dimensions according to:</p>
 <div class="math-block">
-\[ \text{output}[c, h, w] = \max_{kh, kw} \text{input}[c, h \cdot s_y + kh, w \cdot s_x + kw] \]
+\[ \text{outH} = \left\lfloor \frac{\text{inH} - K_h}{s_y} \right\rfloor + 1 \qquad \text{outW} = \left\lfloor \frac{\text{inW} - K_w}{s_x} \right\rfloor + 1 \]
 </div>
 
-<p>The index of the maximum element is stored for backpropagation.</p>
+<p>For the common case of 2×2 pooling with stride 2, spatial dimensions are exactly halved: a 28×28 input becomes 14×14.</p>
+
+<h2 id="max-pooling">Max Pooling</h2>
+<p>Max pooling selects the <strong>largest value</strong> within each pooling window. This preserves the strongest feature activation in each local region:</p>
+<div class="math-block">
+\[ \text{output}[c, h, w] = \max_{kh \in [0, K_h),\, kw \in [0, K_w)} \text{input}[c, h \cdot s_y + kh, w \cdot s_x + kw] \]
+</div>
+
+<p>The index (position) of the maximum element within each window is recorded during the forward pass. This information is essential during backpropagation to route the gradient to the correct input position.</p>
+
+<p>Max pooling is the most commonly used variant because it preserves the <strong>strongest response</strong> — if a filter detected an edge somewhere in a 2×2 region, max pooling keeps that detection regardless of exactly which pixel it was at.</p>
 
 <h2 id="avg-pooling">Average Pooling</h2>
-<p>Computes the mean of each pooling window:</p>
+<p>Average pooling computes the <strong>arithmetic mean</strong> of all values within each pooling window:</p>
 <div class="math-block">
-\[ \text{output}[c, h, w] = \frac{1}{K_h \times K_w} \sum_{kh, kw} \text{input}[c, h \cdot s_y + kh, w \cdot s_x + kw] \]
+\[ \text{output}[c, h, w] = \frac{1}{K_h \times K_w} \sum_{kh=0}^{K_h-1} \sum_{kw=0}^{K_w-1} \text{input}[c, h \cdot s_y + kh, w \cdot s_x + kw] \]
 </div>
+
+<p>Average pooling produces a smoother output than max pooling because it considers all values equally. It's particularly useful when you want to preserve the overall activation level rather than just the peak.</p>
 
 <div class="diagram">
   <svg viewBox="0 0 600 280" xmlns="http://www.w3.org/2000/svg">
@@ -161,18 +177,43 @@
 </div>
 
 <h2 id="backpropagation">Backpropagation</h2>
-<p><strong>Max Pooling:</strong> Gradient flows only to the position that had the maximum value:</p>
+
+<h3>Max Pooling Backward</h3>
+<p>The gradient flows <strong>only to the position that held the maximum value</strong> in each window. All other positions receive zero gradient. This is why the forward pass records the max indices — they act as a routing map for the gradient:</p>
 <div class="math-block">
-\[ \frac{\partial L}{\partial x_{max}} = \frac{\partial L}{\partial y}, \quad \frac{\partial L}{\partial x_{other}} = 0 \]
+\[ \frac{\partial L}{\partial x_{c,h,w}} = \begin{cases} \frac{\partial L}{\partial y_{c,h',w'}} & \text{if } x_{c,h,w} \text{ was the maximum in window } (h', w') \\ 0 & \text{otherwise} \end{cases} \]
 </div>
 
-<p><strong>Average Pooling:</strong> Gradient is distributed evenly across all positions in the window:</p>
+<p>Intuitively, during the forward pass, max pooling "chose" one value per window. During backpropagation, the gradient is sent entirely to that chosen value — the other values in the window didn't contribute to the output, so they receive no gradient.</p>
+
+<h3>Average Pooling Backward</h3>
+<p>The gradient is distributed <strong>equally</strong> to all positions in the window, since every position contributed equally (with weight \(\frac{1}{K_h \times K_w}\)) to the output:</p>
 <div class="math-block">
-\[ \frac{\partial L}{\partial x_{i,j}} = \frac{1}{K_h \times K_w} \frac{\partial L}{\partial y} \]
+\[ \frac{\partial L}{\partial x_{c,h,w}} = \frac{1}{K_h \times K_w} \frac{\partial L}{\partial y_{c,h',w'}} \]
 </div>
+
+<p>For a 2×2 average pool, each of the 4 input positions receives \(\frac{1}{4}\) of the output gradient.</p>
+
+<h2 id="choosing">Choosing Max vs. Average</h2>
+<table>
+  <tr><th>Aspect</th><th>Max Pooling</th><th>Average Pooling</th></tr>
+  <tr><td><strong>What it preserves</strong></td><td>Strongest feature response</td><td>Overall feature level</td></tr>
+  <tr><td><strong>Gradient routing</strong></td><td>Sparse (one position)</td><td>Uniform (all positions)</td></tr>
+  <tr><td><strong>Common use case</strong></td><td>Feature detection (is edge present?)</td><td>Texture analysis (average intensity)</td></tr>
+  <tr><td><strong>Robustness to outliers</strong></td><td>Low (sensitive to single high value)</td><td>High (averages out noise)</td></tr>
+</table>
+
+<p>In practice, <strong>max pooling is the default choice</strong> for most CNN architectures. Average pooling is more commonly used in the global variant (see <a href="layers-globalavgpool.html">GlobalAvgPool</a>).</p>
 
 <h2 id="parameters">Parameters</h2>
-<p><strong>No learnable parameters.</strong> Pooling is a fixed operation.</p>
+<p><strong>No learnable parameters.</strong> Pooling is a fixed operation that adds zero parameters to the model.</p>
+
+<h3>JSON Configuration</h3>
+<pre><code><span class="comment">// Max pooling (2×2, stride 2)</span>
+{ <span class="string">"type"</span>: <span class="string">"maxpool"</span>, <span class="string">"size"</span>: <span class="number">2</span>, <span class="string">"stride"</span>: <span class="number">2</span> }
+
+<span class="comment">// Average pooling (2×2, stride 2)</span>
+{ <span class="string">"type"</span>: <span class="string">"avgpool"</span>, <span class="string">"size"</span>: <span class="number">2</span>, <span class="string">"stride"</span>: <span class="number">2</span> }</code></pre>
 
 </main>
 </div>

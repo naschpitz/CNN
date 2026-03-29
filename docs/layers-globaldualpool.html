@@ -58,50 +58,108 @@
 <main class="main">
 
 <h1>GlobalDualPool Layer</h1>
-<p>Global Dual Pooling concatenates the results of Global Average Pooling and Global Max Pooling for each channel, producing a richer spatial summary that captures both the mean activation and the strongest activation per channel.</p>
+<p>Global Dual Pooling (GDP) combines two complementary spatial summaries — <strong>Global Average Pooling</strong> and <strong>Global Max Pooling</strong> — by concatenating their outputs. For each channel, it produces two values: the spatial mean and the spatial maximum. This gives the dense layers a richer, more informative representation than either pooling method alone.</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
-    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#purpose">Purpose &amp; Intuition</a></li>
     <li><a href="#propagation">Propagation</a></li>
+    <li><a href="#example">Numeric Example</a></li>
     <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#vs-gap">GlobalDualPool vs. GlobalAvgPool</a></li>
     <li><a href="#parameters">Parameters</a></li>
   </ol>
 </div>
 
-<h2 id="purpose">Purpose</h2>
+<h2 id="purpose">Purpose &amp; Intuition</h2>
+<p>Average pooling and max pooling capture fundamentally different information:</p>
+
 <ul>
-  <li><strong>Richer representation</strong> — captures both average and peak activations, giving the dense layers two complementary views of each feature</li>
-  <li><strong>Better classification</strong> — max pooling highlights the strongest feature response (is this pattern present?) while avg pooling captures overall feature density (how much of this pattern is present?)</li>
-  <li><strong>Still input-size agnostic</strong> — like GlobalAvgPool, works with any spatial dimensions</li>
+  <li><strong>Average pooling</strong> answers: <em>"How much of this feature is present overall?"</em> — it measures the <strong>density</strong> of a feature across the spatial extent. If an edge detector fires weakly everywhere, the average is moderate.</li>
+  <li><strong>Max pooling</strong> answers: <em>"Is this feature present at all?"</em> — it measures the <strong>strongest response</strong> regardless of location. If an edge detector fires strongly at just one location, the max is high even if most positions are zero.</li>
 </ul>
 
-<h2 id="propagation">Propagation</h2>
-<p>For input with \(C\) channels and spatial size \(H \times W\), the output has \(2C\) values (shape \(2C, 1, 1\)):</p>
-<div class="math-block">
-\[ \text{output}[c] = \frac{1}{HW} \sum_{h,w} \text{input}[c, h, w] \quad \text{(avg, first C values)} \]
-\[ \text{output}[C + c] = \max_{h,w} \text{input}[c, h, w] \quad \text{(max, second C values)} \]
+<p>By concatenating both, GlobalDualPool gives the dense classifier two complementary "views" of each feature map. The dense layers can then learn to weight these views differently for different features — perhaps using max for rare but distinctive features (e.g., a specific texture) and average for broadly distributed features (e.g., overall brightness).</p>
+
+<div class="info-box">
+  <strong>Research context:</strong> This dual-pooling approach is inspired by techniques used in architectures like Squeeze-and-Excitation Networks (SE-Nets) and CBAM, where combining avg and max pooling improves channel attention. GlobalDualPool applies the same principle at the final aggregation stage.
 </div>
 
-<p>The output <strong>doubles the channel count</strong>: if the input has 128 channels, the output has 256 elements. This must be accounted for in the subsequent flatten and dense layer sizing.</p>
+<h2 id="propagation">Propagation</h2>
+<p>For input with \(C\) channels and spatial size \(H \times W\), the output has \(2C\) values arranged as shape \((2C, 1, 1)\). The first \(C\) values are the channel means (avg), and the next \(C\) values are the channel maximums (max):</p>
+<div class="math-block">
+\[ \text{output}[c] = \frac{1}{HW} \sum_{h=0}^{H-1} \sum_{w=0}^{W-1} \text{input}[c, h, w] \quad \text{for } c \in [0, C) \text{ — average} \]
+\[ \text{output}[C + c] = \max_{h \in [0,H), \, w \in [0,W)} \text{input}[c, h, w] \quad \text{for } c \in [0, C) \text{ — maximum} \]
+</div>
+
+<p>The output <strong>doubles the channel count</strong>: if the input has 128 channels, the output has 256 elements. This must be accounted for in the subsequent flatten and dense layer sizing — the first dense layer must accept \(2C\) inputs.</p>
+
+<p>Internally, the implementation also records the <strong>position of the maximum</strong> for each channel (the argmax index). This is needed during backpropagation to route the max gradient correctly.</p>
+
+<h2 id="example">Numeric Example</h2>
+<p>Consider a tensor with 2 channels and spatial size 2×2:</p>
+
+<table>
+  <tr><th colspan="2">Channel 0</th><th colspan="2">Channel 1</th></tr>
+  <tr><td>1.0</td><td>4.0</td><td>10.0</td><td>5.0</td></tr>
+  <tr><td>3.0</td><td>2.0</td><td>8.0</td><td>12.0</td></tr>
+</table>
+
+<p>GlobalDualPool output (4 values = 2 avg + 2 max):</p>
+<ul>
+  <li>output[0] = avg(ch0) = \(\frac{1+4+3+2}{4} = 2.5\)</li>
+  <li>output[1] = avg(ch1) = \(\frac{10+5+8+12}{4} = 8.75\)</li>
+  <li>output[2] = max(ch0) = \(\max(1,4,3,2) = 4.0\) (at position [0,1])</li>
+  <li>output[3] = max(ch1) = \(\max(10,5,8,12) = 12.0\) (at position [1,1])</li>
+</ul>
+
+<p>Result: <code>[2.5, 8.75, 4.0, 12.0]</code></p>
 
 <h2 id="backpropagation">Backpropagation</h2>
-<p>Each pooling component backpropagates independently, and their gradients are summed at the input:</p>
+<p>The gradient at each input position combines contributions from both the average path and the max path:</p>
 <div class="math-block">
-\[ \frac{\partial L}{\partial x_{c,h,w}} = \underbrace{\frac{1}{HW} \frac{\partial L}{\partial y_c^{avg}}}_{\text{avg gradient}} + \underbrace{\frac{\partial L}{\partial y_c^{max}} \cdot \mathbf{1}[x_{c,h,w} = \max]}_{\text{max gradient}} \]
+\[ \frac{\partial L}{\partial x_{c,h,w}} = \underbrace{\frac{1}{HW} \frac{\partial L}{\partial y_c^{\text{avg}}}}_{\text{avg gradient (uniform)}} + \underbrace{\frac{\partial L}{\partial y_c^{\text{max}}} \cdot \mathbf{1}[x_{c,h,w} = \max_c]}_{\text{max gradient (sparse)}} \]
 </div>
 
-<p>The max gradient flows only to the spatial position that held the maximum value for that channel. The avg gradient is distributed evenly across all spatial positions.</p>
+<p>Breaking this down:</p>
+<ul>
+  <li><strong>Average gradient:</strong> Every spatial position in channel \(c\) receives the same gradient, scaled by \(\frac{1}{HW}\). This is identical to GlobalAvgPool backpropagation.</li>
+  <li><strong>Max gradient:</strong> Only the position that held the maximum value receives the gradient. All other positions get zero from the max path. This is identical to max pooling backpropagation.</li>
+  <li><strong>Sum:</strong> Both gradients are added together at each position. The max position receives a larger total gradient than other positions.</li>
+</ul>
+
+<p>Using the numeric example above with hypothetical loss gradients \(\frac{\partial L}{\partial y_0^{avg}} = 1.0\) and \(\frac{\partial L}{\partial y_0^{max}} = 2.0\) for channel 0:</p>
+<table>
+  <tr><th>Position</th><th>Avg gradient</th><th>Max gradient</th><th>Total</th></tr>
+  <tr><td>[0,0] (val=1)</td><td>0.25</td><td>0</td><td>0.25</td></tr>
+  <tr><td>[0,1] (val=4, max!)</td><td>0.25</td><td>2.0</td><td>2.25</td></tr>
+  <tr><td>[1,0] (val=3)</td><td>0.25</td><td>0</td><td>0.25</td></tr>
+  <tr><td>[1,1] (val=2)</td><td>0.25</td><td>0</td><td>0.25</td></tr>
+</table>
+
+<h2 id="vs-gap">GlobalDualPool vs. GlobalAvgPool</h2>
+<table>
+  <tr><th>Aspect</th><th>GlobalAvgPool</th><th>GlobalDualPool</th></tr>
+  <tr><td><strong>Output size</strong></td><td>\(C\)</td><td>\(2C\)</td></tr>
+  <tr><td><strong>Information captured</strong></td><td>Feature density only</td><td>Feature density + presence</td></tr>
+  <tr><td><strong>Dense layer params</strong></td><td>Baseline</td><td>2× more (still small)</td></tr>
+  <tr><td><strong>Best for</strong></td><td>Simple classification</td><td>Fine-grained classification</td></tr>
+  <tr><td><strong>Computation cost</strong></td><td>Slightly less</td><td>Slightly more (negligible)</td></tr>
+</table>
+
+<div class="tip-box">
+  <strong>When to choose GlobalDualPool over GlobalAvgPool:</strong> Use GlobalDualPool when your classification task requires distinguishing between subtle differences (e.g., different species of birds, different skin conditions). The max component helps the network identify whether a discriminative feature is present anywhere in the image. For simpler tasks, GlobalAvgPool is sufficient and slightly more parameter-efficient.
+</div>
 
 <h2 id="parameters">Parameters</h2>
-<p><strong>No learnable parameters.</strong> GlobalDualPool is a fixed aggregation operation.</p>
+<p><strong>No learnable parameters.</strong> GlobalDualPool is a fixed aggregation operation — it adds zero parameters to the model.</p>
 
 <h3>JSON Configuration</h3>
 <pre><code>{ <span class="string">"type"</span>: <span class="string">"globaldualpool"</span> }</code></pre>
 
-<div class="info-box">
-  <strong>Output size:</strong> If the last convolutional block produces \(C\) channels, GlobalDualPool outputs \(2C\) elements. The first dense layer must accept \(2C\) inputs.
+<div class="warn-box">
+  <strong>Output size reminder:</strong> If the last convolutional block produces \(C\) channels, GlobalDualPool outputs \(2C\) elements. The first dense layer must accept \(2C\) inputs. This is different from GlobalAvgPool which outputs \(C\) elements.
 </div>
 
 </main>

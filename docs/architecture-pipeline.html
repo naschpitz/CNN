@@ -58,7 +58,21 @@
 <main class="main">
 
 <h1>CNN + ANN Pipeline</h1>
-<p>The complete inference pipeline chains CNN layers (convolutional, activation, pooling) with ANN dense layers. Data flows as a 3D tensor through CNN, flattens to 1D, then flows through ANN.</p>
+<p>The CNN library doesn't work in isolation — it forms the feature extraction front-end of a complete neural network pipeline. Convolutional layers extract spatial features from images, then the ANN library's dense layers perform the final classification or regression. This page explains how the two libraries work together, how data flows between them, and what happens at the critical handoff point.</p>
+
+<div class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#overview">Pipeline Overview</a></li>
+    <li><a href="#cnn-phase">CNN Phase (Feature Extraction)</a></li>
+    <li><a href="#handoff">The Handoff: Flatten</a></li>
+    <li><a href="#ann-phase">ANN Phase (Classification)</a></li>
+    <li><a href="#backward">Backward Pipeline</a></li>
+  </ol>
+</div>
+
+<h2 id="overview">Pipeline Overview</h2>
+<p>The complete inference pipeline chains CNN layers (convolutional, activation, pooling, normalization, residual, global pooling) with ANN dense layers. Data flows as a 3D tensor through CNN, gets flattened to 1D, then flows through ANN's fully-connected layers to produce the final output.</p>
 
 <div class="diagram">
   <svg viewBox="0 0 1000 200" xmlns="http://www.w3.org/2000/svg">
@@ -128,11 +142,64 @@
   <figcaption>Complete CNN + ANN Inference Pipeline</figcaption>
 </div>
 
-<p>The pipeline consists of two phases:</p>
+<h2 id="cnn-phase">CNN Phase (Feature Extraction)</h2>
+<p>The CNN phase processes the raw input image (a 3D tensor with shape C×H×W) through a sequence of layers that progressively transform it into more abstract feature representations:</p>
+
 <ol>
-  <li><strong>CNN Phase:</strong> Input 3D tensor flows through Conv2D, ReLU, Pool layers in sequence. Each layer outputs a 3D tensor that becomes the input to the next layer.</li>
-  <li><strong>ANN Phase:</strong> The final 3D tensor is flattened to 1D, then passed to ANN's dense layers for final classification/regression.</li>
+  <li><strong>Conv2D</strong> — applies learned filters to detect local patterns (edges, textures, shapes). Outputs a 3D tensor with potentially different channel count and spatial dimensions.</li>
+  <li><strong>InstanceNorm</strong> (optional but recommended) — normalizes the activations per channel, stabilizing training and enabling higher learning rates.</li>
+  <li><strong>ReLU</strong> — introduces non-linearity by zeroing out negative values. Without this, the entire network would be a linear transformation.</li>
+  <li><strong>Pool</strong> — reduces spatial dimensions (e.g., 28×28 → 14×14), decreasing computation and providing translation invariance.</li>
+  <li><strong>Residual blocks</strong> (optional) — wrap some layers with skip connections, enabling deeper architectures without gradient vanishing.</li>
+  <li><strong>Global pooling</strong> (optional) — collapses spatial dimensions to 1×1, dramatically reducing the parameter count at the CNN→ANN boundary.</li>
 </ol>
+
+<p>These layers are typically repeated in blocks (Conv→Norm→ReLU→Pool), with each block increasing the channel count while decreasing spatial dimensions. Early layers detect simple features (edges, color gradients); deeper layers combine these into complex patterns (textures, object parts, whole objects).</p>
+
+<h2 id="handoff">The Handoff: Flatten</h2>
+<p>The Flatten layer is the critical junction between CNN and ANN. It takes the final 3D tensor from the CNN phase and reshapes it into a 1D vector that dense layers can process:</p>
+
+<div class="math-block">
+\[ \text{3D tensor } (C, H, W) \xrightarrow{\text{flatten}} \text{1D vector of } C \times H \times W \text{ elements} \]
+</div>
+
+<p>On the CPU backend, this is a zero-copy operation (the data is already stored as a flat vector). On the GPU backend, the flattened data is copied from GPU memory to CPU memory at this point, since ANN dense layers run on the CPU.</p>
+
+<div class="info-box">
+  <strong>Size matters:</strong> The flattened vector size determines the first dense layer's input dimension. Without global pooling, this can be huge (e.g., 512 channels × 4×4 spatial = 8,192 elements). With GlobalAvgPool, it's just the channel count (e.g., 512). This is why modern architectures almost always use global pooling before flatten.
+</div>
+
+<h2 id="ann-phase">ANN Phase (Classification)</h2>
+<p>The ANN library receives the flattened vector and processes it through one or more fully-connected (dense) layers. Each dense layer:</p>
+
+<ol>
+  <li><strong>Linear transformation</strong> — multiplies the input by a weight matrix and adds biases: \(z = Wx + b\)</li>
+  <li><strong>Activation function</strong> — applies a non-linearity (ReLU, sigmoid, softmax, etc.)</li>
+</ol>
+
+<p>The final layer typically uses:</p>
+<ul>
+  <li><strong>Softmax</strong> for multi-class classification — outputs probabilities that sum to 1</li>
+  <li><strong>Sigmoid</strong> for binary classification — outputs a value in [0, 1]</li>
+  <li><strong>Linear (no activation)</strong> for regression — outputs unbounded values</li>
+</ul>
+
+<p>The ANN library handles its own weight management, gradient computation, and optimizer updates internally. The CNN library treats ANN as a black box — it sends the flattened vector in, gets the prediction out.</p>
+
+<h2 id="backward">Backward Pipeline</h2>
+<p>During training, the backward pipeline runs in reverse. After computing the loss (comparing predicted output to expected output):</p>
+
+<ol>
+  <li><strong>ANN backpropagation</strong> — ANN computes gradients through its dense layers and returns the gradient with respect to its input (the flattened vector).</li>
+  <li><strong>Unflatten</strong> — the 1D gradient is reshaped back to 3D (on GPU, it's copied from CPU back to GPU memory).</li>
+  <li><strong>CNN backpropagation</strong> — gradients flow backward through the CNN layers in reverse order. Each layer computes the gradient with respect to its input (passed to the previous layer) and the gradient with respect to its parameters (accumulated for the optimizer).</li>
+</ol>
+
+<p>The key insight is that <strong>both CNN and ANN gradients must be correct for learning to work</strong>. If either side has a bug, the entire pipeline fails to converge. The handoff at the flatten/unflatten boundary must preserve the gradient values exactly.</p>
+
+<div class="tip-box">
+  <strong>Debugging tip:</strong> If training produces <code>NaN</code> or <code>Inf</code> values, the problem usually originates in one specific layer and propagates through the pipeline. Check the loss values at each epoch — a sudden jump to infinity often indicates an exploding gradient in one of the early Conv2D layers. Adding InstanceNorm typically fixes this.
+</div>
 
 </main>
 </div>

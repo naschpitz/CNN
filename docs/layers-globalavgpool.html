@@ -58,48 +58,91 @@
 <main class="main">
 
 <h1>GlobalAvgPool Layer</h1>
-<p>Global Average Pooling reduces each channel's spatial dimensions (H × W) to a single value by computing the spatial mean. The output shape is (C, 1, 1), collapsing all spatial information into a per-channel summary.</p>
+<p>Global Average Pooling (GAP) reduces each channel's entire spatial extent (H × W) to a single scalar by computing the spatial mean. If the input has shape \((C, H, W)\), the output has shape \((C, 1, 1)\) — all spatial information is collapsed into one number per channel. This is one of the most important modern CNN techniques, first introduced in the "Network in Network" paper (Lin et al., 2013).</p>
 
 <div class="toc">
   <h4>On this page</h4>
   <ol>
     <li><a href="#purpose">Purpose</a></li>
     <li><a href="#propagation">Propagation</a></li>
+    <li><a href="#example">Numeric Example</a></li>
     <li><a href="#backpropagation">Backpropagation</a></li>
+    <li><a href="#vs-flatten">GlobalAvgPool vs. Direct Flatten</a></li>
+    <li><a href="#placement">Placement in the Network</a></li>
     <li><a href="#parameters">Parameters</a></li>
   </ol>
 </div>
 
 <h2 id="purpose">Purpose</h2>
+<p>Consider a network that produces 128 channels of 28×28 feature maps before the dense layers. Without GlobalAvgPool, flatten produces a vector of \(128 \times 28 \times 28 = 100{,}352\) elements. If the first dense layer has 256 neurons, that's \(100{,}352 \times 256 = 25{,}690{,}112\) parameters — an enormous number that easily overfits on small datasets.</p>
+
+<p>GlobalAvgPool reduces this to just 128 elements (one per channel), so the same dense layer needs only \(128 \times 256 = 32{,}768\) parameters. That's a <strong>784× reduction</strong> in parameter count.</p>
+
 <ul>
-  <li><strong>Replaces flatten + dense</strong> — eliminates the massive parameter count from flattening large spatial feature maps into a dense layer</li>
-  <li><strong>Spatial invariance</strong> — the mean is independent of the exact spatial arrangement of activations</li>
-  <li><strong>Regularization effect</strong> — fewer parameters means less overfitting compared to fully-connected alternatives</li>
-  <li><strong>Input-size agnostic</strong> — works with any spatial dimensions, enabling inference on different image sizes than training</li>
+  <li><strong>Massive parameter reduction</strong> — eliminates the bottleneck between large spatial feature maps and dense layers. This is the primary reason to use GAP.</li>
+  <li><strong>Built-in spatial invariance</strong> — the mean is independent of where a feature appears spatially. An edge detector's average activation is the same whether the edge is in the top-left or bottom-right.</li>
+  <li><strong>Strong regularization</strong> — fewer parameters means the model is less prone to memorizing training data. GAP acts as a structural regularizer without needing explicit dropout or weight decay.</li>
+  <li><strong>Input-size agnostic</strong> — since GAP produces exactly \(C\) values regardless of spatial dimensions, a trained model can be applied to images of different sizes at inference time. This is impossible with direct flatten, which requires a fixed spatial size.</li>
 </ul>
 
 <h2 id="propagation">Propagation</h2>
-<p>For each channel \(c\), compute the mean over all spatial positions:</p>
+<p>For each channel \(c\), GlobalAvgPool computes the arithmetic mean over all \(H \times W\) spatial positions:</p>
 <div class="math-block">
 \[ \text{output}[c] = \frac{1}{H \times W} \sum_{h=0}^{H-1} \sum_{w=0}^{W-1} \text{input}[c, h, w] \]
 </div>
 
-<p>The operation modifies the tensor in-place, compacting the data to the first \(C\) elements and setting the shape to \((C, 1, 1)\).</p>
+<p>The operation works in-place: it compacts the data to the first \(C\) elements of the tensor's data array and updates the shape to \((C, 1, 1)\). No additional memory allocation is needed.</p>
 
-<div class="info-box">
-  <strong>Typical placement:</strong> GlobalAvgPool is placed after the last convolutional block and before flatten. It replaces the traditional stack of max pools that progressively shrink spatial dimensions.
-</div>
+<h2 id="example">Numeric Example</h2>
+<p>Consider a tensor with 2 channels and spatial size 3×3:</p>
+
+<table>
+  <tr><th colspan="3">Channel 0</th><th colspan="3">Channel 1</th></tr>
+  <tr><td>1.0</td><td>2.0</td><td>3.0</td><td>10.0</td><td>20.0</td><td>30.0</td></tr>
+  <tr><td>4.0</td><td>5.0</td><td>6.0</td><td>40.0</td><td>50.0</td><td>60.0</td></tr>
+  <tr><td>7.0</td><td>8.0</td><td>9.0</td><td>70.0</td><td>80.0</td><td>90.0</td></tr>
+</table>
+
+<p>GlobalAvgPool output:</p>
+<ul>
+  <li>Channel 0: \(\frac{1+2+3+4+5+6+7+8+9}{9} = 5.0\)</li>
+  <li>Channel 1: \(\frac{10+20+30+40+50+60+70+80+90}{9} = 50.0\)</li>
+</ul>
+
+<p>Result: <code>[5.0, 50.0]</code> — just 2 values summarizing the entire spatial content of 18 elements.</p>
 
 <h2 id="backpropagation">Backpropagation</h2>
-<p>The gradient is distributed evenly across all spatial positions in each channel:</p>
+<p>Since the output for each channel is the mean of all spatial positions, the gradient is distributed <strong>equally</strong> to every spatial element in that channel:</p>
 <div class="math-block">
 \[ \frac{\partial L}{\partial x_{c,h,w}} = \frac{1}{H \times W} \frac{\partial L}{\partial y_c} \]
 </div>
 
-<p>The gradient tensor is expanded from \((C, 1, 1)\) back to the original \((C, H, W)\) shape.</p>
+<p>Intuitively, if the loss wants channel \(c\)'s mean to increase, every spatial element in that channel gets the same small "nudge" upward. The nudge is scaled by \(\frac{1}{HW}\) because each element contributes equally to the mean.</p>
+
+<p>The gradient tensor is expanded from shape \((C, 1, 1)\) back to the original \((C, H, W)\) shape, with every spatial position in a channel receiving the same gradient value.</p>
+
+<h2 id="vs-flatten">GlobalAvgPool vs. Direct Flatten</h2>
+<table>
+  <tr><th>Aspect</th><th>Direct Flatten</th><th>GlobalAvgPool + Flatten</th></tr>
+  <tr><td><strong>Output size</strong></td><td>\(C \times H \times W\)</td><td>\(C\)</td></tr>
+  <tr><td><strong>Dense layer params</strong></td><td>Huge (millions)</td><td>Small (thousands)</td></tr>
+  <tr><td><strong>Spatial sensitivity</strong></td><td>Position-dependent</td><td>Position-invariant</td></tr>
+  <tr><td><strong>Variable input sizes</strong></td><td>Not supported</td><td>Supported</td></tr>
+  <tr><td><strong>Risk of overfitting</strong></td><td>High</td><td>Low</td></tr>
+</table>
+
+<h2 id="placement">Placement in the Network</h2>
+<p>GlobalAvgPool is typically placed after the last convolutional block (conv + norm + relu) and before flatten:</p>
+<pre><code>Conv2D → InstanceNorm → ReLU → <strong>GlobalAvgPool</strong> → Flatten → Dense</code></pre>
+
+<p>It replaces the traditional approach of using multiple max pools to progressively shrink spatial dimensions. With GAP, the network can maintain larger spatial feature maps deeper into the architecture, preserving fine-grained spatial details until the very end.</p>
+
+<div class="info-box">
+  <strong>Typical placement:</strong> GlobalAvgPool is placed after the last convolutional block and before flatten. The number of channels in the last conv block directly determines the input size of the first dense layer.
+</div>
 
 <h2 id="parameters">Parameters</h2>
-<p><strong>No learnable parameters.</strong> GlobalAvgPool is a fixed aggregation operation.</p>
+<p><strong>No learnable parameters.</strong> GlobalAvgPool is a fixed aggregation operation — it adds zero parameters to the model.</p>
 
 <h3>JSON Configuration</h3>
 <pre><code>{ <span class="string">"type"</span>: <span class="string">"globalavgpool"</span> }</code></pre>
