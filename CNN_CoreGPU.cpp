@@ -1,5 +1,6 @@
 #include "CNN_CoreGPU.hpp"
 #include "CNN_CoreGPUWorkerConfig.hpp"
+#include "CNN_Worker.hpp"
 
 #include <OCLW_Core.hpp>
 #include <QtConcurrent>
@@ -31,6 +32,9 @@ CoreGPU<T>::CoreGPU(const CoreConfig<T>& coreConfig) : Core<T>(coreConfig)
   } else {
     this->numGPUs = std::min(static_cast<size_t>(requestedGPUs), availableGPUs);
   }
+
+  // Initialize residual projection parameters if not loaded
+  Worker<T>::initializeResidualParams(this->layersConfig, this->inputShape, this->parameters);
 
   this->initializeWorkers();
 }
