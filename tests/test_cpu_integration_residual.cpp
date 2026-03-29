@@ -143,6 +143,83 @@ static void testResidualParametersEndToEnd()
 
 //===================================================================================================================//
 
+static void testResidualMixedIdentityProjectionEndToEnd()
+{
+  std::cout << "--- testResidualMixedIdentityProjectionEndToEnd ---" << std::endl;
+
+  // stem(4,stride2) → res_identity(4→4) → pool → res_projection(4→8) → GAP → Flatten → Dense(1)
+  CNN::CoreConfig<double> config;
+  config.modeType = CNN::ModeType::TRAIN;
+  config.deviceType = CNN::DeviceType::CPU;
+  config.inputShape = {1, 16, 16};
+  config.logLevel = CNN::LogLevel::ERROR;
+
+  CNN::CNNLayerConfig stem;
+  stem.type = CNN::LayerType::CONV;
+  stem.config = CNN::ConvLayerConfig{4, 3, 3, 2, 2, CNN::SlidingStrategyType::SAME};
+
+  CNN::CNNLayerConfig relu;
+  relu.type = CNN::LayerType::RELU;
+  relu.config = CNN::ReLULayerConfig{};
+
+  CNN::CNNLayerConfig resStart;
+  resStart.type = CNN::LayerType::RESIDUAL_START;
+  resStart.config = CNN::ResidualStartConfig{};
+
+  CNN::CNNLayerConfig conv4;
+  conv4.type = CNN::LayerType::CONV;
+  conv4.config = CNN::ConvLayerConfig{4, 3, 3, 1, 1, CNN::SlidingStrategyType::SAME};
+
+  CNN::CNNLayerConfig resEnd;
+  resEnd.type = CNN::LayerType::RESIDUAL_END;
+  resEnd.config = CNN::ResidualEndConfig{};
+
+  CNN::CNNLayerConfig pool;
+  pool.type = CNN::LayerType::POOL;
+  pool.config = CNN::PoolLayerConfig{CNN::PoolTypeEnum::MAX, 2, 2, 2, 2};
+
+  CNN::CNNLayerConfig conv8;
+  conv8.type = CNN::LayerType::CONV;
+  conv8.config = CNN::ConvLayerConfig{8, 3, 3, 1, 1, CNN::SlidingStrategyType::SAME};
+
+  CNN::CNNLayerConfig gapLayer;
+  gapLayer.type = CNN::LayerType::GLOBALAVGPOOL;
+  gapLayer.config = CNN::GlobalAvgPoolLayerConfig{};
+
+  CNN::CNNLayerConfig flattenLayer;
+  flattenLayer.type = CNN::LayerType::FLATTEN;
+  flattenLayer.config = CNN::FlattenLayerConfig{};
+
+  // stem → identity res block → pool → projection res block → GAP → flatten
+  config.layersConfig.cnnLayers = {stem, relu, resStart, conv4, relu, resEnd, pool, resStart, conv8, relu, resEnd,
+                                   gapLayer, flattenLayer};
+  config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
+  config.trainingConfig.numEpochs = 200;
+  config.trainingConfig.learningRate = 0.5;
+  config.progressReports = 0;
+
+  CNN::Samples<double> samples(2);
+  samples[0].input = makeGradientInput<double>({1, 16, 16});
+  samples[0].output = {1.0};
+  samples[1].input = CNN::Tensor3D<double>({1, 16, 16}, 0.0);
+  samples[1].output = {0.0};
+
+  bool converged = false;
+  CNN::Output<double> pred0, pred1;
+
+  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
+    auto core = CNN::Core<double>::makeCore(config);
+    core->train(samples.size(), CNN::makeSampleProvider(samples));
+    pred0 = core->predict(samples[0].input);
+    pred1 = core->predict(samples[1].input);
+
+    if (pred0[0] > pred1[0])
+      converged = true;
+  }
+
+  std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
+  CHECK(converged, "Mixed identity+projection residual e2e: bright > dark (5 attempts)");
+}
 
 //===================================================================================================================//
 
@@ -150,4 +227,5 @@ void runIntegrationResidualTests()
 {
   testResidualIdentityEndToEnd();
   testResidualParametersEndToEnd();
+  testResidualMixedIdentityProjectionEndToEnd();
 }
