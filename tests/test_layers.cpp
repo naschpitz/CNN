@@ -6,6 +6,7 @@
 #include "CNN_GlobalAvgPool.hpp"
 #include "CNN_GlobalDualPool.hpp"
 #include "CNN_Normalization.hpp"
+#include "CNN_Residual.hpp"
 
 //===================================================================================================================//
 
@@ -847,6 +848,218 @@ static void testGlobalDualPoolMaxOnlyGradient()
 
 //===================================================================================================================//
 
+static void testResidualIdentityForward()
+{
+  std::cout << "--- testResidualIdentityForward ---" << std::endl;
+
+  CNN::Shape3D shape{2, 3, 3};
+  CNN::Tensor3D<double> blockOutput(shape);
+  CNN::Tensor3D<double> skipInput(shape);
+
+  for (ulong i = 0; i < 18; i++) {
+    blockOutput.data[i] = static_cast<double>(i) * 0.1;
+    skipInput.data[i] = static_cast<double>(i) * 0.2;
+  }
+
+  CNN::Residual<double>::add(blockOutput, skipInput, nullptr);
+
+  for (ulong i = 0; i < 18; i++) {
+    double expected = static_cast<double>(i) * 0.1 + static_cast<double>(i) * 0.2;
+    CHECK_NEAR(blockOutput.data[i], expected, 1e-9, "res identity forward");
+  }
+}
+
+//===================================================================================================================//
+
+static void testResidualIdentityBackward()
+{
+  std::cout << "--- testResidualIdentityBackward ---" << std::endl;
+
+  CNN::Shape3D shape{2, 3, 3};
+  CNN::Tensor3D<double> dOut(shape);
+  CNN::Tensor3D<double> skipInput(shape);
+
+  for (ulong i = 0; i < 18; i++) {
+    dOut.data[i] = static_cast<double>(i) * 0.5;
+    skipInput.data[i] = 0.0; // Not used for identity
+  }
+
+  CNN::Tensor3D<double> dSkip = CNN::Residual<double>::backpropagate(dOut, skipInput, nullptr, nullptr);
+
+  // Identity: dSkip == dOut
+  for (ulong i = 0; i < 18; i++)
+    CHECK_NEAR(dSkip.data[i], dOut.data[i], 1e-9, "res identity backward");
+}
+
+//===================================================================================================================//
+
+static void testResidualProjectionForward()
+{
+  std::cout << "--- testResidualProjectionForward ---" << std::endl;
+
+  // Skip: 2ch, Block output: 4ch, spatial 2x2
+  CNN::Shape3D skipShape{2, 2, 2};
+  CNN::Shape3D outShape{4, 2, 2};
+  CNN::Tensor3D<double> blockOutput(outShape, 0.0);
+  CNN::Tensor3D<double> skipInput(skipShape);
+
+  for (ulong i = 0; i < 8; i++)
+    skipInput.data[i] = static_cast<double>(i + 1);
+
+  CNN::ResidualProjection<double> proj;
+  proj.inC = 2;
+  proj.outC = 4;
+  proj.weights.resize(8, 0.1); // 4×2 all 0.1
+  proj.biases.resize(4, 0.0);
+
+  CNN::Residual<double>::add(blockOutput, skipInput, &proj);
+
+  // For each output channel oc, spatial s:
+  // projected[oc][s] = sum_ic(0.1 * skip[ic][s])
+  // skip ch0: {1,2,3,4}, ch1: {5,6,7,8}
+  // projected[oc][s] = 0.1*(s+1) + 0.1*(s+5) = 0.1*(2s+6) for s=0,1,2,3
+  for (ulong oc = 0; oc < 4; oc++) {
+    for (ulong s = 0; s < 4; s++) {
+      double ic0val = skipInput.data[s];
+      double ic1val = skipInput.data[4 + s];
+      double expected = 0.1 * ic0val + 0.1 * ic1val;
+      CHECK_NEAR(blockOutput.data[oc * 4 + s], expected, 1e-9, "res projection forward");
+    }
+  }
+}
+
+//===================================================================================================================//
+
+static void testResidualProjectionBackward()
+{
+  std::cout << "--- testResidualProjectionBackward ---" << std::endl;
+
+  CNN::Shape3D skipShape{2, 2, 2};
+  CNN::Shape3D outShape{4, 2, 2};
+  CNN::Tensor3D<double> dOut(outShape);
+  CNN::Tensor3D<double> skipInput(skipShape);
+
+  for (ulong i = 0; i < 16; i++)
+    dOut.data[i] = static_cast<double>(i + 1) * 0.1;
+
+  for (ulong i = 0; i < 8; i++)
+    skipInput.data[i] = static_cast<double>(i + 1);
+
+  CNN::ResidualProjection<double> proj;
+  proj.inC = 2;
+  proj.outC = 4;
+  proj.weights.resize(8, 0.1);
+  proj.biases.resize(4, 0.0);
+
+  CNN::ResidualProjection<double> dProj;
+  dProj.inC = 2;
+  dProj.outC = 4;
+  dProj.weights.assign(8, 0.0);
+  dProj.biases.assign(4, 0.0);
+
+  CNN::Tensor3D<double> dSkip = CNN::Residual<double>::backpropagate(dOut, skipInput, &proj, &dProj);
+
+  // dSkip[ic][s] = sum_oc(W[oc,ic] * dOut[oc][s])
+  // W all 0.1, so dSkip[ic][s] = 0.1 * sum_oc(dOut[oc][s])
+  for (ulong ic = 0; ic < 2; ic++) {
+    for (ulong s = 0; s < 4; s++) {
+      double sumOc = 0.0;
+
+      for (ulong oc = 0; oc < 4; oc++)
+        sumOc += dOut.data[oc * 4 + s];
+
+      double expected = 0.1 * sumOc;
+      CHECK_NEAR(dSkip.data[ic * 4 + s], expected, 1e-9, "res proj backward dSkip");
+    }
+  }
+
+  // dW[oc,ic] = sum_s(dOut[oc][s] * skip[ic][s])
+  for (ulong oc = 0; oc < 4; oc++) {
+    for (ulong ic = 0; ic < 2; ic++) {
+      double expected = 0.0;
+
+      for (ulong s = 0; s < 4; s++)
+        expected += dOut.data[oc * 4 + s] * skipInput.data[ic * 4 + s];
+
+      CHECK_NEAR(dProj.weights[oc * 2 + ic], expected, 1e-9, "res proj backward dW");
+    }
+  }
+}
+
+//===================================================================================================================//
+
+static void testResidualGradientCheck()
+{
+  std::cout << "--- testResidualGradientCheck ---" << std::endl;
+
+  CNN::Shape3D skipShape{2, 2, 2};
+  CNN::Shape3D outShape{3, 2, 2};
+  ulong skipSize = 8;
+  ulong outSize = 12;
+  double eps = 1e-5;
+
+  std::vector<double> skipData(skipSize), blockData(outSize);
+
+  for (ulong i = 0; i < skipSize; i++)
+    skipData[i] = static_cast<double>(i) * 0.1 - 0.3;
+
+  for (ulong i = 0; i < outSize; i++)
+    blockData[i] = static_cast<double>(i) * 0.05 + 0.1;
+
+  CNN::ResidualProjection<double> proj;
+  proj.inC = 2;
+  proj.outC = 3;
+  proj.weights = {0.1, -0.2, 0.3, -0.1, 0.2, -0.3};
+  proj.biases = {0.01, -0.02, 0.03};
+
+  std::vector<double> dOut(outSize);
+
+  for (ulong i = 0; i < outSize; i++)
+    dOut[i] = static_cast<double>(i) * 0.2 - 0.5;
+
+  // Analytical backward
+  CNN::Tensor3D<double> dOutTensor(outShape);
+  dOutTensor.data = dOut;
+  CNN::Tensor3D<double> skipInputTensor(skipShape);
+  skipInputTensor.data = skipData;
+
+  CNN::ResidualProjection<double> dProj;
+  dProj.inC = 2;
+  dProj.outC = 3;
+  dProj.weights.assign(6, 0.0);
+  dProj.biases.assign(3, 0.0);
+
+  CNN::Tensor3D<double> dSkip = CNN::Residual<double>::backpropagate(dOutTensor, skipInputTensor, &proj, &dProj);
+
+  // Numerical gradient w.r.t. skip input
+  for (ulong i = 0; i < skipSize; i++) {
+    auto fwd = [&](std::vector<double>& sd) {
+      CNN::Tensor3D<double> bo(outShape);
+      bo.data = blockData;
+      CNN::Tensor3D<double> si(skipShape);
+      si.data = sd;
+      CNN::Residual<double>::add(bo, si, &proj);
+
+      double loss = 0.0;
+
+      for (ulong j = 0; j < outSize; j++)
+        loss += dOut[j] * bo.data[j];
+
+      return loss;
+    };
+
+    auto plus = skipData;
+    plus[i] += eps;
+    auto minus = skipData;
+    minus[i] -= eps;
+
+    double numGrad = (fwd(plus) - fwd(minus)) / (2.0 * eps);
+    CHECK_NEAR(dSkip.data[i], numGrad, 1e-6, "res proj numerical grad skip");
+  }
+}
+
+//===================================================================================================================//
+
 void runLayerTests()
 {
   testTensor3D();
@@ -872,6 +1085,11 @@ void runLayerTests()
   testGlobalDualPoolGradientCheck();
   testGlobalDualPoolAvgOnlyGradient();
   testGlobalDualPoolMaxOnlyGradient();
+  testResidualIdentityForward();
+  testResidualIdentityBackward();
+  testResidualProjectionForward();
+  testResidualProjectionBackward();
+  testResidualGradientCheck();
   testInstanceNormInference();
   testInstanceNormTraining();
   testInstanceNormBackpropagate();
