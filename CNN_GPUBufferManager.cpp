@@ -359,15 +359,17 @@ void GPUBufferManager<T>::allocateBuffers(ulong batchSize)
       this->core->template allocateBuffer<T>("cnn_res_proj_w", totalWeightSize);
       std::vector<T> flatW(totalWeightSize);
       ulong wOff = 0;
+      ulong projIdx = 0;
 
       for (ulong i = 0; i < this->residualProjInfos.size(); i++) {
         if (this->residualProjInfos[i].inC > 0) {
-          const auto& rp = this->parameters.residualParams[i];
+          const auto& rp = this->parameters.residualParams[projIdx];
 
           for (ulong j = 0; j < rp.weights.size(); j++)
             flatW[wOff + j] = rp.weights[j];
 
           wOff += rp.weights.size();
+          projIdx++;
         }
       }
 
@@ -378,15 +380,17 @@ void GPUBufferManager<T>::allocateBuffers(ulong batchSize)
       this->core->template allocateBuffer<T>("cnn_res_proj_b", totalBiasSize);
       std::vector<T> flatB(totalBiasSize);
       ulong bOff = 0;
+      ulong projIdx = 0;
 
       for (ulong i = 0; i < this->residualProjInfos.size(); i++) {
         if (this->residualProjInfos[i].inC > 0) {
-          const auto& rp = this->parameters.residualParams[i];
+          const auto& rp = this->parameters.residualParams[projIdx];
 
           for (ulong j = 0; j < rp.biases.size(); j++)
             flatB[bOff + j] = rp.biases[j];
 
           bOff += rp.biases.size();
+          projIdx++;
         }
       }
 
