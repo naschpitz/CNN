@@ -764,9 +764,9 @@ static void testResidualIdentityEndToEnd()
 
 //===================================================================================================================//
 
-static void testResidualProjectionEndToEnd()
+static void testResidualParametersEndToEnd()
 {
-  std::cout << "--- testResidualProjectionEndToEnd ---" << std::endl;
+  std::cout << "--- testResidualParametersEndToEnd ---" << std::endl;
 
   // residual_start (1ch) → Conv(4, valid) → ReLU → residual_end (4ch, projection from 1→4)
   // → GAP → Flatten → Dense(1)
@@ -842,6 +842,6 @@ void runIntegrationBasicTests()
   testGlobalAvgPoolAfterPool();
   testGlobalDualPoolEndToEnd();
   testResidualIdentityEndToEnd();
-  testResidualProjectionEndToEnd();
+  testResidualParametersEndToEnd();
   testBatchPredict();
 }

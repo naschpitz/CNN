@@ -875,7 +875,7 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
 
         case LayerType::RESIDUAL_END: {
           bool needsProjection = false;
-          const ResidualProjection<T>* projection = nullptr;
+          const ResidualParameters<T>* projection = nullptr;
 
           // Check if first sample has channel mismatch
           if (!residualStacks[0].empty() && residualStacks[0].top().shape.c != currentActvs[0].shape.c) {
@@ -1121,7 +1121,7 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
         case LayerType::RESIDUAL_START: {
           // Going backward: add skip gradient to block gradient
           bool needsProjection = false;
-          const ResidualProjection<T>* projection = nullptr;
+          const ResidualParameters<T>* projection = nullptr;
 
           // Check channel mismatch using intermediates
           const Tensor3D<T>& layerInput0 = intermediates[0][static_cast<ulong>(layerIdx)];
@@ -1138,7 +1138,7 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
             const Tensor3D<T>& layerInput = intermediates[n][static_cast<ulong>(layerIdx)];
 
             if (needsProjection) {
-              ResidualProjection<T> dProj;
+              ResidualParameters<T> dProj;
               dProj.inC = projection->inC;
               dProj.outC = projection->outC;
               dProj.weights.assign(projection->weights.size(), static_cast<T>(0));

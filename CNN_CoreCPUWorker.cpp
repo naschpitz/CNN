@@ -335,7 +335,7 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
 
       // Determine if projection is needed (channel mismatch)
       bool needsProjection = (skipInput.shape.c != current.shape.c);
-      const ResidualProjection<T>* projection = nullptr;
+      const ResidualParameters<T>* projection = nullptr;
 
       if (needsProjection) {
         projection = &this->sharedParams.residualParams[residualIdx];
@@ -463,9 +463,9 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::v
 
       if (needsProjection) {
         residualIdx--;
-        const ResidualProjection<T>* projection = &this->sharedParams.residualParams[residualIdx];
+        const ResidualParameters<T>* projection = &this->sharedParams.residualParams[residualIdx];
 
-        ResidualProjection<T> dProj;
+        ResidualParameters<T> dProj;
         dProj.inC = projection->inC;
         dProj.outC = projection->outC;
         dProj.weights.assign(projection->weights.size(), static_cast<T>(0));

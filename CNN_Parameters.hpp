@@ -14,7 +14,7 @@ namespace CNN
 {
   // 1×1 convolution projection for residual skip connections with channel mismatch
   template <typename T>
-  struct ResidualProjection {
+  struct ResidualParameters {
       std::vector<T> weights; // outC × inC (1×1 conv, no spatial kernel)
       std::vector<T> biases;  // outC
       ulong inC = 0;
@@ -26,7 +26,7 @@ namespace CNN
   struct Parameters {
       std::vector<ConvParameters<T>> convParams;         // One per conv layer
       std::vector<NormParameters<T>> normParams;         // One per norm layer
-      std::vector<ResidualProjection<T>> residualParams;  // One per residual block with channel mismatch
+      std::vector<ResidualParameters<T>> residualParams;  // One per residual block with channel mismatch
       ANN::Parameters<T> denseParams;                     // Dense layer parameters (delegated to ANN)
   };
 }

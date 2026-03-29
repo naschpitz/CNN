@@ -7,7 +7,7 @@ using namespace CNN;
 // Forward: blockOutput += project(skipInput) or blockOutput += skipInput
 template <typename T>
 void Residual<T>::propagate(Tensor3D<T>& blockOutput, const Tensor3D<T>& skipInput,
-                            const ResidualProjection<T>* projection)
+                            const ResidualParameters<T>* projection)
 {
   if (projection == nullptr) {
     // Identity shortcut: element-wise addition (same channels)
@@ -39,8 +39,8 @@ void Residual<T>::propagate(Tensor3D<T>& blockOutput, const Tensor3D<T>& skipInp
 // The gradient through the skip path is: dSkip = dBlockOutput (identity) or dSkip = W^T * dBlockOutput (projection).
 template <typename T>
 Tensor3D<T> Residual<T>::backpropagate(const Tensor3D<T>& dBlockOutput, const Tensor3D<T>& skipInput,
-                                       const ResidualProjection<T>* projection,
-                                       ResidualProjection<T>* dProjection)
+                                       const ResidualParameters<T>* projection,
+                                       ResidualParameters<T>* dProjection)
 {
   if (projection == nullptr) {
     // Identity shortcut: gradient passes through unchanged

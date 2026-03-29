@@ -893,9 +893,9 @@ static void testResidualIdentityBackward()
 
 //===================================================================================================================//
 
-static void testResidualProjectionForward()
+static void testResidualParametersForward()
 {
-  std::cout << "--- testResidualProjectionForward ---" << std::endl;
+  std::cout << "--- testResidualParametersForward ---" << std::endl;
 
   // Skip: 2ch, Block output: 4ch, spatial 2x2
   CNN::Shape3D skipShape{2, 2, 2};
@@ -906,7 +906,7 @@ static void testResidualProjectionForward()
   for (ulong i = 0; i < 8; i++)
     skipInput.data[i] = static_cast<double>(i + 1);
 
-  CNN::ResidualProjection<double> proj;
+  CNN::ResidualParameters<double> proj;
   proj.inC = 2;
   proj.outC = 4;
   proj.weights.resize(8, 0.1); // 4×2 all 0.1
@@ -930,9 +930,9 @@ static void testResidualProjectionForward()
 
 //===================================================================================================================//
 
-static void testResidualProjectionBackward()
+static void testResidualParametersBackward()
 {
-  std::cout << "--- testResidualProjectionBackward ---" << std::endl;
+  std::cout << "--- testResidualParametersBackward ---" << std::endl;
 
   CNN::Shape3D skipShape{2, 2, 2};
   CNN::Shape3D outShape{4, 2, 2};
@@ -945,13 +945,13 @@ static void testResidualProjectionBackward()
   for (ulong i = 0; i < 8; i++)
     skipInput.data[i] = static_cast<double>(i + 1);
 
-  CNN::ResidualProjection<double> proj;
+  CNN::ResidualParameters<double> proj;
   proj.inC = 2;
   proj.outC = 4;
   proj.weights.resize(8, 0.1);
   proj.biases.resize(4, 0.0);
 
-  CNN::ResidualProjection<double> dProj;
+  CNN::ResidualParameters<double> dProj;
   dProj.inC = 2;
   dProj.outC = 4;
   dProj.weights.assign(8, 0.0);
@@ -1006,7 +1006,7 @@ static void testResidualGradientCheck()
   for (ulong i = 0; i < outSize; i++)
     blockData[i] = static_cast<double>(i) * 0.05 + 0.1;
 
-  CNN::ResidualProjection<double> proj;
+  CNN::ResidualParameters<double> proj;
   proj.inC = 2;
   proj.outC = 3;
   proj.weights = {0.1, -0.2, 0.3, -0.1, 0.2, -0.3};
@@ -1023,7 +1023,7 @@ static void testResidualGradientCheck()
   CNN::Tensor3D<double> skipInputTensor(skipShape);
   skipInputTensor.data = skipData;
 
-  CNN::ResidualProjection<double> dProj;
+  CNN::ResidualParameters<double> dProj;
   dProj.inC = 2;
   dProj.outC = 3;
   dProj.weights.assign(6, 0.0);
@@ -1218,8 +1218,8 @@ void runLayerTests()
   testGlobalDualPoolMaxOnlyGradient();
   testResidualIdentityForward();
   testResidualIdentityBackward();
-  testResidualProjectionForward();
-  testResidualProjectionBackward();
+  testResidualParametersForward();
+  testResidualParametersBackward();
   testResidualGradientCheck();
   testResidualShapeValidation();
   testInstanceNormInference();

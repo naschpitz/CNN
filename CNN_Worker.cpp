@@ -231,7 +231,7 @@ void Worker<T>::initializeResidualParams(const LayersConfig& layersConfig, const
         if (residualIdx >= parameters.residualParams.size())
           parameters.residualParams.resize(residualIdx + 1);
 
-        ResidualProjection<T>& rp = parameters.residualParams[residualIdx];
+        ResidualParameters<T>& rp = parameters.residualParams[residualIdx];
         rp.inC = skipShape.c;
         rp.outC = currentShape.c;
 
