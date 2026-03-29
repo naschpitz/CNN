@@ -56,13 +56,31 @@ namespace CNN
       float momentum = 0.1f; // Momentum for running mean/variance update
   };
 
+  // Residual block markers (no parameters — projection weights handled separately)
+  struct ResidualStartConfig {
+  };
+
+  struct ResidualEndConfig {
+  };
+
   // A CNN layer can be any of these types
-  enum class LayerType { CONV, RELU, POOL, FLATTEN, GLOBALAVGPOOL, GLOBALDUALPOOL, INSTANCENORM, BATCHNORM };
+  enum class LayerType {
+    CONV,
+    RELU,
+    POOL,
+    FLATTEN,
+    GLOBALAVGPOOL,
+    GLOBALDUALPOOL,
+    INSTANCENORM,
+    BATCHNORM,
+    RESIDUAL_START,
+    RESIDUAL_END
+  };
 
   struct CNNLayerConfig {
       LayerType type;
       std::variant<ConvLayerConfig, ReLULayerConfig, PoolLayerConfig, FlattenLayerConfig, GlobalAvgPoolLayerConfig,
-                   GlobalDualPoolLayerConfig, NormLayerConfig>
+                   GlobalDualPoolLayerConfig, NormLayerConfig, ResidualStartConfig, ResidualEndConfig>
         config;
   };
 

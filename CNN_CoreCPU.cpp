@@ -6,8 +6,11 @@
 #include "CNN_GlobalAvgPool.hpp"
 #include "CNN_GlobalDualPool.hpp"
 #include "CNN_Normalization.hpp"
+#include "CNN_Residual.hpp"
 
 #include <ANN_Core.hpp>
+
+#include <stack>
 
 #include <QDebug>
 #include <QMutex>
@@ -35,6 +38,9 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
 
   // Initialize batch norm parameters if not loaded
   Worker<T>::initializeNormParams(this->layersConfig, this->inputShape, this->parameters);
+
+  // Initialize residual projection parameters if not loaded
+  Worker<T>::initializeResidualParams(this->layersConfig, this->inputShape, this->parameters);
 
   // Check if any layer is BATCHNORM
   for (const auto& layerConfig : this->layersConfig.cnnLayers) {
@@ -68,6 +74,14 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
       this->accumDBNBeta[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
       this->accumNormMean[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
       this->accumNormVar[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
+    }
+
+    this->accumDResidualWeights.resize(this->parameters.residualParams.size());
+    this->accumDResidualBiases.resize(this->parameters.residualParams.size());
+
+    for (ulong i = 0; i < this->parameters.residualParams.size(); i++) {
+      this->accumDResidualWeights[i].resize(this->parameters.residualParams[i].weights.size(), static_cast<T>(0));
+      this->accumDResidualBiases[i].resize(this->parameters.residualParams[i].biases.size(), static_cast<T>(0));
     }
 
     if (this->trainingConfig.optimizer.type == OptimizerType::ADAM) {
@@ -153,6 +167,11 @@ void CoreCPU<T>::resetGlobalCNNAccumulators()
     std::fill(this->accumNormMean[i].begin(), this->accumNormMean[i].end(), static_cast<T>(0));
     std::fill(this->accumNormVar[i].begin(), this->accumNormVar[i].end(), static_cast<T>(0));
   }
+
+  for (ulong i = 0; i < this->accumDResidualWeights.size(); i++) {
+    std::fill(this->accumDResidualWeights[i].begin(), this->accumDResidualWeights[i].end(), static_cast<T>(0));
+    std::fill(this->accumDResidualBiases[i].begin(), this->accumDResidualBiases[i].end(), static_cast<T>(0));
+  }
 }
 
 //===================================================================================================================//
@@ -191,6 +210,17 @@ void CoreCPU<T>::mergeWorkerCNNAccumulators(const CoreCPUWorker<T>& worker)
 
     for (ulong j = 0; j < wBNVar[i].size(); j++)
       this->accumNormVar[i][j] += wBNVar[i][j];
+  }
+
+  const auto& wResWeights = worker.getAccumResidualWeights();
+  const auto& wResBiases = worker.getAccumResidualBiases();
+
+  for (ulong i = 0; i < wResWeights.size(); i++) {
+    for (ulong j = 0; j < wResWeights[i].size(); j++)
+      this->accumDResidualWeights[i][j] += wResWeights[i][j];
+
+    for (ulong j = 0; j < wResBiases[i].size(); j++)
+      this->accumDResidualBiases[i][j] += wResBiases[i][j];
   }
 }
 
@@ -257,6 +287,20 @@ void CoreCPU<T>::allocateAdamState()
     this->adam_v_norm_beta[i].resize(this->parameters.normParams[i].numChannels, static_cast<T>(0));
   }
 
+  ulong numResidualLayers = this->parameters.residualParams.size();
+
+  this->adam_m_residual_weights.resize(numResidualLayers);
+  this->adam_v_residual_weights.resize(numResidualLayers);
+  this->adam_m_residual_biases.resize(numResidualLayers);
+  this->adam_v_residual_biases.resize(numResidualLayers);
+
+  for (ulong i = 0; i < numResidualLayers; i++) {
+    this->adam_m_residual_weights[i].resize(this->parameters.residualParams[i].weights.size(), static_cast<T>(0));
+    this->adam_v_residual_weights[i].resize(this->parameters.residualParams[i].weights.size(), static_cast<T>(0));
+    this->adam_m_residual_biases[i].resize(this->parameters.residualParams[i].biases.size(), static_cast<T>(0));
+    this->adam_v_residual_biases[i].resize(this->parameters.residualParams[i].biases.size(), static_cast<T>(0));
+  }
+
   this->adam_t = 0;
 }
 
@@ -318,6 +362,26 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples)
         this->parameters.normParams[i].beta[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
       }
     }
+
+    for (ulong i = 0; i < this->parameters.residualParams.size(); i++) {
+      for (ulong j = 0; j < this->parameters.residualParams[i].weights.size(); j++) {
+        T g = this->accumDResidualWeights[i][j] / n;
+        this->adam_m_residual_weights[i][j] = beta1 * this->adam_m_residual_weights[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_residual_weights[i][j] = beta2 * this->adam_v_residual_weights[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        T m_hat = this->adam_m_residual_weights[i][j] / bc1;
+        T v_hat = this->adam_v_residual_weights[i][j] / bc2;
+        this->parameters.residualParams[i].weights[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
+      }
+
+      for (ulong j = 0; j < this->parameters.residualParams[i].biases.size(); j++) {
+        T g = this->accumDResidualBiases[i][j] / n;
+        this->adam_m_residual_biases[i][j] = beta1 * this->adam_m_residual_biases[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_residual_biases[i][j] = beta2 * this->adam_v_residual_biases[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        T m_hat = this->adam_m_residual_biases[i][j] / bc1;
+        T v_hat = this->adam_v_residual_biases[i][j] / bc2;
+        this->parameters.residualParams[i].biases[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
+      }
+    }
   } else {
     // SGD
     for (ulong i = 0; i < this->parameters.convParams.size(); i++) {
@@ -337,6 +401,16 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples)
 
       for (ulong j = 0; j < this->parameters.normParams[i].numChannels; j++) {
         this->parameters.normParams[i].beta[j] -= lr * (this->accumDBNBeta[i][j] / n);
+      }
+    }
+
+    for (ulong i = 0; i < this->parameters.residualParams.size(); i++) {
+      for (ulong j = 0; j < this->parameters.residualParams[i].weights.size(); j++) {
+        this->parameters.residualParams[i].weights[j] -= lr * (this->accumDResidualWeights[i][j] / n);
+      }
+
+      for (ulong j = 0; j < this->parameters.residualParams[i].biases.size(); j++) {
+        this->parameters.residualParams[i].biases[j] -= lr * (this->accumDResidualBiases[i][j] / n);
       }
     }
   }
@@ -713,6 +787,10 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
       ulong convIdx = 0;
       ulong poolIdx = 0;
       ulong normIdx = 0;
+      ulong residualIdx = 0;
+
+      // Per-sample residual skip stacks
+      std::vector<std::stack<Tensor3D<T>>> residualStacks(N);
 
       for (ulong layerIdx = 0; layerIdx < this->layersConfig.cnnLayers.size(); layerIdx++) {
         const CNNLayerConfig& layerConfig = this->layersConfig.cnnLayers[layerIdx];
@@ -786,6 +864,32 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
         }
 
         case LayerType::FLATTEN: {
+          break;
+        }
+
+        case LayerType::RESIDUAL_START: {
+          for (ulong n = 0; n < N; n++)
+            residualStacks[n].push(currentActvs[n]);
+          break;
+        }
+
+        case LayerType::RESIDUAL_END: {
+          bool needsProjection = false;
+          const ResidualProjection<T>* projection = nullptr;
+
+          // Check if first sample has channel mismatch
+          if (!residualStacks[0].empty() && residualStacks[0].top().shape.c != currentActvs[0].shape.c) {
+            needsProjection = true;
+            projection = &this->parameters.residualParams[residualIdx];
+            residualIdx++;
+          }
+
+          for (ulong n = 0; n < N; n++) {
+            Tensor3D<T> skipInput = residualStacks[n].top();
+            residualStacks[n].pop();
+            Residual<T>::add(currentActvs[n], skipInput, projection);
+          }
+
           break;
         }
         }
@@ -896,9 +1000,22 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
         dBNBeta[i].assign(this->parameters.normParams[i].numChannels, static_cast<T>(0));
       }
 
+      ulong numResLayers = this->parameters.residualParams.size();
+      std::vector<std::vector<T>> dResWeights(numResLayers);
+      std::vector<std::vector<T>> dResBiases(numResLayers);
+
+      for (ulong i = 0; i < numResLayers; i++) {
+        dResWeights[i].assign(this->parameters.residualParams[i].weights.size(), static_cast<T>(0));
+        dResBiases[i].assign(this->parameters.residualParams[i].biases.size(), static_cast<T>(0));
+      }
+
       convIdx = numConvLayers;
       poolIdx = poolMaxIndices.empty() ? 0 : poolMaxIndices[0].size();
       normIdx = numNormLayers;
+      residualIdx = numResLayers;
+
+      // Per-sample gradient stacks for residual backward
+      std::vector<std::stack<Tensor3D<T>>> residualGradStacks(N);
 
       for (long layerIdx = static_cast<long>(this->layersConfig.cnnLayers.size()) - 1; layerIdx >= 0; layerIdx--) {
         const CNNLayerConfig& layerConfig = this->layersConfig.cnnLayers[static_cast<ulong>(layerIdx)];
@@ -993,6 +1110,58 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
         case LayerType::FLATTEN: {
           break;
         }
+
+        case LayerType::RESIDUAL_END: {
+          // Going backward: save dCurrent for the skip path
+          for (ulong n = 0; n < N; n++)
+            residualGradStacks[n].push(dCurrents[n]);
+          break;
+        }
+
+        case LayerType::RESIDUAL_START: {
+          // Going backward: add skip gradient to block gradient
+          bool needsProjection = false;
+          const ResidualProjection<T>* projection = nullptr;
+
+          // Check channel mismatch using intermediates
+          const Tensor3D<T>& layerInput0 = intermediates[0][static_cast<ulong>(layerIdx)];
+
+          if (!residualGradStacks[0].empty() && layerInput0.shape.c != residualGradStacks[0].top().shape.c) {
+            needsProjection = true;
+            residualIdx--;
+            projection = &this->parameters.residualParams[residualIdx];
+          }
+
+          for (ulong n = 0; n < N; n++) {
+            Tensor3D<T> dFromSkip = residualGradStacks[n].top();
+            residualGradStacks[n].pop();
+            const Tensor3D<T>& layerInput = intermediates[n][static_cast<ulong>(layerIdx)];
+
+            if (needsProjection) {
+              ResidualProjection<T> dProj;
+              dProj.inC = projection->inC;
+              dProj.outC = projection->outC;
+              dProj.weights.assign(projection->weights.size(), static_cast<T>(0));
+              dProj.biases.assign(projection->biases.size(), static_cast<T>(0));
+
+              Tensor3D<T> dSkip = Residual<T>::backpropagate(dFromSkip, layerInput, projection, &dProj);
+
+              for (ulong j = 0; j < dProj.weights.size(); j++)
+                dResWeights[residualIdx][j] += dProj.weights[j];
+
+              for (ulong j = 0; j < dProj.biases.size(); j++)
+                dResBiases[residualIdx][j] += dProj.biases[j];
+
+              for (ulong j = 0; j < dCurrents[n].data.size(); j++)
+                dCurrents[n].data[j] += dSkip.data[j];
+            } else {
+              for (ulong j = 0; j < dCurrents[n].data.size(); j++)
+                dCurrents[n].data[j] += dFromSkip.data[j];
+            }
+          }
+
+          break;
+        }
         }
       }
 
@@ -1057,6 +1226,14 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
 
         for (ulong j = 0; j < dBNBeta[i].size(); j++)
           this->accumDBNBeta[i][j] = dBNBeta[i][j];
+      }
+
+      for (ulong i = 0; i < numResLayers; i++) {
+        for (ulong j = 0; j < dResWeights[i].size(); j++)
+          this->accumDResidualWeights[i][j] = dResWeights[i][j];
+
+        for (ulong j = 0; j < dResBiases[i].size(); j++)
+          this->accumDResidualBiases[i][j] = dResBiases[i][j];
       }
 
       this->updateCNNParameters(currentBatchSize);

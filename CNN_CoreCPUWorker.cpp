@@ -6,8 +6,10 @@
 #include "CNN_GlobalAvgPool.hpp"
 #include "CNN_GlobalDualPool.hpp"
 #include "CNN_Normalization.hpp"
+#include "CNN_Residual.hpp"
 
 #include <ANN_Core.hpp>
+#include <stack>
 
 using namespace CNN;
 
@@ -49,6 +51,14 @@ CoreCPUWorker<T>::CoreCPUWorker(const CoreConfig<T>& config, const LayersConfig&
       this->accumDBNBeta[i].resize(sharedParams.normParams[i].numChannels, static_cast<T>(0));
       this->accumNormMean[i].resize(sharedParams.normParams[i].numChannels, static_cast<T>(0));
       this->accumNormVar[i].resize(sharedParams.normParams[i].numChannels, static_cast<T>(0));
+    }
+
+    this->accumDResidualWeights.resize(sharedParams.residualParams.size());
+    this->accumDResidualBiases.resize(sharedParams.residualParams.size());
+
+    for (ulong i = 0; i < sharedParams.residualParams.size(); i++) {
+      this->accumDResidualWeights[i].resize(sharedParams.residualParams[i].weights.size(), static_cast<T>(0));
+      this->accumDResidualBiases[i].resize(sharedParams.residualParams[i].biases.size(), static_cast<T>(0));
     }
 
     this->bnSampleCount = 0;
@@ -168,6 +178,15 @@ T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expect
       this->accumDConvBiases[i][j] += dConvBiases[i][j];
   }
 
+  // Accumulate residual projection gradients
+  for (ulong i = 0; i < this->dResidualWeights.size(); i++) {
+    for (ulong j = 0; j < this->dResidualWeights[i].size(); j++)
+      this->accumDResidualWeights[i][j] += this->dResidualWeights[i][j];
+
+    for (ulong j = 0; j < this->dResidualBiases[i].size(); j++)
+      this->accumDResidualBiases[i][j] += this->dResidualBiases[i][j];
+  }
+
   // Accumulate batch norm gradients and running stats
   for (ulong i = 0; i < dBNGamma.size(); i++) {
     for (ulong j = 0; j < dBNGamma[i].size(); j++)
@@ -207,6 +226,11 @@ void CoreCPUWorker<T>::resetAccumulators()
     std::fill(this->accumNormVar[i].begin(), this->accumNormVar[i].end(), static_cast<T>(0));
   }
 
+  for (ulong i = 0; i < this->accumDResidualWeights.size(); i++) {
+    std::fill(this->accumDResidualWeights[i].begin(), this->accumDResidualWeights[i].end(), static_cast<T>(0));
+    std::fill(this->accumDResidualBiases[i].begin(), this->accumDResidualBiases[i].end(), static_cast<T>(0));
+  }
+
   this->bnSampleCount = 0;
   this->annCore->resetAccumulators();
 }
@@ -229,6 +253,8 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
   Tensor3D<T> current = input;
   ulong convIdx = 0;
   ulong normIdx = 0;
+  ulong residualIdx = 0;
+  std::stack<Tensor3D<T>> residualStack;
 
   for (const auto& layerConfig : this->layersConfig.cnnLayers) {
     if (training)
@@ -297,6 +323,28 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
     case LayerType::FLATTEN: {
       break;
     }
+
+    case LayerType::RESIDUAL_START: {
+      residualStack.push(current);
+      break;
+    }
+
+    case LayerType::RESIDUAL_END: {
+      Tensor3D<T> skipInput = residualStack.top();
+      residualStack.pop();
+
+      // Determine if projection is needed (channel mismatch)
+      bool needsProjection = (skipInput.shape.c != current.shape.c);
+      const ResidualProjection<T>* projection = nullptr;
+
+      if (needsProjection) {
+        projection = &this->sharedParams.residualParams[residualIdx];
+        residualIdx++;
+      }
+
+      Residual<T>::add(current, skipInput, projection);
+      break;
+    }
     }
   }
 
@@ -315,17 +363,22 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::v
   ulong numCNNLayers = this->layersConfig.cnnLayers.size();
   ulong numConvLayers = this->sharedParams.convParams.size();
   ulong numBNLayers = this->sharedParams.normParams.size();
+  ulong numResidualLayers = this->sharedParams.residualParams.size();
 
   dConvFilters.resize(numConvLayers);
   dConvBiases.resize(numConvLayers);
   dBNGamma.resize(numBNLayers);
   dBNBeta.resize(numBNLayers);
+  this->dResidualWeights.resize(numResidualLayers);
+  this->dResidualBiases.resize(numResidualLayers);
 
   Tensor3D<T> dCurrent = dCNNOut;
 
   ulong convIdx = numConvLayers;
   ulong poolIdx = poolMaxIndices.size();
   ulong normIdx = numBNLayers;
+  ulong residualIdx = numResidualLayers;
+  std::stack<Tensor3D<T>> residualGradStack;
 
   for (long i = static_cast<long>(numCNNLayers) - 1; i >= 0; i--) {
     const CNNLayerConfig& layerConfig = this->layersConfig.cnnLayers[static_cast<ulong>(i)];
@@ -380,6 +433,58 @@ void CoreCPUWorker<T>::backpropagateCNN(const Tensor3D<T>& dCNNOut, const std::v
     }
 
     case LayerType::FLATTEN: {
+      break;
+    }
+
+    case LayerType::RESIDUAL_END: {
+      // Going backward: RESIDUAL_END is hit first.
+      // The gradient splits: one copy continues through the block (dCurrent unchanged),
+      // the other is saved to be added at RESIDUAL_START.
+      // We also need the skip input (from intermediates at the matching RESIDUAL_START)
+      // to compute projection gradients, but that happens at RESIDUAL_START below.
+      residualGradStack.push(dCurrent);
+      break;
+    }
+
+    case LayerType::RESIDUAL_START: {
+      // Going backward: RESIDUAL_START is hit after all block layers have been backpropagated.
+      // dCurrent now contains the gradient from the block path.
+      // We add the gradient from the skip path (saved at RESIDUAL_END).
+      Tensor3D<T> dFromSkip = residualGradStack.top();
+      residualGradStack.pop();
+
+      // If there's a projection, backpropagate through it
+      bool needsProjection = false;
+
+      // Check if the skip input (layerInput at this RESIDUAL_START) has different channels
+      // than the dFromSkip (which has the block output channels)
+      if (layerInput.shape.c != dFromSkip.shape.c)
+        needsProjection = true;
+
+      if (needsProjection) {
+        residualIdx--;
+        const ResidualProjection<T>* projection = &this->sharedParams.residualParams[residualIdx];
+
+        ResidualProjection<T> dProj;
+        dProj.inC = projection->inC;
+        dProj.outC = projection->outC;
+        dProj.weights.assign(projection->weights.size(), static_cast<T>(0));
+        dProj.biases.assign(projection->biases.size(), static_cast<T>(0));
+
+        Tensor3D<T> dSkip = Residual<T>::backpropagate(dFromSkip, layerInput, projection, &dProj);
+
+        this->dResidualWeights[residualIdx] = std::move(dProj.weights);
+        this->dResidualBiases[residualIdx] = std::move(dProj.biases);
+
+        // Add skip gradient to block gradient
+        for (ulong j = 0; j < dCurrent.data.size(); j++)
+          dCurrent.data[j] += dSkip.data[j];
+      } else {
+        // Identity shortcut: skip gradient == dFromSkip, just add to dCurrent
+        for (ulong j = 0; j < dCurrent.data.size(); j++)
+          dCurrent.data[j] += dFromSkip.data[j];
+      }
+
       break;
     }
     }

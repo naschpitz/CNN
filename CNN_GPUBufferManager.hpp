@@ -10,6 +10,7 @@
 #include <OCLW_Core.hpp>
 
 #include <memory>
+#include <stack>
 #include <vector>
 
 //===================================================================================================================//
@@ -79,6 +80,23 @@ namespace CNN
 
       std::vector<InstanceNormInfo> normInfos;
       ulong totalNormParamSize = 0;
+
+      struct ResidualProjInfo {
+          ulong skipOffset;   // Activation offset of the residual_start input
+          ulong inC;          // Input channels (0 = identity shortcut)
+          ulong outC;         // Output channels
+          ulong spatialSize;  // H * W
+          ulong paramOffset;  // Offset into flat residual param buffer
+      };
+
+      struct ResidualShapeInfo {
+          Shape3D shape;
+          ulong actvOffset;
+      };
+
+      std::vector<ResidualProjInfo> residualProjInfos;
+      ulong totalResidualParamSize = 0;
+      std::stack<ResidualShapeInfo> residualShapeStack; // Used during computeLayerOffsets
 
       Shape3D cnnOutputShape;
       ulong flattenSize = 0;

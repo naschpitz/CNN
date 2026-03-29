@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <stack>
 #include <variant>
 
 using namespace CNN;
@@ -155,8 +156,107 @@ void Worker<T>::initializeNormParams(const LayersConfig& layersConfig, const Sha
       break;
     }
 
+    case LayerType::GLOBALAVGPOOL:
+      currentShape = {currentShape.c, 1, 1};
+      break;
+
+    case LayerType::GLOBALDUALPOOL:
+      currentShape = {currentShape.c * 2, 1, 1};
+      break;
+
     case LayerType::RELU:
     case LayerType::FLATTEN:
+    case LayerType::RESIDUAL_START:
+    case LayerType::RESIDUAL_END:
+      break;
+    }
+  }
+}
+
+//===================================================================================================================//
+
+template <typename T>
+void Worker<T>::initializeResidualParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
+                                         Parameters<T>& parameters)
+{
+  ulong residualIdx = 0;
+  Shape3D currentShape = inputShape;
+  std::stack<Shape3D> residualShapeStack;
+
+  for (const auto& layerConfig : layersConfig.cnnLayers) {
+    switch (layerConfig.type) {
+    case LayerType::CONV: {
+      const auto& conv = std::get<ConvLayerConfig>(layerConfig.config);
+      ulong padY = SlidingStrategy::computePadding(conv.filterH, conv.slidingStrategy);
+      ulong padX = SlidingStrategy::computePadding(conv.filterW, conv.slidingStrategy);
+      ulong outH = (currentShape.h + 2 * padY - conv.filterH) / conv.strideY + 1;
+      ulong outW = (currentShape.w + 2 * padX - conv.filterW) / conv.strideX + 1;
+      currentShape = {conv.numFilters, outH, outW};
+      break;
+    }
+
+    case LayerType::POOL: {
+      const auto& pool = std::get<PoolLayerConfig>(layerConfig.config);
+      ulong outH = (currentShape.h - pool.poolH) / pool.strideY + 1;
+      ulong outW = (currentShape.w - pool.poolW) / pool.strideX + 1;
+      currentShape = {currentShape.c, outH, outW};
+      break;
+    }
+
+    case LayerType::GLOBALAVGPOOL:
+      currentShape = {currentShape.c, 1, 1};
+      break;
+
+    case LayerType::GLOBALDUALPOOL:
+      currentShape = {currentShape.c * 2, 1, 1};
+      break;
+
+    case LayerType::RESIDUAL_START:
+      residualShapeStack.push(currentShape);
+      break;
+
+    case LayerType::RESIDUAL_END: {
+      Shape3D skipShape = residualShapeStack.top();
+      residualShapeStack.pop();
+
+      if (skipShape.c != currentShape.c) {
+        // Channel mismatch — need a 1×1 projection
+        // Check if already loaded
+        if (residualIdx < parameters.residualParams.size() &&
+            !parameters.residualParams[residualIdx].weights.empty()) {
+          residualIdx++;
+          break;
+        }
+
+        if (residualIdx >= parameters.residualParams.size())
+          parameters.residualParams.resize(residualIdx + 1);
+
+        ResidualProjection<T>& rp = parameters.residualParams[residualIdx];
+        rp.inC = skipShape.c;
+        rp.outC = currentShape.c;
+
+        ulong numWeights = rp.outC * rp.inC;
+        rp.weights.resize(numWeights);
+        rp.biases.assign(rp.outC, static_cast<T>(0));
+
+        // He initialization for 1×1 conv: fan_in = inC
+        T fanIn = static_cast<T>(rp.inC);
+        T stddev = std::sqrt(static_cast<T>(2) / fanIn);
+
+        std::mt19937 gen(42 + 1000 + residualIdx);
+        std::normal_distribution<double> dist(0.0, static_cast<double>(stddev));
+
+        for (ulong i = 0; i < numWeights; i++)
+          rp.weights[i] = static_cast<T>(dist(gen));
+
+        residualIdx++;
+      }
+
+      // Output shape is the block output shape (currentShape unchanged)
+      break;
+    }
+
+    default:
       break;
     }
   }

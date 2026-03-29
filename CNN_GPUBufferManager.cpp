@@ -143,6 +143,43 @@ void GPUBufferManager<T>::computeLayerOffsets()
       currentShape = outShape;
       continue; // Skip the normal push_back and offset advancement below
     }
+
+    case LayerType::RESIDUAL_START: {
+      // No shape change — just a marker. Save current shape on the stack.
+      this->residualShapeStack.push({currentShape, offset});
+      this->layerInfos.push_back({this->layerInfos.back().actvOffset, outShape.size()});
+      currentShape = outShape;
+      continue; // Same buffer as previous
+    }
+
+    case LayerType::RESIDUAL_END: {
+      // outShape stays the same as current (block output)
+      // But we need a separate output buffer for the addition result
+      auto skipInfo = this->residualShapeStack.top();
+      this->residualShapeStack.pop();
+
+      // Track projection info if channels differ
+      if (skipInfo.shape.c != currentShape.c) {
+        ResidualProjInfo rpi;
+        rpi.skipOffset = skipInfo.actvOffset;
+        rpi.inC = skipInfo.shape.c;
+        rpi.outC = currentShape.c;
+        rpi.spatialSize = currentShape.h * currentShape.w;
+        rpi.paramOffset = this->totalResidualParamSize;
+        this->residualProjInfos.push_back(rpi);
+        this->totalResidualParamSize += rpi.outC * rpi.inC + rpi.outC; // weights + biases
+      } else {
+        ResidualProjInfo rpi;
+        rpi.skipOffset = skipInfo.actvOffset;
+        rpi.inC = 0; // Identity — no projection
+        rpi.outC = 0;
+        rpi.spatialSize = currentShape.h * currentShape.w;
+        rpi.paramOffset = 0;
+        this->residualProjInfos.push_back(rpi);
+      }
+
+      break;
+    }
     }
 
     this->layerInfos.push_back({offset, outShape.size()});
@@ -180,6 +217,7 @@ void GPUBufferManager<T>::loadSources(bool skipDefines)
   this->core->addSourceFile(srcDir + "opencl/CNN_Normalization.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_GlobalAvgPool.cpp.cl");
   this->core->addSourceFile(srcDir + "opencl/CNN_GlobalDualPool.cpp.cl");
+  this->core->addSourceFile(srcDir + "opencl/CNN_Residual.cpp.cl");
 
   if (this->workerConfig.logLevel >= CNN::LogLevel::INFO)
     std::cout << "CNN OpenCL kernels loaded.\n";
@@ -302,6 +340,68 @@ void GPUBufferManager<T>::allocateBuffers(ulong batchSize)
     this->core->template writeBuffer<T>("cnn_norm_running_var", flatRunningVar, 0);
   }
 
+  // Write residual projection parameters to GPU
+  if (this->totalResidualParamSize > 0) {
+    ulong totalWeightSize = 0;
+    ulong totalBiasSize = 0;
+
+    for (const auto& rpi : this->residualProjInfos) {
+      if (rpi.inC > 0) { // Has projection
+        totalWeightSize += rpi.outC * rpi.inC;
+        totalBiasSize += rpi.outC;
+      }
+    }
+
+    if (totalWeightSize > 0) {
+      this->core->template allocateBuffer<T>("cnn_res_proj_w", totalWeightSize);
+      std::vector<T> flatW(totalWeightSize);
+      ulong wOff = 0;
+
+      for (ulong i = 0; i < this->residualProjInfos.size(); i++) {
+        if (this->residualProjInfos[i].inC > 0) {
+          const auto& rp = this->parameters.residualParams[i];
+
+          for (ulong j = 0; j < rp.weights.size(); j++)
+            flatW[wOff + j] = rp.weights[j];
+
+          wOff += rp.weights.size();
+        }
+      }
+
+      this->core->template writeBuffer<T>("cnn_res_proj_w", flatW, 0);
+    }
+
+    if (totalBiasSize > 0) {
+      this->core->template allocateBuffer<T>("cnn_res_proj_b", totalBiasSize);
+      std::vector<T> flatB(totalBiasSize);
+      ulong bOff = 0;
+
+      for (ulong i = 0; i < this->residualProjInfos.size(); i++) {
+        if (this->residualProjInfos[i].inC > 0) {
+          const auto& rp = this->parameters.residualParams[i];
+
+          for (ulong j = 0; j < rp.biases.size(); j++)
+            flatB[bOff + j] = rp.biases[j];
+
+          bOff += rp.biases.size();
+        }
+      }
+
+      this->core->template writeBuffer<T>("cnn_res_proj_b", flatB, 0);
+    }
+
+    // Gradient buffers
+    if (totalWeightSize > 0) {
+      this->core->template allocateBuffer<T>("cnn_res_dproj_w", totalWeightSize);
+      this->core->template fillBuffer<T>("cnn_res_dproj_w", static_cast<T>(0), totalWeightSize);
+    }
+
+    if (totalBiasSize > 0) {
+      this->core->template allocateBuffer<T>("cnn_res_dproj_b", totalBiasSize);
+      this->core->template fillBuffer<T>("cnn_res_dproj_b", static_cast<T>(0), totalBiasSize);
+    }
+  }
+
   // Adam optimizer buffers
   if (this->workerConfig.trainingConfig.optimizer.type == OptimizerType::ADAM) {
     T zero = static_cast<T>(0);
@@ -329,6 +429,32 @@ void GPUBufferManager<T>::allocateBuffers(ulong batchSize)
       this->core->template fillBuffer<T>("cnn_adam_v_norm_gamma", zero, this->totalNormParamSize);
       this->core->template fillBuffer<T>("cnn_adam_m_norm_beta", zero, this->totalNormParamSize);
       this->core->template fillBuffer<T>("cnn_adam_v_norm_beta", zero, this->totalNormParamSize);
+    }
+
+    if (this->totalResidualParamSize > 0) {
+      ulong totalW = 0;
+      ulong totalB = 0;
+
+      for (const auto& rpi : this->residualProjInfos) {
+        if (rpi.inC > 0) {
+          totalW += rpi.outC * rpi.inC;
+          totalB += rpi.outC;
+        }
+      }
+
+      if (totalW > 0) {
+        this->core->template allocateBuffer<T>("cnn_adam_m_res_w", totalW);
+        this->core->template allocateBuffer<T>("cnn_adam_v_res_w", totalW);
+        this->core->template fillBuffer<T>("cnn_adam_m_res_w", zero, totalW);
+        this->core->template fillBuffer<T>("cnn_adam_v_res_w", zero, totalW);
+      }
+
+      if (totalB > 0) {
+        this->core->template allocateBuffer<T>("cnn_adam_m_res_b", totalB);
+        this->core->template allocateBuffer<T>("cnn_adam_v_res_b", totalB);
+        this->core->template fillBuffer<T>("cnn_adam_m_res_b", zero, totalB);
+        this->core->template fillBuffer<T>("cnn_adam_v_res_b", zero, totalB);
+      }
     }
   }
 
@@ -380,6 +506,8 @@ void GPUBufferManager<T>::buildANNWorker()
     case LayerType::BATCHNORM:
       break;
     case LayerType::FLATTEN:
+    case LayerType::RESIDUAL_START:
+    case LayerType::RESIDUAL_END:
       break;
     }
   }

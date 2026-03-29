@@ -21,6 +21,8 @@ namespace CNN
                                        Parameters<T>& parameters);
       static void initializeNormParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
                                        Parameters<T>& parameters);
+      static void initializeResidualParams(const LayersConfig& layersConfig, const Shape3D& inputShape,
+                                           Parameters<T>& parameters);
 
       //-- Loss calculation (shared by CPU and GPU workers) --//
       T calculateLoss(const Output<T>& predicted, const Output<T>& expected) const;

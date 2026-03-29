@@ -36,6 +36,8 @@ namespace CNN
       std::vector<std::vector<T>> accumDConvBiases;
       std::vector<std::vector<T>> accumDBNGamma;
       std::vector<std::vector<T>> accumDBNBeta;
+      std::vector<std::vector<T>> accumDResidualWeights;
+      std::vector<std::vector<T>> accumDResidualBiases;
       std::vector<std::vector<T>> accumNormMean;
       std::vector<std::vector<T>> accumNormVar;
 
@@ -48,6 +50,10 @@ namespace CNN
       std::vector<std::vector<T>> adam_v_norm_gamma;
       std::vector<std::vector<T>> adam_m_norm_beta;
       std::vector<std::vector<T>> adam_v_norm_beta;
+      std::vector<std::vector<T>> adam_m_residual_weights;
+      std::vector<std::vector<T>> adam_v_residual_weights;
+      std::vector<std::vector<T>> adam_m_residual_biases;
+      std::vector<std::vector<T>> adam_v_residual_biases;
       ulong adam_t = 0;
 
       //-- Training helpers --//

@@ -2,6 +2,7 @@
 #include "CNN_SlidingStrategy.hpp"
 
 #include <cmath>
+#include <stack>
 #include <string>
 
 using namespace CNN;
@@ -149,12 +150,17 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart,
     case LayerType::BATCHNORM:
       normIdx++;
       break;
+    case LayerType::RESIDUAL_START:
+    case LayerType::RESIDUAL_END:
+      break;
     default:
       break;
     }
   }
 
   std::string sampleStr = std::to_string(sampleIdx);
+  ulong residualProjIdx = 0;
+  std::stack<ulong> residualSkipOffsetStack;
 
   for (ulong i = layerStart; i < layerEnd; i++) {
     const auto& layerConfig = cnnLayers[i];
@@ -417,6 +423,53 @@ void GPUKernelBuilder<T>::addPropagateKernels(ulong sampleIdx, ulong layerStart,
     case LayerType::FLATTEN: {
       break;
     }
+
+    case LayerType::RESIDUAL_START: {
+      residualSkipOffsetStack.push(inOffset);
+      break;
+    }
+
+    case LayerType::RESIDUAL_END: {
+      ulong skipActvOffset = residualSkipOffsetStack.top();
+      residualSkipOffsetStack.pop();
+
+      const auto& rpi = this->bufferManager.residualProjInfos[residualProjIdx];
+
+      if (rpi.inC > 0) {
+        ulong totalOut = rpi.outC * rpi.spatialSize;
+        ulong wOffset = 0;
+        ulong bOffset = 0;
+
+        for (ulong pi = 0; pi < residualProjIdx; pi++) {
+          if (this->bufferManager.residualProjInfos[pi].inC > 0) {
+            wOffset += this->bufferManager.residualProjInfos[pi].outC * this->bufferManager.residualProjInfos[pi].inC;
+            bOffset += this->bufferManager.residualProjInfos[pi].outC;
+          }
+        }
+
+        std::string kernelId = "res_add_proj" + kernelSuffix;
+        this->core->addKernel(kernelId, "residual_add_proj", totalOut, 0);
+        this->core->template addArgument<T>(kernelId, "cnn_actvs");
+        this->core->template addArgument<ulong>(kernelId, inOffset);
+        this->core->template addArgument<ulong>(kernelId, skipActvOffset);
+        this->core->template addArgument<T>(kernelId, "cnn_res_proj_w");
+        this->core->template addArgument<T>(kernelId, "cnn_res_proj_b");
+        this->core->template addArgument<ulong>(kernelId, rpi.inC);
+        this->core->template addArgument<ulong>(kernelId, rpi.outC);
+        this->core->template addArgument<ulong>(kernelId, rpi.spatialSize);
+      } else {
+        ulong size = currentShape.size();
+        std::string kernelId = "res_add" + kernelSuffix;
+        this->core->addKernel(kernelId, "residual_add", size, 0);
+        this->core->template addArgument<T>(kernelId, "cnn_actvs");
+        this->core->template addArgument<ulong>(kernelId, inOffset);
+        this->core->template addArgument<ulong>(kernelId, skipActvOffset);
+        this->core->template addArgument<ulong>(kernelId, size);
+      }
+
+      residualProjIdx++;
+      break;
+    }
     }
   }
 }
@@ -476,6 +529,8 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
   ulong poolIdx = 0;
   ulong normIdx = 0;
 
+  ulong residualProjIdx = 0;
+
   for (ulong i = 0; i < layerEnd; i++) {
     switch (cnnLayers[i].type) {
     case LayerType::CONV:
@@ -488,12 +543,16 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
     case LayerType::BATCHNORM:
       normIdx++;
       break;
+    case LayerType::RESIDUAL_END:
+      residualProjIdx++;
+      break;
     default:
       break;
     }
   }
 
   std::string sampleStr = std::to_string(sampleIdx);
+  std::stack<ulong> residualGradSkipOffsetStack;
 
   // Iterate in reverse from layerEnd-1 down to layerStart
   for (long i = static_cast<long>(layerEnd) - 1; i >= static_cast<long>(layerStart); i--) {
@@ -777,6 +836,75 @@ void GPUKernelBuilder<T>::addBackpropagateKernels(ulong sampleIdx, ulong layerSt
     }
 
     case LayerType::FLATTEN: {
+      break;
+    }
+
+    case LayerType::RESIDUAL_END: {
+      // Going backward: RESIDUAL_END is hit first. Save the gradient offset for the skip path.
+      residualProjIdx--;
+      residualGradSkipOffsetStack.push(gradOutOffset);
+
+      // The gradient must also be written to the residual_start location.
+      // We'll handle that in the RESIDUAL_START case below.
+      break;
+    }
+
+    case LayerType::RESIDUAL_START: {
+      // Going backward: add skip gradient to block gradient
+      ulong dSkipOutOffset = residualGradSkipOffsetStack.top();
+      residualGradSkipOffsetStack.pop();
+
+      const auto& rpi = this->bufferManager.residualProjInfos[residualProjIdx];
+
+      if (rpi.inC > 0) {
+        // Projection backward: dSkip = W^T * dOut
+        ulong totalIn = rpi.inC * rpi.spatialSize;
+        ulong totalWeights = rpi.outC * rpi.inC;
+
+        ulong wOffset = 0;
+        ulong bOffset = 0;
+
+        for (ulong pi = 0; pi < residualProjIdx; pi++) {
+          if (this->bufferManager.residualProjInfos[pi].inC > 0) {
+            wOffset += this->bufferManager.residualProjInfos[pi].outC * this->bufferManager.residualProjInfos[pi].inC;
+            bOffset += this->bufferManager.residualProjInfos[pi].outC;
+          }
+        }
+
+        // dSkip += W^T * dOut
+        std::string dSkipKernelId = "res_bwd_proj_dskip" + kernelSuffix;
+        this->core->addKernel(dSkipKernelId, "residual_bwd_proj_dskip", totalIn, 0);
+        this->core->template addArgument<T>(dSkipKernelId, "cnn_grads");
+        this->core->template addArgument<T>(dSkipKernelId, "cnn_res_proj_w");
+        this->core->template addArgument<ulong>(dSkipKernelId, gradInOffset); // dSkip destination
+        this->core->template addArgument<ulong>(dSkipKernelId, dSkipOutOffset); // dOut source
+        this->core->template addArgument<ulong>(dSkipKernelId, rpi.inC);
+        this->core->template addArgument<ulong>(dSkipKernelId, rpi.outC);
+        this->core->template addArgument<ulong>(dSkipKernelId, rpi.spatialSize);
+
+        // dW += dOut * skip^T, dB += sum(dOut)
+        std::string dwKernelId = "res_bwd_proj_dw" + kernelSuffix;
+        this->core->addKernel(dwKernelId, "residual_bwd_proj_dw", totalWeights, 0);
+        this->core->template addArgument<T>(dwKernelId, "cnn_grads");
+        this->core->template addArgument<T>(dwKernelId, "cnn_actvs");
+        this->core->template addArgument<T>(dwKernelId, "cnn_res_dproj_w");
+        this->core->template addArgument<T>(dwKernelId, "cnn_res_dproj_b");
+        this->core->template addArgument<ulong>(dwKernelId, dSkipOutOffset);
+        this->core->template addArgument<ulong>(dwKernelId, rpi.skipOffset);
+        this->core->template addArgument<ulong>(dwKernelId, rpi.inC);
+        this->core->template addArgument<ulong>(dwKernelId, rpi.outC);
+        this->core->template addArgument<ulong>(dwKernelId, rpi.spatialSize);
+      } else {
+        // Identity backward: dSkip += dOut
+        ulong size = inShape.size();
+        std::string kernelId = "res_bwd" + kernelSuffix;
+        this->core->addKernel(kernelId, "residual_bwd", size, 0);
+        this->core->template addArgument<T>(kernelId, "cnn_grads");
+        this->core->template addArgument<ulong>(kernelId, gradInOffset);
+        this->core->template addArgument<ulong>(kernelId, dSkipOutOffset);
+        this->core->template addArgument<ulong>(kernelId, size);
+      }
+
       break;
     }
     }

@@ -56,6 +56,7 @@ add_library(CNN STATIC
   opencl/CNN_Normalization.cpp.cl
   opencl/CNN_GlobalAvgPool.cpp.cl
   opencl/CNN_GlobalDualPool.cpp.cl
+  opencl/CNN_Residual.cpp.cl
   CNN_Types.hpp
   CNN_Shape3D.hpp CNN_Shape3D.cpp
   CNN_Tensor3D.hpp CNN_Tensor3D.cpp
@@ -82,6 +83,7 @@ add_library(CNN STATIC
   CNN_Flatten.hpp CNN_Flatten.cpp
   CNN_GlobalAvgPool.hpp CNN_GlobalAvgPool.cpp
   CNN_GlobalDualPool.hpp CNN_GlobalDualPool.cpp
+  CNN_Residual.hpp CNN_Residual.cpp
   CNN_Normalization.hpp CNN_Normalization.cpp
 )
 

@@ -66,6 +66,16 @@ namespace CNN
         return accumDBNBeta;
       }
 
+      const std::vector<std::vector<T>>& getAccumResidualWeights() const
+      {
+        return accumDResidualWeights;
+      }
+
+      const std::vector<std::vector<T>>& getAccumResidualBiases() const
+      {
+        return accumDResidualBiases;
+      }
+
       const std::vector<std::vector<T>>& getAccumBNMean() const
       {
         return accumNormMean;
@@ -109,8 +119,14 @@ namespace CNN
       std::vector<std::vector<T>> accumDConvBiases;
       std::vector<std::vector<T>> accumDBNGamma;
       std::vector<std::vector<T>> accumDBNBeta;
+      std::vector<std::vector<T>> accumDResidualWeights;
+      std::vector<std::vector<T>> accumDResidualBiases;
       std::vector<std::vector<T>> accumNormMean;
       std::vector<std::vector<T>> accumNormVar;
+
+      //-- Per-sample residual gradient intermediates (used in backpropagateCNN) --//
+      std::vector<std::vector<T>> dResidualWeights;
+      std::vector<std::vector<T>> dResidualBiases;
       ulong bnSampleCount = 0;
       T accum_loss = static_cast<T>(0);
 

@@ -1,5 +1,6 @@
 #include "CNN_LayersConfig.hpp"
 
+#include <stack>
 #include <stdexcept>
 #include <string>
 
@@ -10,6 +11,7 @@ using namespace CNN;
 Shape3D LayersConfig::validateShapes(const Shape3D& inputShape) const
 {
   Shape3D current = inputShape;
+  std::stack<Shape3D> residualStack; // Track shapes at residual_start markers
 
   for (ulong i = 0; i < cnnLayers.size(); i++) {
     const CNNLayerConfig& layerConfig = cnnLayers[i];
@@ -119,7 +121,41 @@ Shape3D LayersConfig::validateShapes(const Shape3D& inputShape) const
       // Batch normalization does not change shape
       break;
     }
+
+    case LayerType::RESIDUAL_START: {
+      // Save current shape for the skip connection
+      residualStack.push(current);
+      break;
     }
+
+    case LayerType::RESIDUAL_END: {
+      if (residualStack.empty()) {
+        throw std::runtime_error("CNN layer " + std::to_string(i) +
+                                 " (residual_end): no matching residual_start");
+      }
+
+      Shape3D skipShape = residualStack.top();
+      residualStack.pop();
+
+      // Spatial dimensions must match
+      if (current.h != skipShape.h || current.w != skipShape.w) {
+        throw std::runtime_error(
+          "CNN layer " + std::to_string(i) + " (residual_end): spatial dimension mismatch. "
+          "Skip input: " + std::to_string(skipShape.h) + "x" + std::to_string(skipShape.w) +
+          ", block output: " + std::to_string(current.h) + "x" + std::to_string(current.w) +
+          ". Do not use pooling inside a residual block.");
+      }
+
+      // Channel mismatch is allowed — a 1×1 projection will be auto-created
+      // Output shape is always the block output shape (current)
+      break;
+    }
+    }
+  }
+
+  if (!residualStack.empty()) {
+    throw std::runtime_error("Unmatched residual_start: " + std::to_string(residualStack.size()) +
+                             " residual_start marker(s) without matching residual_end");
   }
 
   return current;
