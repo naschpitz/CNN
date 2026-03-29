@@ -1060,6 +1060,137 @@ static void testResidualGradientCheck()
 
 //===================================================================================================================//
 
+static void testResidualShapeValidation()
+{
+  std::cout << "--- testResidualShapeValidation ---" << std::endl;
+
+  // 1. Unmatched residual_end (no start)
+  {
+    CNN::LayersConfig lc;
+    CNN::CNNLayerConfig resEnd;
+    resEnd.type = CNN::LayerType::RESIDUAL_END;
+    resEnd.config = CNN::ResidualEndConfig{};
+    lc.cnnLayers = {resEnd};
+
+    bool threw = false;
+
+    try {
+      lc.validateShapes({4, 8, 8});
+    } catch (const std::runtime_error& e) {
+      threw = true;
+      std::string msg = e.what();
+      CHECK(msg.find("no matching residual_start") != std::string::npos, "unmatched end error message");
+    }
+
+    CHECK(threw, "unmatched residual_end should throw");
+  }
+
+  // 2. Unmatched residual_start (no end)
+  {
+    CNN::LayersConfig lc;
+    CNN::CNNLayerConfig resStart;
+    resStart.type = CNN::LayerType::RESIDUAL_START;
+    resStart.config = CNN::ResidualStartConfig{};
+    lc.cnnLayers = {resStart};
+
+    bool threw = false;
+
+    try {
+      lc.validateShapes({4, 8, 8});
+    } catch (const std::runtime_error& e) {
+      threw = true;
+      std::string msg = e.what();
+      CHECK(msg.find("Unmatched residual_start") != std::string::npos, "unmatched start error message");
+    }
+
+    CHECK(threw, "unmatched residual_start should throw");
+  }
+
+  // 3. Spatial dimension mismatch (pool inside residual block)
+  {
+    CNN::LayersConfig lc;
+    CNN::CNNLayerConfig resStart;
+    resStart.type = CNN::LayerType::RESIDUAL_START;
+    resStart.config = CNN::ResidualStartConfig{};
+
+    CNN::CNNLayerConfig pool;
+    pool.type = CNN::LayerType::POOL;
+    pool.config = CNN::PoolLayerConfig{CNN::PoolTypeEnum::MAX, 2, 2, 2, 2};
+
+    CNN::CNNLayerConfig resEnd;
+    resEnd.type = CNN::LayerType::RESIDUAL_END;
+    resEnd.config = CNN::ResidualEndConfig{};
+
+    lc.cnnLayers = {resStart, pool, resEnd};
+
+    bool threw = false;
+
+    try {
+      lc.validateShapes({4, 8, 8});
+    } catch (const std::runtime_error& e) {
+      threw = true;
+      std::string msg = e.what();
+      CHECK(msg.find("spatial dimension mismatch") != std::string::npos, "spatial mismatch error message");
+    }
+
+    CHECK(threw, "spatial mismatch should throw");
+  }
+
+  // 4. Empty residual block (start immediately followed by end) — should NOT throw
+  {
+    CNN::LayersConfig lc;
+    CNN::CNNLayerConfig resStart;
+    resStart.type = CNN::LayerType::RESIDUAL_START;
+    resStart.config = CNN::ResidualStartConfig{};
+
+    CNN::CNNLayerConfig resEnd;
+    resEnd.type = CNN::LayerType::RESIDUAL_END;
+    resEnd.config = CNN::ResidualEndConfig{};
+
+    lc.cnnLayers = {resStart, resEnd};
+
+    bool threw = false;
+
+    try {
+      lc.validateShapes({4, 8, 8});
+    } catch (...) {
+      threw = true;
+    }
+
+    CHECK(!threw, "empty residual block should not throw");
+  }
+
+  // 5. Channel mismatch with same spatial — should NOT throw (projection auto-created)
+  {
+    CNN::LayersConfig lc;
+    CNN::CNNLayerConfig resStart;
+    resStart.type = CNN::LayerType::RESIDUAL_START;
+    resStart.config = CNN::ResidualStartConfig{};
+
+    CNN::CNNLayerConfig conv;
+    conv.type = CNN::LayerType::CONV;
+    conv.config = CNN::ConvLayerConfig{8, 3, 3, 1, 1, CNN::SlidingStrategyType::SAME};
+
+    CNN::CNNLayerConfig resEnd;
+    resEnd.type = CNN::LayerType::RESIDUAL_END;
+    resEnd.config = CNN::ResidualEndConfig{};
+
+    lc.cnnLayers = {resStart, conv, resEnd};
+
+    bool threw = false;
+
+    try {
+      lc.validateShapes({4, 8, 8});
+    } catch (...) {
+      threw = true;
+    }
+
+    CHECK(!threw, "channel mismatch with same spatial should not throw");
+  }
+}
+
+//===================================================================================================================//
+
 void runLayerTests()
 {
   testTensor3D();
@@ -1090,6 +1221,7 @@ void runLayerTests()
   testResidualProjectionForward();
   testResidualProjectionBackward();
   testResidualGradientCheck();
+  testResidualShapeValidation();
   testInstanceNormInference();
   testInstanceNormTraining();
   testInstanceNormBackpropagate();

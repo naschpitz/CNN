@@ -153,8 +153,8 @@ void GPUBufferManager<T>::computeLayerOffsets()
     }
 
     case LayerType::RESIDUAL_END: {
-      // outShape stays the same as current (block output)
-      // But we need a separate output buffer for the addition result
+      // Residual end modifies block output in-place (adds skip connection).
+      // Share the same buffer as the previous layer (like FLATTEN).
       auto skipInfo = this->residualShapeStack.top();
       this->residualShapeStack.pop();
 
@@ -178,7 +178,10 @@ void GPUBufferManager<T>::computeLayerOffsets()
         this->residualProjInfos.push_back(rpi);
       }
 
-      break;
+      // Share buffer with previous layer (in-place modification)
+      this->layerInfos.push_back({this->layerInfos.back().actvOffset, outShape.size()});
+      currentShape = outShape;
+      continue; // Skip the normal push_back and offset advancement below
     }
     }
 
