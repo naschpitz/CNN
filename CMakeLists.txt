@@ -109,9 +109,15 @@ add_executable(test_cnn
   tests/test_conv2d.cpp
   tests/test_layers.cpp
   tests/test_layers2.cpp
+  tests/test_instancenorm.cpp
+  tests/test_globalavgpool.cpp
+  tests/test_globaldualpool.cpp
+  tests/test_residual.cpp
   tests/test_integration_basic.cpp
   tests/test_integration_basic2.cpp
   tests/test_integration_basic3.cpp
+  tests/test_integration_globalpool.cpp
+  tests/test_integration_residual.cpp
   tests/test_integration_costfunc.cpp
   tests/test_integration_exact.cpp
   tests/test_integration_batchnorm.cpp
@@ -119,9 +125,11 @@ add_executable(test_cnn
   tests/test_gpu_basic2.cpp
   tests/test_gpu_basic3.cpp
   tests/test_gpu_basic4.cpp
+  tests/test_gpu_globalpool.cpp
   tests/test_gpu_multigpu.cpp
   tests/test_gpu_multigpu2.cpp
   tests/test_gpu_exact.cpp
+  tests/test_gpu_exact_globalpool.cpp
   tests/test_gpu_exact_bn.cpp
   tests/test_gpu_batchnorm.cpp
   tests/test_gpu_batchnorm2.cpp
