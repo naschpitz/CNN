@@ -33,11 +33,6 @@ CoreGPU<T>::CoreGPU(const CoreConfig<T>& coreConfig) : Core<T>(coreConfig)
     this->numGPUs = std::min(static_cast<size_t>(requestedGPUs), availableGPUs);
   }
 
-  // Initialize residual projection parameters if not loaded.
-  // Must initialize on coreConfig.parameters because CoreGPUWorkerConfig copies from there.
-  Worker<T>::initializeResidualParams(this->layersConfig, this->inputShape, this->coreConfig.parameters);
-  this->parameters = this->coreConfig.parameters;
-
   this->initializeWorkers();
 }
 

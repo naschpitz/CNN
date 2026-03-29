@@ -38,6 +38,9 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreGPUWorkerConfig<T>& workerConfig)
   // Initialize batch norm parameters if not loaded
   Worker<T>::initializeNormParams(workerConfig.layersConfig, workerConfig.inputShape, this->parameters);
 
+  // Initialize residual projection parameters if not loaded
+  Worker<T>::initializeResidualParams(workerConfig.layersConfig, workerConfig.inputShape, this->parameters);
+
   // Create buffer manager
   this->bufferManager = std::make_unique<GPUBufferManager<T>>(this->core, this->workerConfig, this->parameters);
 
@@ -72,6 +75,9 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreGPUWorkerConfig<T>& config, OpenCLWrap
 
   // Initialize batch norm parameters if not loaded
   Worker<T>::initializeNormParams(workerConfig.layersConfig, workerConfig.inputShape, this->parameters);
+
+  // Initialize residual projection parameters if not loaded
+  Worker<T>::initializeResidualParams(workerConfig.layersConfig, workerConfig.inputShape, this->parameters);
 
   // Create buffer manager
   this->bufferManager = std::make_unique<GPUBufferManager<T>>(this->core, this->workerConfig, this->parameters);
