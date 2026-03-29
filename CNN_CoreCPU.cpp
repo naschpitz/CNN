@@ -887,7 +887,7 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
           for (ulong n = 0; n < N; n++) {
             Tensor3D<T> skipInput = residualStacks[n].top();
             residualStacks[n].pop();
-            Residual<T>::add(currentActvs[n], skipInput, projection);
+            Residual<T>::propagate(currentActvs[n], skipInput, projection);
           }
 
           break;

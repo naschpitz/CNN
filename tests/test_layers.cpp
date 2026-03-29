@@ -861,7 +861,7 @@ static void testResidualIdentityForward()
     skipInput.data[i] = static_cast<double>(i) * 0.2;
   }
 
-  CNN::Residual<double>::add(blockOutput, skipInput, nullptr);
+  CNN::Residual<double>::propagate(blockOutput, skipInput, nullptr);
 
   for (ulong i = 0; i < 18; i++) {
     double expected = static_cast<double>(i) * 0.1 + static_cast<double>(i) * 0.2;
@@ -912,7 +912,7 @@ static void testResidualProjectionForward()
   proj.weights.resize(8, 0.1); // 4×2 all 0.1
   proj.biases.resize(4, 0.0);
 
-  CNN::Residual<double>::add(blockOutput, skipInput, &proj);
+  CNN::Residual<double>::propagate(blockOutput, skipInput, &proj);
 
   // For each output channel oc, spatial s:
   // projected[oc][s] = sum_ic(0.1 * skip[ic][s])
@@ -1038,7 +1038,7 @@ static void testResidualGradientCheck()
       bo.data = blockData;
       CNN::Tensor3D<double> si(skipShape);
       si.data = sd;
-      CNN::Residual<double>::add(bo, si, &proj);
+      CNN::Residual<double>::propagate(bo, si, &proj);
 
       double loss = 0.0;
 

@@ -342,7 +342,7 @@ Tensor3D<T> CoreCPUWorker<T>::propagateCNN(const Input<T>& input, bool training,
         residualIdx++;
       }
 
-      Residual<T>::add(current, skipInput, projection);
+      Residual<T>::propagate(current, skipInput, projection);
       break;
     }
     }

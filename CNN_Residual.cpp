@@ -6,8 +6,8 @@ using namespace CNN;
 
 // Forward: blockOutput += project(skipInput) or blockOutput += skipInput
 template <typename T>
-void Residual<T>::add(Tensor3D<T>& blockOutput, const Tensor3D<T>& skipInput,
-                      const ResidualProjection<T>* projection)
+void Residual<T>::propagate(Tensor3D<T>& blockOutput, const Tensor3D<T>& skipInput,
+                            const ResidualProjection<T>* projection)
 {
   if (projection == nullptr) {
     // Identity shortcut: element-wise addition (same channels)

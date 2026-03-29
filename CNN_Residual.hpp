@@ -13,8 +13,8 @@ namespace CNN
       // Forward: add skip connection to block output.
       // If projection is nullptr, identity shortcut (same channels).
       // If projection is provided, applies 1×1 conv to skip before adding.
-      static void add(Tensor3D<T>& blockOutput, const Tensor3D<T>& skipInput,
-                      const ResidualProjection<T>* projection);
+      static void propagate(Tensor3D<T>& blockOutput, const Tensor3D<T>& skipInput,
+                            const ResidualProjection<T>* projection);
 
       // Backward: split gradient to skip path, compute projection gradients if needed.
       // dBlockOutput is modified in-place (gradient continues backward through block).
