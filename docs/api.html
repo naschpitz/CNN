@@ -33,6 +33,9 @@
   <a href="layers-pool.html">Pool</a>
   <a href="layers-normalization.html">Normalization</a>
   <a href="layers-flatten.html">Flatten</a>
+  <a href="layers-globalavgpool.html">GlobalAvgPool</a>
+  <a href="layers-globaldualpool.html">GlobalDualPool</a>
+  <a href="layers-residual.html">Residual</a>
   <a href="layers-pipeline.html">Pipeline Example</a>
   <div class="section-title">Math Foundations</div>
   <a href="math.html">Overview</a>
@@ -144,6 +147,10 @@
   <tr><td><code>POOL</code></td><td>Pooling layer (max or average)</td></tr>
   <tr><td><code>INSTANCENORM</code></td><td>Instance normalization layer (per-sample spatial stats)</td></tr>
   <tr><td><code>BATCHNORM</code></td><td>Batch normalization layer (cross-sample stats)</td></tr>
+  <tr><td><code>GLOBALAVGPOOL</code></td><td>Global average pooling — reduces each channel to its spatial mean</td></tr>
+  <tr><td><code>GLOBALDUALPOOL</code></td><td>Global dual pooling — concatenates global avg and global max per channel (doubles channel count)</td></tr>
+  <tr><td><code>RESIDUAL_START</code></td><td>Marks the start of a residual (skip-connection) block</td></tr>
+  <tr><td><code>RESIDUAL_END</code></td><td>Marks the end of a residual block — adds the skip input to the block output</td></tr>
   <tr><td><code>FLATTEN</code></td><td>3D → 1D reshape layer</td></tr>
 </table>
 
@@ -281,7 +288,7 @@
 <h3>CNNLayerConfig <span class="badge badge-blue">CNN_LayersConfig.hpp</span></h3>
 <table>
   <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-  <tr><td><code>type</code></td><td><code>LayerType</code></td><td>CONV, RELU, POOL, INSTANCENORM, BATCHNORM, or FLATTEN</td></tr>
+  <tr><td><code>type</code></td><td><code>LayerType</code></td><td>CONV, RELU, POOL, INSTANCENORM, BATCHNORM, GLOBALAVGPOOL, GLOBALDUALPOOL, RESIDUAL_START, RESIDUAL_END, or FLATTEN</td></tr>
   <tr><td><code>config</code></td><td><code>std::variant&lt;...&gt;</code></td><td>Layer-specific configuration</td></tr>
 </table>
 
@@ -308,6 +315,16 @@
   <tr><td><code>beta</code></td><td><code>vector&lt;T&gt;</code></td><td>Learnable shift parameter (initialized to 0)</td></tr>
   <tr><td><code>runningMean</code></td><td><code>vector&lt;T&gt;</code></td><td>Exponential moving average of channel means</td></tr>
   <tr><td><code>runningVar</code></td><td><code>vector&lt;T&gt;</code></td><td>Exponential moving average of channel variances</td></tr>
+</table>
+
+<h3>ResidualParameters&lt;T&gt; <span class="badge badge-blue">CNN_Parameters.hpp</span></h3>
+<p>Holds 1×1 projection weights for residual blocks where the skip input has a different channel count than the block output. Auto-created during initialization when needed; absent for identity shortcuts.</p>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>inC</code></td><td><code>ulong</code></td><td>Input channel count (skip path)</td></tr>
+  <tr><td><code>outC</code></td><td><code>ulong</code></td><td>Output channel count (block output)</td></tr>
+  <tr><td><code>weights</code></td><td><code>vector&lt;T&gt;</code></td><td>Flat 1×1 convolution weights — outC × inC (He-initialized)</td></tr>
+  <tr><td><code>biases</code></td><td><code>vector&lt;T&gt;</code></td><td>One bias per output channel (initialized to 0)</td></tr>
 </table>
 
 <h2 id="core">4. Core&lt;T&gt; — Abstract Base Class</h2>
