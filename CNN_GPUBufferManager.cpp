@@ -572,6 +572,115 @@ void GPUBufferManager<T>::buildANNWorker()
 //===================================================================================================================//
 
 template <typename T>
+void GPUBufferManager<T>::syncParametersToGPU()
+{
+  // Write CNN filters to GPU
+  if (this->totalFilterSize > 0) {
+    std::vector<T> flatFilters(this->totalFilterSize);
+
+    for (ulong i = 0; i < this->convInfos.size(); i++) {
+      const auto& ci = this->convInfos[i];
+      const auto& cp = this->parameters.convParams[i];
+
+      for (ulong j = 0; j < ci.numFilterElems; j++) {
+        flatFilters[ci.filterOffset + j] = cp.filters[j];
+      }
+    }
+
+    this->core->template writeBuffer<T>("cnn_filters", flatFilters, 0);
+  }
+
+  // Write CNN biases to GPU
+  if (this->totalBiasSize > 0) {
+    std::vector<T> flatBiases(this->totalBiasSize);
+
+    for (ulong i = 0; i < this->convInfos.size(); i++) {
+      const auto& ci = this->convInfos[i];
+      const auto& cp = this->parameters.convParams[i];
+
+      for (ulong j = 0; j < ci.numBiases; j++) {
+        flatBiases[ci.biasOffset + j] = cp.biases[j];
+      }
+    }
+
+    this->core->template writeBuffer<T>("cnn_biases", flatBiases, 0);
+  }
+
+  // Write norm parameters to GPU
+  if (this->totalNormParamSize > 0) {
+    std::vector<T> flatGamma(this->totalNormParamSize);
+    std::vector<T> flatBeta(this->totalNormParamSize);
+    std::vector<T> flatRunningMean(this->totalNormParamSize);
+    std::vector<T> flatRunningVar(this->totalNormParamSize);
+
+    for (ulong i = 0; i < this->normInfos.size(); i++) {
+      const auto& bi = this->normInfos[i];
+      const auto& bp = this->parameters.normParams[i];
+
+      for (ulong j = 0; j < bi.numChannels; j++) {
+        flatGamma[bi.paramOffset + j] = bp.gamma[j];
+        flatBeta[bi.paramOffset + j] = bp.beta[j];
+        flatRunningMean[bi.paramOffset + j] = bp.runningMean[j];
+        flatRunningVar[bi.paramOffset + j] = bp.runningVar[j];
+      }
+    }
+
+    this->core->template writeBuffer<T>("cnn_norm_gamma", flatGamma, 0);
+    this->core->template writeBuffer<T>("cnn_norm_beta", flatBeta, 0);
+    this->core->template writeBuffer<T>("cnn_norm_running_mean", flatRunningMean, 0);
+    this->core->template writeBuffer<T>("cnn_norm_running_var", flatRunningVar, 0);
+  }
+
+  // Write residual projection parameters to GPU
+  if (!this->parameters.residualParams.empty()) {
+    ulong totalWeightSize = 0;
+    ulong totalResBiasSize = 0;
+
+    for (const auto& rpi : this->residualProjInfos) {
+      if (rpi.inC > 0) {
+        totalWeightSize += rpi.outC * rpi.inC;
+        totalResBiasSize += rpi.outC;
+      }
+    }
+
+    if (totalWeightSize > 0) {
+      std::vector<T> flatW(totalWeightSize);
+      std::vector<T> flatB(totalResBiasSize);
+      ulong wOff = 0;
+      ulong bOff = 0;
+      ulong projIdx = 0;
+
+      for (ulong i = 0; i < this->residualProjInfos.size(); i++) {
+        if (this->residualProjInfos[i].inC > 0) {
+          const auto& rp = this->parameters.residualParams[projIdx];
+
+          for (ulong j = 0; j < rp.weights.size(); j++)
+            flatW[wOff + j] = rp.weights[j];
+
+          wOff += rp.weights.size();
+
+          for (ulong j = 0; j < rp.biases.size(); j++)
+            flatB[bOff + j] = rp.biases[j];
+
+          bOff += rp.biases.size();
+          projIdx++;
+        }
+      }
+
+      this->core->template writeBuffer<T>("cnn_res_proj_w", flatW, 0);
+      this->core->template writeBuffer<T>("cnn_res_proj_b", flatB, 0);
+    }
+  }
+
+  // Sync ANN dense parameters to GPU
+  if (this->annGPUWorker) {
+    this->annGPUWorker->bufferManager->syncParametersToGPU();
+  }
+}
+
+//===================================================================================================================//
+
+template <typename T>
 void GPUBufferManager<T>::syncParametersFromGPU()
 {
   // Read CNN filters from GPU and scatter back to per-layer parameters

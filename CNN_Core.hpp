@@ -95,6 +95,9 @@ namespace CNN
         parameters = params;
       }
 
+      // Upload current host-side parameters to GPU buffers (no-op for CPU cores).
+      virtual void syncParametersToGPU() {}
+
       void setTrainingCallback(TrainingCallback<T> callback)
       {
         trainingCallback = callback;

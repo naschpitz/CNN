@@ -32,8 +32,9 @@ namespace CNN
       void allocateBuffers(ulong batchSize = 1);
       void buildANNWorker();
 
-      //-- Parameter synchronization: GPU → CPU --//
-      void syncParametersFromGPU();
+      //-- Parameter synchronization --//
+      void syncParametersFromGPU(); // GPU → CPU (after training)
+      void syncParametersToGPU(); // CPU → GPU (for validation with updated params)
 
       //-- Accumulator operations --//
       void resetAccumulators();
@@ -82,11 +83,11 @@ namespace CNN
       ulong totalNormParamSize = 0;
 
       struct ResidualProjInfo {
-          ulong skipOffset;   // Activation offset of the residual_start input
-          ulong inC;          // Input channels (0 = identity shortcut)
-          ulong outC;         // Output channels
-          ulong spatialSize;  // H * W
-          ulong paramOffset;  // Offset into flat residual param buffer
+          ulong skipOffset; // Activation offset of the residual_start input
+          ulong inC; // Input channels (0 = identity shortcut)
+          ulong outC; // Output channels
+          ulong spatialSize; // H * W
+          ulong paramOffset; // Offset into flat residual param buffer
       };
 
       struct ResidualShapeInfo {
