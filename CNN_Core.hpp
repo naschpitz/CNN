@@ -10,6 +10,7 @@
 #include "CNN_ProgressCallback.hpp"
 #include "CNN_TestResult.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 
@@ -108,6 +109,17 @@ namespace CNN
         progressCallback = callback;
       }
 
+      // Request early training termination. The training loop checks this at epoch boundaries.
+      void requestStop()
+      {
+        stopRequested.store(true);
+      }
+
+      bool isStopRequested() const
+      {
+        return stopRequested.load();
+      }
+
       //-- Log level --//
       void setLogLevel(LogLevel level)
       {
@@ -151,6 +163,7 @@ namespace CNN
       //-- Internal state --//
       TrainingCallback<T> trainingCallback;
       ProgressCallback progressCallback;
+      std::atomic<bool> stopRequested{false};
 
     private:
       //-- Timing state --//

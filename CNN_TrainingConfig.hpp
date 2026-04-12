@@ -1,6 +1,7 @@
 #ifndef CNN_TRAININGCONFIG_HPP
 #define CNN_TRAININGCONFIG_HPP
 
+#include "CNN_MonitoringConfig.hpp"
 #include "CNN_Optimizer.hpp"
 #include "CNN_ValidationConfig.hpp"
 
@@ -19,6 +20,7 @@ namespace CNN
       float dropoutRate = 0.0f; // Dropout probability for dense hidden layers (0.0 = disabled)
       Optimizer<T> optimizer; // Optimizer (default: SGD)
       ValidationConfig validationDataset; // Validation split config (default: enabled, auto-size)
+      MonitoringConfig monitoringConfig; // Training health monitoring (default: disabled)
   };
 }
 

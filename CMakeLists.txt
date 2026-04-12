@@ -68,6 +68,8 @@ add_library(CNN STATIC
   CNN_CoreConfig.hpp
   CNN_Optimizer.hpp CNN_Optimizer.cpp
   CNN_TrainingConfig.hpp
+  CNN_MonitoringConfig.hpp
+  CNN_TrainingMonitor.hpp CNN_TrainingMonitor.cpp
   CNN_Parameters.hpp
   CNN_Conv2DParameters.hpp
   CNN_NormParameters.hpp

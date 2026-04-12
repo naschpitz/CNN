@@ -18,6 +18,10 @@ namespace CNN
       T sampleLoss; // Loss for current sample
       int gpuIndex = -1; // GPU index (-1 = epoch-level summary)
       int totalGPUs = 0; // Total number of GPUs (0 = CPU mode)
+
+      // Monitoring signals
+      bool isNewBest = false; // Monitor found a new best loss — caller should save
+      bool stoppedEarly = false; // Monitor decided to stop training
   };
 
   template <typename T>

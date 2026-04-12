@@ -16,6 +16,12 @@ namespace CNN
       std::string durationFormatted; // Human-readable duration
       ulong numSamples; // Number of training samples used
       T finalLoss; // Average loss at end of training
+
+      // Monitoring fields
+      ulong lastEpoch = 0; // Epoch at which this model was saved
+      std::string stopReason; // Why training stopped (empty = completed all epochs)
+      ulong bestEpoch = 0; // Epoch with best loss
+      T bestLoss = 0; // Best loss value
   };
 }
 

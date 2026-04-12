@@ -1,5 +1,6 @@
 #include "CNN_CoreGPU.hpp"
 #include "CNN_CoreGPUWorkerConfig.hpp"
+#include "CNN_TrainingMonitor.hpp"
 #include "CNN_Worker.hpp"
 
 #include <OCLW_Core.hpp>
@@ -133,7 +134,15 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   std::vector<std::vector<std::vector<OpenCLWrapper::Kernel>>> savedKernels(this->numGPUs);
   bool kernelsSaved = false;
 
-  for (ulong e = 0; e < numEpochs; e++) {
+  // Create training monitor if monitoring is enabled
+  const MonitoringConfig& monitoringConfig = this->trainingConfig.monitoringConfig;
+  std::unique_ptr<TrainingMonitor<T>> monitor;
+
+  if (monitoringConfig.enabled) {
+    monitor = std::make_unique<TrainingMonitor<T>>(monitoringConfig);
+  }
+
+  for (ulong e = 0; e < numEpochs && !this->stopRequested.load(); e++) {
     T epochLoss = 0;
 
     // Shuffle sample order for this epoch
@@ -245,6 +254,13 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
     T avgEpochLoss = epochLoss / static_cast<T>(numSamples);
     this->trainingMetadata.finalLoss = avgEpochLoss;
 
+    // Check training monitor
+    bool shouldStop = false;
+
+    if (monitor) {
+      shouldStop = monitor->checkEpoch(e + 1, avgEpochLoss);
+    }
+
     if (this->trainingCallback) {
       TrainingProgress<T> progress;
       progress.currentEpoch = e + 1;
@@ -255,8 +271,32 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       progress.epochLoss = avgEpochLoss;
       progress.gpuIndex = -1;
       progress.totalGPUs = static_cast<int>(this->numGPUs);
+
+      if (monitor) {
+        progress.isNewBest = monitor->isNewBest();
+
+        if (progress.isNewBest) {
+          this->trainingMetadata.lastEpoch = e + 1;
+        }
+
+        if (shouldStop) {
+          progress.stoppedEarly = true;
+        }
+      }
+
       this->trainingCallback(progress);
     }
+
+    if (shouldStop) {
+      break;
+    }
+  }
+
+  // Populate monitoring metadata
+  if (monitor) {
+    this->trainingMetadata.stopReason = monitor->stopReason();
+    this->trainingMetadata.bestEpoch = monitor->bestEpoch();
+    this->trainingMetadata.bestLoss = monitor->bestLoss();
   }
 
   this->trainingEnd();

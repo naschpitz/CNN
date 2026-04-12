@@ -7,6 +7,7 @@
 #include "CNN_GlobalDualPool.hpp"
 #include "CNN_Normalization.hpp"
 #include "CNN_Residual.hpp"
+#include "CNN_TrainingMonitor.hpp"
 
 #include <ANN_Core.hpp>
 
@@ -366,8 +367,10 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples)
     for (ulong i = 0; i < this->parameters.residualParams.size(); i++) {
       for (ulong j = 0; j < this->parameters.residualParams[i].weights.size(); j++) {
         T g = this->accumDResidualWeights[i][j] / n;
-        this->adam_m_residual_weights[i][j] = beta1 * this->adam_m_residual_weights[i][j] + (static_cast<T>(1) - beta1) * g;
-        this->adam_v_residual_weights[i][j] = beta2 * this->adam_v_residual_weights[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        this->adam_m_residual_weights[i][j] =
+          beta1 * this->adam_m_residual_weights[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_residual_weights[i][j] =
+          beta2 * this->adam_v_residual_weights[i][j] + (static_cast<T>(1) - beta2) * g * g;
         T m_hat = this->adam_m_residual_weights[i][j] / bc1;
         T v_hat = this->adam_v_residual_weights[i][j] / bc2;
         this->parameters.residualParams[i].weights[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
@@ -375,8 +378,10 @@ void CoreCPU<T>::updateCNNParameters(ulong numSamples)
 
       for (ulong j = 0; j < this->parameters.residualParams[i].biases.size(); j++) {
         T g = this->accumDResidualBiases[i][j] / n;
-        this->adam_m_residual_biases[i][j] = beta1 * this->adam_m_residual_biases[i][j] + (static_cast<T>(1) - beta1) * g;
-        this->adam_v_residual_biases[i][j] = beta2 * this->adam_v_residual_biases[i][j] + (static_cast<T>(1) - beta2) * g * g;
+        this->adam_m_residual_biases[i][j] =
+          beta1 * this->adam_m_residual_biases[i][j] + (static_cast<T>(1) - beta1) * g;
+        this->adam_v_residual_biases[i][j] =
+          beta2 * this->adam_v_residual_biases[i][j] + (static_cast<T>(1) - beta2) * g * g;
         T m_hat = this->adam_m_residual_biases[i][j] / bc1;
         T v_hat = this->adam_v_residual_biases[i][j] / bc2;
         this->parameters.residualParams[i].biases[j] -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
@@ -458,7 +463,15 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
   std::mt19937 rng(std::random_device{}());
 
-  for (ulong e = 0; e < numEpochs; e++) {
+  // Create training monitor if monitoring is enabled
+  const MonitoringConfig& monitoringConfig = this->trainingConfig.monitoringConfig;
+  std::unique_ptr<TrainingMonitor<T>> monitor;
+
+  if (monitoringConfig.enabled) {
+    monitor = std::make_unique<TrainingMonitor<T>>(monitoringConfig);
+  }
+
+  for (ulong e = 0; e < numEpochs && !this->stopRequested.load(); e++) {
     T epochLoss = static_cast<T>(0);
     std::atomic<ulong> completedSamples{0};
 
@@ -589,6 +602,13 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
     if (this->logLevel >= CNN::LogLevel::INFO)
       qDebug() << "Epoch " << (e + 1) << "/" << numEpochs << " - Loss: " << avgLoss;
 
+    // Check training monitor
+    bool shouldStop = false;
+
+    if (monitor) {
+      shouldStop = monitor->checkEpoch(e + 1, avgLoss);
+    }
+
     if (this->trainingCallback) {
       TrainingProgress<T> progress;
       progress.currentEpoch = e + 1;
@@ -597,8 +617,32 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
       progress.totalSamples = numSamples;
       progress.sampleLoss = 0;
       progress.epochLoss = avgLoss;
+
+      if (monitor) {
+        progress.isNewBest = monitor->isNewBest();
+
+        if (progress.isNewBest) {
+          this->trainingMetadata.lastEpoch = e + 1;
+        }
+
+        if (shouldStop) {
+          progress.stoppedEarly = true;
+        }
+      }
+
       this->trainingCallback(progress);
     }
+
+    if (shouldStop) {
+      break;
+    }
+  }
+
+  // Populate monitoring metadata
+  if (monitor) {
+    this->trainingMetadata.stopReason = monitor->stopReason();
+    this->trainingMetadata.bestEpoch = monitor->bestEpoch();
+    this->trainingMetadata.bestLoss = monitor->bestLoss();
   }
 
   this->trainingEnd();
@@ -743,7 +787,15 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
   Shape3D cnnOutputShape = this->layersConfig.validateShapes(this->inputShape);
   ulong flattenSize = cnnOutputShape.size();
 
-  for (ulong e = 0; e < numEpochs; e++) {
+  // Create training monitor if monitoring is enabled
+  const MonitoringConfig& monitoringConfig = this->trainingConfig.monitoringConfig;
+  std::unique_ptr<TrainingMonitor<T>> monitor;
+
+  if (monitoringConfig.enabled) {
+    monitor = std::make_unique<TrainingMonitor<T>>(monitoringConfig);
+  }
+
+  for (ulong e = 0; e < numEpochs && !this->stopRequested.load(); e++) {
     T epochLoss = static_cast<T>(0);
     std::atomic<ulong> completedSamples{0};
 
@@ -1249,6 +1301,13 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
     if (this->logLevel >= CNN::LogLevel::INFO)
       qDebug() << "Epoch " << (e + 1) << "/" << numEpochs << " - Loss: " << avgLoss;
 
+    // Check training monitor
+    bool shouldStop = false;
+
+    if (monitor) {
+      shouldStop = monitor->checkEpoch(e + 1, avgLoss);
+    }
+
     if (this->trainingCallback) {
       TrainingProgress<T> progress;
       progress.currentEpoch = e + 1;
@@ -1257,8 +1316,32 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
       progress.totalSamples = numSamples;
       progress.sampleLoss = 0;
       progress.epochLoss = avgLoss;
+
+      if (monitor) {
+        progress.isNewBest = monitor->isNewBest();
+
+        if (progress.isNewBest) {
+          this->trainingMetadata.lastEpoch = e + 1;
+        }
+
+        if (shouldStop) {
+          progress.stoppedEarly = true;
+        }
+      }
+
       this->trainingCallback(progress);
     }
+
+    if (shouldStop) {
+      break;
+    }
+  }
+
+  // Populate monitoring metadata
+  if (monitor) {
+    this->trainingMetadata.stopReason = monitor->stopReason();
+    this->trainingMetadata.bestEpoch = monitor->bestEpoch();
+    this->trainingMetadata.bestLoss = monitor->bestLoss();
   }
 
   this->trainingEnd();
