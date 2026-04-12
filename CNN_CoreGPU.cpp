@@ -345,7 +345,7 @@ void CoreGPU<T>::syncParametersToGPU()
   // Workers hold their own copy of parameters (via CoreGPUWorkerConfig), so setParameters()
   // on the Core doesn't automatically reach them.
   for (auto& worker : this->gpuWorkers) {
-    worker->bufferManager->parameters = this->parameters;
+    worker->bufferManager->setParameters(this->parameters);
     worker->bufferManager->syncParametersToGPU();
   }
 }

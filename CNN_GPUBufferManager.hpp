@@ -35,6 +35,10 @@ namespace CNN
       //-- Parameter synchronization --//
       void syncParametersFromGPU(); // GPU → CPU (after training)
       void syncParametersToGPU(); // CPU → GPU (for validation with updated params)
+      void setParameters(const Parameters<T>& params)
+      {
+        parameters = params;
+      }
 
       //-- Accumulator operations --//
       void resetAccumulators();
