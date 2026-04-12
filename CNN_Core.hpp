@@ -90,6 +90,11 @@ namespace CNN
       }
 
       //-- Setters --//
+      void setParameters(const Parameters<T>& params)
+      {
+        parameters = params;
+      }
+
       void setTrainingCallback(TrainingCallback<T> callback)
       {
         trainingCallback = callback;
