@@ -112,4 +112,3 @@ kernel void gdp_backpropagate(global TYPE* grads, global const TYPE* actvs, ulon
 //===================================================================================================================//
 
 #endif // CNN_GLOBALDUALPOOL_CPP_CL
-

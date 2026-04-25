@@ -17,9 +17,9 @@ namespace CNN
 
   class PoolType
   {
-    public:
-      static PoolTypeEnum nameToType(const std::string& name);
-      static std::string typeToName(const PoolTypeEnum& type);
+  public:
+    static PoolTypeEnum nameToType(const std::string& name);
+    static std::string typeToName(const PoolTypeEnum& type);
   };
 }
 

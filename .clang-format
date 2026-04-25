@@ -9,7 +9,7 @@ UseTab: Never
 ContinuationIndentWidth: 2
 ConstructorInitializerIndentWidth: 2
 AccessModifierOffset: -2
-IndentAccessModifiers: true
+IndentAccessModifiers: false
 IndentCaseLabels: false
 IndentPPDirectives: None
 IndentWrappedFunctionNames: false

@@ -8,25 +8,25 @@
 namespace CNN
 {
   struct LossStagnationConfig {
-      bool enabled = true;
-      float minDelta = 0.0001f;
+    bool enabled = true;
+    float minDelta = 0.0001f;
   };
 
   struct LossExplosionConfig {
-      bool enabled = true;
-      float threshold = 10.0f;
+    bool enabled = true;
+    float threshold = 10.0f;
   };
 
   struct MonitoringMetrics {
-      LossStagnationConfig lossStagnation;
-      LossExplosionConfig lossExplosion;
+    LossStagnationConfig lossStagnation;
+    LossExplosionConfig lossExplosion;
   };
 
   struct MonitoringConfig {
-      bool enabled = false;
-      ulong checkInterval = 5;
-      ulong patience = 20;
-      MonitoringMetrics metrics;
+    bool enabled = false;
+    ulong checkInterval = 5;
+    ulong patience = 20;
+    MonitoringMetrics metrics;
   };
 }
 

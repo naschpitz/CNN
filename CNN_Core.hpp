@@ -22,157 +22,157 @@ namespace CNN
   template <typename T>
   class Core
   {
-    public:
-      //-- Factory --//
-      static std::unique_ptr<Core<T>> makeCore(const CoreConfig<T>& config);
+  public:
+    //-- Factory --//
+    static std::unique_ptr<Core<T>> makeCore(const CoreConfig<T>& config);
 
-      //-- Core interface --//
-      // predict returns both the post-activation output and the pre-activation (z) of the
-      // ANN dense head's last layer, so callers can compute calibration / OOD-detection
-      // scores (max-logit, logit-norm, free-energy) that softmax discards.
-      virtual PredictResults<T> predict(const Inputs<T>& inputs) = 0;
-      PredictResult<T> predict(const Input<T>& input); // Convenience wrapper for the multi-input version
-      virtual void train(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
-      virtual TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
+    //-- Core interface --//
+    // predict returns both the post-activation output and the pre-activation (z) of the
+    // ANN dense head's last layer, so callers can compute calibration / OOD-detection
+    // scores (max-logit, logit-norm, free-energy) that softmax discards.
+    virtual PredictResults<T> predict(const Inputs<T>& inputs) = 0;
+    PredictResult<T> predict(const Input<T>& input); // Convenience wrapper for the multi-input version
+    virtual void train(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
+    virtual TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
 
-      //-- Destructor --//
-      virtual ~Core() = default;
+    //-- Destructor --//
+    virtual ~Core() = default;
 
-      //-- Getters --//
-      ModeType getModeType() const
-      {
-        return modeType;
-      }
+    //-- Getters --//
+    ModeType getModeType() const
+    {
+      return modeType;
+    }
 
-      DeviceType getDeviceType() const
-      {
-        return deviceType;
-      }
+    DeviceType getDeviceType() const
+    {
+      return deviceType;
+    }
 
-      int getNumThreads() const
-      {
-        return numThreads;
-      }
+    int getNumThreads() const
+    {
+      return numThreads;
+    }
 
-      int getNumGPUs() const
-      {
-        return numGPUs;
-      }
+    int getNumGPUs() const
+    {
+      return numGPUs;
+    }
 
-      const Shape3D& getInputShape() const
-      {
-        return inputShape;
-      }
+    const Shape3D& getInputShape() const
+    {
+      return inputShape;
+    }
 
-      const LayersConfig& getLayersConfig() const
-      {
-        return layersConfig;
-      }
+    const LayersConfig& getLayersConfig() const
+    {
+      return layersConfig;
+    }
 
-      const TrainingConfig<T>& getTrainingConfig() const
-      {
-        return trainingConfig;
-      }
+    const TrainingConfig<T>& getTrainingConfig() const
+    {
+      return trainingConfig;
+    }
 
-      const PredictMetadata<T>& getPredictMetadata() const
-      {
-        return predictMetadata;
-      }
+    const PredictMetadata<T>& getPredictMetadata() const
+    {
+      return predictMetadata;
+    }
 
-      const TrainingMetadata<T>& getTrainingMetadata() const
-      {
-        return trainingMetadata;
-      }
+    const TrainingMetadata<T>& getTrainingMetadata() const
+    {
+      return trainingMetadata;
+    }
 
-      const Parameters<T>& getParameters() const
-      {
-        return parameters;
-      }
+    const Parameters<T>& getParameters() const
+    {
+      return parameters;
+    }
 
-      const CostFunctionConfig<T>& getCostFunctionConfig() const
-      {
-        return coreConfig.costFunctionConfig;
-      }
+    const CostFunctionConfig<T>& getCostFunctionConfig() const
+    {
+      return coreConfig.costFunctionConfig;
+    }
 
-      //-- Setters --//
-      void setParameters(const Parameters<T>& params)
-      {
-        parameters = params;
-      }
+    //-- Setters --//
+    void setParameters(const Parameters<T>& params)
+    {
+      parameters = params;
+    }
 
-      // Upload current host-side parameters to GPU buffers (no-op for CPU cores).
-      virtual void syncParametersToGPU() {}
+    // Upload current host-side parameters to GPU buffers (no-op for CPU cores).
+    virtual void syncParametersToGPU() {}
 
-      void setTrainingCallback(TrainingCallback<T> callback)
-      {
-        trainingCallback = callback;
-      }
+    void setTrainingCallback(TrainingCallback<T> callback)
+    {
+      trainingCallback = callback;
+    }
 
-      void setProgressCallback(ProgressCallback callback)
-      {
-        progressCallback = callback;
-      }
+    void setProgressCallback(ProgressCallback callback)
+    {
+      progressCallback = callback;
+    }
 
-      // Request early training termination. The training loop checks this at epoch boundaries.
-      void requestStop()
-      {
-        stopRequested.store(true);
-      }
+    // Request early training termination. The training loop checks this at epoch boundaries.
+    void requestStop()
+    {
+      stopRequested.store(true);
+    }
 
-      bool isStopRequested() const
-      {
-        return stopRequested.load();
-      }
+    bool isStopRequested() const
+    {
+      return stopRequested.load();
+    }
 
-      //-- Log level --//
-      void setLogLevel(LogLevel level)
-      {
-        logLevel = level;
-      }
+    //-- Log level --//
+    void setLogLevel(LogLevel level)
+    {
+      logLevel = level;
+    }
 
-      LogLevel getLogLevel() const
-      {
-        return logLevel;
-      }
+    LogLevel getLogLevel() const
+    {
+      return logLevel;
+    }
 
-    protected:
-      //-- Constructor / Validation --//
-      explicit Core(const CoreConfig<T>& coreConfig);
-      void sanityCheck(const CoreConfig<T>& coreConfig);
+  protected:
+    //-- Constructor / Validation --//
+    explicit Core(const CoreConfig<T>& coreConfig);
+    void sanityCheck(const CoreConfig<T>& coreConfig);
 
-      //-- Training timing --//
-      void trainingStart(ulong numSamples);
-      TrainingMetadata<T> trainingEnd();
+    //-- Training timing --//
+    void trainingStart(ulong numSamples);
+    TrainingMetadata<T> trainingEnd();
 
-      //-- Predict timing --//
-      void predictStart();
-      PredictMetadata<T> predictEnd();
+    //-- Predict timing --//
+    void predictStart();
+    PredictMetadata<T> predictEnd();
 
-      //-- Configuration members --//
-      CoreConfig<T> coreConfig;
-      DeviceType deviceType;
-      ModeType modeType;
-      int numThreads = 0;
-      int numGPUs = 0;
-      Shape3D inputShape;
-      LayersConfig layersConfig;
-      TrainingConfig<T> trainingConfig;
-      TestConfig testConfig;
-      TrainingMetadata<T> trainingMetadata;
-      PredictMetadata<T> predictMetadata;
-      Parameters<T> parameters;
-      ulong progressReports = 1000;
-      LogLevel logLevel = LogLevel::ERROR;
+    //-- Configuration members --//
+    CoreConfig<T> coreConfig;
+    DeviceType deviceType;
+    ModeType modeType;
+    int numThreads = 0;
+    int numGPUs = 0;
+    Shape3D inputShape;
+    LayersConfig layersConfig;
+    TrainingConfig<T> trainingConfig;
+    TestConfig testConfig;
+    TrainingMetadata<T> trainingMetadata;
+    PredictMetadata<T> predictMetadata;
+    Parameters<T> parameters;
+    ulong progressReports = 1000;
+    LogLevel logLevel = LogLevel::ERROR;
 
-      //-- Internal state --//
-      TrainingCallback<T> trainingCallback;
-      ProgressCallback progressCallback;
-      std::atomic<bool> stopRequested{false};
+    //-- Internal state --//
+    TrainingCallback<T> trainingCallback;
+    ProgressCallback progressCallback;
+    std::atomic<bool> stopRequested{false};
 
-    private:
-      //-- Timing state --//
-      std::chrono::time_point<std::chrono::system_clock> trainingStartTime;
-      std::chrono::time_point<std::chrono::system_clock> predictStartTime;
+  private:
+    //-- Timing state --//
+    std::chrono::time_point<std::chrono::system_clock> trainingStartTime;
+    std::chrono::time_point<std::chrono::system_clock> predictStartTime;
   };
 }
 

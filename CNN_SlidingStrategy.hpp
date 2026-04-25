@@ -22,12 +22,12 @@ namespace CNN
 
   class SlidingStrategy
   {
-    public:
-      static SlidingStrategyType nameToType(const std::string& name);
-      static std::string typeToName(const SlidingStrategyType& type);
+  public:
+    static SlidingStrategyType nameToType(const std::string& name);
+    static std::string typeToName(const SlidingStrategyType& type);
 
-      // Compute padding for a given kernel size and strategy
-      static ulong computePadding(ulong kernelSize, SlidingStrategyType strategy);
+    // Compute padding for a given kernel size and strategy
+    static ulong computePadding(ulong kernelSize, SlidingStrategyType strategy);
   };
 }
 

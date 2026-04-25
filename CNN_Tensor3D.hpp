@@ -13,24 +13,24 @@ namespace CNN
   template <typename T>
   class Tensor3D
   {
-    public:
-      Shape3D shape;
-      std::vector<T> data;
+  public:
+    Shape3D shape;
+    std::vector<T> data;
 
-      //-- Constructors --//
-      Tensor3D() = default;
-      Tensor3D(const Shape3D& shape);
-      Tensor3D(const Shape3D& shape, T value);
+    //-- Constructors --//
+    Tensor3D() = default;
+    Tensor3D(const Shape3D& shape);
+    Tensor3D(const Shape3D& shape, T value);
 
-      //-- Element access --//
-      T& at(ulong c, ulong h, ulong w);
-      const T& at(ulong c, ulong h, ulong w) const;
+    //-- Element access --//
+    T& at(ulong c, ulong h, ulong w);
+    const T& at(ulong c, ulong h, ulong w) const;
 
-      //-- Size / resize --//
-      ulong size() const;
-      void resize(const Shape3D& newShape);
-      void resize(const Shape3D& newShape, T value);
-      void fill(T value);
+    //-- Size / resize --//
+    ulong size() const;
+    void resize(const Shape3D& newShape);
+    void resize(const Shape3D& newShape, T value);
+    void fill(T value);
   };
 }
 

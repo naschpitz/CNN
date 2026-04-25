@@ -130,8 +130,7 @@ Shape3D LayersConfig::validateShapes(const Shape3D& inputShape) const
 
     case LayerType::RESIDUAL_END: {
       if (residualStack.empty()) {
-        throw std::runtime_error("CNN layer " + std::to_string(i) +
-                                 " (residual_end): no matching residual_start");
+        throw std::runtime_error("CNN layer " + std::to_string(i) + " (residual_end): no matching residual_start");
       }
 
       Shape3D skipShape = residualStack.top();
@@ -139,11 +138,12 @@ Shape3D LayersConfig::validateShapes(const Shape3D& inputShape) const
 
       // Spatial dimensions must match
       if (current.h != skipShape.h || current.w != skipShape.w) {
-        throw std::runtime_error(
-          "CNN layer " + std::to_string(i) + " (residual_end): spatial dimension mismatch. "
-          "Skip input: " + std::to_string(skipShape.h) + "x" + std::to_string(skipShape.w) +
-          ", block output: " + std::to_string(current.h) + "x" + std::to_string(current.w) +
-          ". Do not use pooling inside a residual block.");
+        throw std::runtime_error("CNN layer " + std::to_string(i) +
+                                 " (residual_end): spatial dimension mismatch. "
+                                 "Skip input: " +
+                                 std::to_string(skipShape.h) + "x" + std::to_string(skipShape.w) +
+                                 ", block output: " + std::to_string(current.h) + "x" + std::to_string(current.w) +
+                                 ". Do not use pooling inside a residual block.");
       }
 
       // Channel mismatch is allowed — a 1×1 projection will be auto-created

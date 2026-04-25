@@ -261,7 +261,6 @@ static void testGPUExactForwardBackwardWeightedCrossEntropy()
 
 // Helper: build a GPU Conv→BN→ReLU→Flatten→Dense config with preset parameters
 
-
 //===================================================================================================================//
 
 void runGPUExactTests()

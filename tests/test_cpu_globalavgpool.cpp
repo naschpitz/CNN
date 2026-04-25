@@ -145,8 +145,6 @@ static void testGlobalAvgPoolUniformInput()
   CHECK_NEAR(input.data[1], 5.0, 1e-9, "gap uniform ch1");
 }
 
-
-
 //===================================================================================================================//
 
 static void testGlobalAvgPoolLargeSpatial()

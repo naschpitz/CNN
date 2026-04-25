@@ -17,43 +17,43 @@ namespace CNN
   template <typename T>
   class GPUKernelBuilder
   {
-    public:
-      GPUKernelBuilder(OpenCLWrapper::Core* core, const CoreGPUWorkerConfig<T>& workerConfig,
-                       GPUBufferManager<T>& bufferManager);
+  public:
+    GPUKernelBuilder(OpenCLWrapper::Core* core, const CoreGPUWorkerConfig<T>& workerConfig,
+                     GPUBufferManager<T>& bufferManager);
 
-      //-- Kernel setup (clears previous kernels and rebuilds) --//
-      void setupPredictKernels();
-      void setupTrainingKernels();
-      void setupUpdateKernels(ulong numSamples);
+    //-- Kernel setup (clears previous kernels and rebuilds) --//
+    void setupPredictKernels();
+    void setupTrainingKernels();
+    void setupUpdateKernels(ulong numSamples);
 
-      //-- Kernel building blocks (public for external orchestration) --//
-      void addPropagateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd, bool training = false);
-      void addBackpropagateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd);
-      void addCopyBridgeKernels(ulong sampleIdx);
-      void addReverseBridgeKernels(ulong sampleIdx);
-      void addCNNAccumulateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd);
-      void addCNNUpdateKernels(ulong numSamples, bool skipBNRunningStats = false);
+    //-- Kernel building blocks (public for external orchestration) --//
+    void addPropagateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd, bool training = false);
+    void addBackpropagateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd);
+    void addCopyBridgeKernels(ulong sampleIdx);
+    void addReverseBridgeKernels(ulong sampleIdx);
+    void addCNNAccumulateKernels(ulong sampleIdx, ulong layerStart, ulong layerEnd);
+    void addCNNUpdateKernels(ulong numSamples, bool skipBNRunningStats = false);
 
-      //-- Cross-sample batch normalization kernels --//
-      void addBatchNormForwardKernels(ulong layerIdx, ulong batchSize);
-      void addBatchNormBackwardKernels(ulong layerIdx, ulong batchSize);
-      void addBatchNormRunningStatsUpdate(ulong batchSize);
+    //-- Cross-sample batch normalization kernels --//
+    void addBatchNormForwardKernels(ulong layerIdx, ulong batchSize);
+    void addBatchNormBackwardKernels(ulong layerIdx, ulong batchSize);
+    void addBatchNormRunningStatsUpdate(ulong batchSize);
 
-      //-- Kernel setup flags --//
-      bool predictKernelsSetup = false;
-      bool trainingKernelsSetup = false;
-      bool updateKernelsSetup = false;
-      bool skipBNRunningStatsInUpdate = false; // Set by trainSubset when BN path is active
+    //-- Kernel setup flags --//
+    bool predictKernelsSetup = false;
+    bool trainingKernelsSetup = false;
+    bool updateKernelsSetup = false;
+    bool skipBNRunningStatsInUpdate = false; // Set by trainSubset when BN path is active
 
-      void invalidateAllKernelFlags();
+    void invalidateAllKernelFlags();
 
-    private:
-      OpenCLWrapper::Core* core;
-      const CoreGPUWorkerConfig<T>& workerConfig;
-      GPUBufferManager<T>& bufferManager;
+  private:
+    OpenCLWrapper::Core* core;
+    const CoreGPUWorkerConfig<T>& workerConfig;
+    GPUBufferManager<T>& bufferManager;
 
-      //-- Adam optimizer state --//
-      ulong adam_t = 0;
+    //-- Adam optimizer state --//
+    ulong adam_t = 0;
   };
 }
 

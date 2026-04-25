@@ -18,27 +18,27 @@ namespace CNN
   template <typename T>
   class CoreGPUWorkerConfig
   {
-    public:
-      //-- Constructor --//
-      explicit CoreGPUWorkerConfig(const CoreConfig<T>& config);
+  public:
+    //-- Constructor --//
+    explicit CoreGPUWorkerConfig(const CoreConfig<T>& config);
 
-      //-- CNN topology --//
-      Shape3D inputShape;
-      LayersConfig layersConfig;
+    //-- CNN topology --//
+    Shape3D inputShape;
+    LayersConfig layersConfig;
 
-      //-- Training --//
-      TrainingConfig<T> trainingConfig;
-      CostFunctionConfig<T> costFunctionConfig;
+    //-- Training --//
+    TrainingConfig<T> trainingConfig;
+    CostFunctionConfig<T> costFunctionConfig;
 
-      //-- Parameters (initial weights) --//
-      Parameters<T> parameters;
+    //-- Parameters (initial weights) --//
+    Parameters<T> parameters;
 
-      //-- Per-GPU batch size --//
-      ulong batchSize = 1;
+    //-- Per-GPU batch size --//
+    ulong batchSize = 1;
 
-      //-- Logging / progress --//
-      ulong progressReports = 1000;
-      LogLevel logLevel = LogLevel::ERROR;
+    //-- Logging / progress --//
+    ulong progressReports = 1000;
+    LogLevel logLevel = LogLevel::ERROR;
   };
 }
 

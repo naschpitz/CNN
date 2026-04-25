@@ -14,32 +14,32 @@ namespace CNN
   template <typename T>
   class CoreGPU : public Core<T>
   {
-    public:
-      CoreGPU(const CoreConfig<T>& config);
+  public:
+    CoreGPU(const CoreConfig<T>& config);
 
-      using Core<T>::predict; // Bring in the single-input convenience wrapper
-      PredictResults<T> predict(const Inputs<T>& inputs) override;
-      void train(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
-      TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
-      void syncParametersToGPU() override;
+    using Core<T>::predict; // Bring in the single-input convenience wrapper
+    PredictResults<T> predict(const Inputs<T>& inputs) override;
+    void train(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
+    TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
+    void syncParametersToGPU() override;
 
-      //-- Worker access (for diagnostics/testing) --//
-      CoreGPUWorker<T>* getWorker(size_t idx = 0)
-      {
-        return (idx < gpuWorkers.size()) ? gpuWorkers[idx].get() : nullptr;
-      }
+    //-- Worker access (for diagnostics/testing) --//
+    CoreGPUWorker<T>* getWorker(size_t idx = 0)
+    {
+      return (idx < gpuWorkers.size()) ? gpuWorkers[idx].get() : nullptr;
+    }
 
-    private:
-      //-- GPU workers (one per GPU) --//
-      std::vector<std::unique_ptr<CoreGPUWorker<T>>> gpuWorkers;
-      size_t numGPUs = 1;
+  private:
+    //-- GPU workers (one per GPU) --//
+    std::vector<std::unique_ptr<CoreGPUWorker<T>>> gpuWorkers;
+    size_t numGPUs = 1;
 
-      //-- Initialization --//
-      void initializeWorkers();
+    //-- Initialization --//
+    void initializeWorkers();
 
-      //-- Training coordination --//
-      void mergeCNNGradients();
-      void mergeANNGradients();
+    //-- Training coordination --//
+    void mergeCNNGradients();
+    void mergeANNGradients();
   };
 }
 

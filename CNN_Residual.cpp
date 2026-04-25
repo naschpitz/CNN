@@ -39,8 +39,7 @@ void Residual<T>::propagate(Tensor3D<T>& blockOutput, const Tensor3D<T>& skipInp
 // The gradient through the skip path is: dSkip = dBlockOutput (identity) or dSkip = W^T * dBlockOutput (projection).
 template <typename T>
 Tensor3D<T> Residual<T>::backpropagate(const Tensor3D<T>& dBlockOutput, const Tensor3D<T>& skipInput,
-                                       const ResidualParameters<T>* projection,
-                                       ResidualParameters<T>* dProjection)
+                                       const ResidualParameters<T>* projection, ResidualParameters<T>* dProjection)
 {
   if (projection == nullptr) {
     // Identity shortcut: gradient passes through unchanged
@@ -92,4 +91,3 @@ Tensor3D<T> Residual<T>::backpropagate(const Tensor3D<T>& dBlockOutput, const Te
 template class Residual<int>;
 template class Residual<float>;
 template class Residual<double>;
-

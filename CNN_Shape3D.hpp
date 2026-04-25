@@ -10,15 +10,15 @@ namespace CNN
   // Shape of a 3D tensor (Channels, Height, Width) - NCHW layout
   class Shape3D
   {
-    public:
-      ulong c; // channels
-      ulong h; // height
-      ulong w; // width
+  public:
+    ulong c; // channels
+    ulong h; // height
+    ulong w; // width
 
-      //-- Methods --//
-      ulong size() const;
-      bool operator==(const Shape3D& other) const;
-      bool operator!=(const Shape3D& other) const;
+    //-- Methods --//
+    ulong size() const;
+    bool operator==(const Shape3D& other) const;
+    bool operator!=(const Shape3D& other) const;
   };
 }
 
