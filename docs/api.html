@@ -112,6 +112,7 @@
   <tr><td><code>Tensor1D&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>1D tensor</td></tr>
   <tr><td><code>Input&lt;T&gt;</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Network input (3D image tensor)</td></tr>
   <tr><td><code>Inputs&lt;T&gt;</code></td><td><code>std::vector&lt;Input&lt;T&gt;&gt;</code></td><td>Batch of inputs</td></tr>
+  <tr><td><code>InputProvider&lt;T&gt;</code></td><td><code>std::function&lt;Inputs&lt;T&gt;(ulong batchSize, ulong batchIndex)&gt;</code></td><td>Lazy supplier for streaming <code>predict()</code> — given a batch size and 0-based batch index, returns the corresponding chunk of inputs. Last batch may be shorter than <code>batchSize</code>. Mirrors <code>SampleProvider</code> used by train / test.</td></tr>
   <tr><td><code>Output&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>Network output (1D classification vector — post-activation of the dense head)</td></tr>
   <tr><td><code>Logits&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>Pre-activation values (z) of the dense head's last layer — input to the final activation function</td></tr>
   <tr><td><code>PredictResults&lt;T&gt;</code></td><td><code>std::vector&lt;PredictResult&lt;T&gt;&gt;</code></td><td>Batch of predict results</td></tr>
@@ -342,8 +343,8 @@
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
   <tr><td><code>makeCore(config)</code></td><td><code>unique_ptr&lt;Core&lt;T&gt;&gt;</code></td><td><strong>Factory:</strong> creates CoreCPU or CoreGPU</td></tr>
-  <tr><td><code>predict(inputs)</code></td><td><code>PredictResults&lt;T&gt;</code></td><td><strong>Virtual:</strong> batch propagation — distributes inputs across threads/GPUs. Output order matches input order. Each result carries both <code>output</code> (post-activation) and <code>logits</code> (pre-activation z of the dense head's last layer).</td></tr>
-  <tr><td><code>predict(input)</code></td><td><code>PredictResult&lt;T&gt;</code></td><td>Single-input prediction. The underlying ANN sub-core uses the step worker directly (no threading) to avoid deadlocks when called from within CNN's thread pool.</td></tr>
+  <tr><td><code>predict(ulong numSamples, const InputProvider&lt;T&gt;&amp;)</code></td><td><code>PredictResults&lt;T&gt;</code></td><td><strong>Virtual:</strong> streaming batch propagation. Pulls inputs in chunks from <code>provider</code>, runs forward propagation on each batch, and bounds peak host memory to one batch regardless of total dataset size. Mirrors the <code>SampleProvider</code> pattern used by <code>train()</code> / <code>test()</code>. Each result carries <code>output</code> (post-activation) and <code>logits</code> (pre-activation z of the dense head's last layer). Distributes work across threads / GPUs per batch.</td></tr>
+  <tr><td><code>predict(input)</code></td><td><code>PredictResult&lt;T&gt;</code></td><td>Single-input convenience. Delegates to the streaming overload with a one-shot provider. The underlying ANN sub-core uses the step worker directly (no threading) to avoid deadlocks when called from within CNN's thread pool.</td></tr>
   <tr><td><code>train(numSamples, sampleProvider)</code></td><td><code>void</code></td><td>Full training loop with SGD</td></tr>
   <tr><td><code>test(numSamples, sampleProvider)</code></td><td><code>TestResult&lt;T&gt;</code></td><td>Evaluate loss on a test set using on-demand sample loading</td></tr>
   <tr><td><code>setTrainingCallback(cb)</code></td><td><code>void</code></td><td>Attach progress callback</td></tr>
