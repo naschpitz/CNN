@@ -378,9 +378,18 @@ static void testBatchPredict()
     core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
 
-    // Batch predict both inputs at once
+    // Batch predict both inputs via a slice-and-yield provider.
     CNN::Inputs<double> inputs = {samples[0].input, samples[1].input};
-    batchResults = core->predict(inputs);
+    auto sliceProvider = [&inputs](ulong batchSize, ulong batchIndex) {
+      ulong start = batchIndex * batchSize;
+      ulong end = std::min(start + batchSize, static_cast<ulong>(inputs.size()));
+
+      if (start >= end)
+        return CNN::Inputs<double>{};
+      return CNN::Inputs<double>(inputs.begin() + start, inputs.begin() + end);
+    };
+
+    batchResults = core->predict(inputs.size(), sliceProvider);
 
     if (batchResults[0].output[0] > batchResults[1].output[0])
       converged = true;
