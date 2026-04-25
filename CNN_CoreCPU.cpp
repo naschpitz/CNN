@@ -94,7 +94,7 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
 //===================================================================================================================//
 
 template <typename T>
-Outputs<T> CoreCPU<T>::predict(const Inputs<T>& inputs)
+PredictResults<T> CoreCPU<T>::predict(const Inputs<T>& inputs)
 {
   int numThreads = this->numThreads;
 
@@ -113,7 +113,7 @@ Outputs<T> CoreCPU<T>::predict(const Inputs<T>& inputs)
   }
 
   ulong numInputs = inputs.size();
-  Outputs<T> outputs(numInputs);
+  PredictResults<T> results(numInputs);
 
   // Distribute inputs across workers
   std::vector<ulong> workerInputCounts(numThreads);
@@ -140,7 +140,7 @@ Outputs<T> CoreCPU<T>::predict(const Inputs<T>& inputs)
     ulong workerLocalEnd = workerLocalStart + workerInputCounts[workerIdx];
 
     for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
-      outputs[s] = worker.predict(inputs[s]);
+      results[s] = worker.predict(inputs[s]);
 
       ulong completed = ++completedInputs;
 
@@ -149,7 +149,7 @@ Outputs<T> CoreCPU<T>::predict(const Inputs<T>& inputs)
     }
   });
 
-  return outputs;
+  return results;
 }
 
 //===================================================================================================================//
@@ -711,7 +711,7 @@ TestResult<T> CoreCPU<T>::test(ulong numSamples, const SampleProvider<T>& sample
 
       for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
         const Sample<T>& sample = batch[s];
-        Output<T> predicted = worker.predict(sample.input);
+        Output<T> predicted = worker.predict(sample.input).output;
         workerLoss[workerIdx] += worker.calculateLoss(predicted, sample.output);
 
         auto predIdx = std::distance(predicted.begin(), std::max_element(predicted.begin(), predicted.end()));
@@ -988,7 +988,7 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
 
           // ANN forward
           ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-          ANN::Output<T> annOutput = worker.getANNCore()->predict(annInput);
+          ANN::Output<T> annOutput = worker.getANNCore()->predict(annInput).output;
           predictions[s] = Output<T>(annOutput.begin(), annOutput.end());
 
           // Loss

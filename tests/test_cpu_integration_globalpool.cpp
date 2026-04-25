@@ -60,8 +60,8 @@ static void testGlobalAvgPoolEndToEnd()
       std::cout << "  retry #" << attempt << std::endl;
     core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;
@@ -136,8 +136,8 @@ static void testGlobalAvgPoolWithNorm()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    auto pred0 = core->predict(samples[0].input);
-    auto pred1 = core->predict(samples[1].input);
+    auto pred0 = core->predict(samples[0].input).output;
+    auto pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;
@@ -209,8 +209,8 @@ static void testGlobalAvgPoolAfterPool()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    auto pred0 = core->predict(samples[0].input);
-    auto pred1 = core->predict(samples[1].input);
+    auto pred0 = core->predict(samples[0].input).output;
+    auto pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;
@@ -271,7 +271,7 @@ static void testBatchPredict()
 
   std::unique_ptr<CNN::Core<double>> core;
   bool converged = false;
-  CNN::Outputs<double> batchOutputs;
+  CNN::PredictResults<double> batchResults;
 
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     if (attempt > 0)
@@ -282,22 +282,22 @@ static void testBatchPredict()
 
     // Batch predict both inputs at once
     CNN::Inputs<double> inputs = {samples[0].input, samples[1].input};
-    batchOutputs = core->predict(inputs);
+    batchResults = core->predict(inputs);
 
-    if (batchOutputs[0][0] > batchOutputs[1][0])
+    if (batchResults[0].output[0] > batchResults[1].output[0])
       converged = true;
   }
 
-  CHECK(batchOutputs.size() == 2, "batch predict returns 2 outputs");
-  CHECK(batchOutputs[0].size() == 1, "output[0] size = 1");
-  CHECK(batchOutputs[1].size() == 1, "output[1] size = 1");
+  CHECK(batchResults.size() == 2, "batch predict returns 2 outputs");
+  CHECK(batchResults[0].output.size() == 1, "output[0] size = 1");
+  CHECK(batchResults[1].output.size() == 1, "output[1] size = 1");
   CHECK(converged, "batch predict: bright > dark after training");
 
   // Verify batch predict matches single predict
-  CNN::Output<double> single0 = core->predict(samples[0].input);
-  CNN::Output<double> single1 = core->predict(samples[1].input);
-  CHECK_NEAR(batchOutputs[0][0], single0[0], 1e-10, "batch[0] matches single predict");
-  CHECK_NEAR(batchOutputs[1][0], single1[0], 1e-10, "batch[1] matches single predict");
+  CNN::Output<double> single0 = core->predict(samples[0].input).output;
+  CNN::Output<double> single1 = core->predict(samples[1].input).output;
+  CHECK_NEAR(batchResults[0].output[0], single0[0], 1e-10, "batch[0] matches single predict");
+  CHECK_NEAR(batchResults[1].output[0], single1[0], 1e-10, "batch[1] matches single predict");
 }
 
 //===================================================================================================================//
@@ -360,8 +360,8 @@ static void testGlobalDualPoolEndToEnd()
 
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;
@@ -372,7 +372,6 @@ static void testGlobalDualPoolEndToEnd()
 }
 
 //===================================================================================================================//
-
 
 //===================================================================================================================//
 

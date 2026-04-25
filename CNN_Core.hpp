@@ -7,6 +7,7 @@
 #include "CNN_TrainingProgress.hpp"
 #include "CNN_TrainingMetadata.hpp"
 #include "CNN_PredictMetadata.hpp"
+#include "CNN_PredictResult.hpp"
 #include "CNN_ProgressCallback.hpp"
 #include "CNN_TestResult.hpp"
 
@@ -26,8 +27,11 @@ namespace CNN
       static std::unique_ptr<Core<T>> makeCore(const CoreConfig<T>& config);
 
       //-- Core interface --//
-      virtual Outputs<T> predict(const Inputs<T>& inputs) = 0;
-      Output<T> predict(const Input<T>& input); // Convenience wrapper for the multi-input version
+      // predict returns both the post-activation output and the pre-activation (z) of the
+      // ANN dense head's last layer, so callers can compute calibration / OOD-detection
+      // scores (max-logit, logit-norm, free-energy) that softmax discards.
+      virtual PredictResults<T> predict(const Inputs<T>& inputs) = 0;
+      PredictResult<T> predict(const Input<T>& input); // Convenience wrapper for the multi-input version
       virtual void train(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
       virtual TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
 

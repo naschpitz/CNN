@@ -70,8 +70,8 @@ static void testGPUMultiConvStack()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;
@@ -140,8 +140,8 @@ static void testGPUShuffleSamples()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(makeConfig(true));
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    auto p0 = core->predict(samples[0].input);
-    auto p1 = core->predict(samples[1].input);
+    auto p0 = core->predict(samples[0].input).output;
+    auto p1 = core->predict(samples[1].input).output;
 
     if (p0[0] > p1[0])
       shuffleConverged = true;
@@ -156,8 +156,8 @@ static void testGPUShuffleSamples()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(makeConfig(false));
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    auto p0 = core->predict(samples[0].input);
-    auto p1 = core->predict(samples[1].input);
+    auto p0 = core->predict(samples[0].input).output;
+    auto p1 = core->predict(samples[1].input).output;
 
     if (p0[0] > p1[0])
       noShuffleConverged = true;
@@ -229,7 +229,7 @@ static void testGPUCrossEntropyTraining()
   CHECK(result.numSamples == 3, "GPU CNN CE: 3 samples");
 
   // Softmax outputs should sum to 1
-  auto out0 = core->predict(samples[0].input);
+  auto out0 = core->predict(samples[0].input).output;
   float sum0 = out0[0] + out0[1] + out0[2];
   CHECK_NEAR(sum0, 1.0f, 0.01f, "GPU CNN CE: softmax sums to 1");
 

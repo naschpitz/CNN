@@ -68,14 +68,14 @@ static void testGPUGlobalAvgPoolCPUGPUParity()
   auto cpuConfig = makeConfig(CNN::DeviceType::CPU);
   auto cpuCore = CNN::Core<float>::makeCore(cpuConfig);
   cpuCore->train(samples.size(), CNN::makeSampleProvider(samples));
-  auto cpuPred0 = cpuCore->predict(samples[0].input);
-  auto cpuPred1 = cpuCore->predict(samples[1].input);
+  auto cpuPred0 = cpuCore->predict(samples[0].input).output;
+  auto cpuPred1 = cpuCore->predict(samples[1].input).output;
 
   auto gpuConfig = makeConfig(CNN::DeviceType::GPU);
   auto gpuCore = CNN::Core<float>::makeCore(gpuConfig);
   gpuCore->train(samples.size(), CNN::makeSampleProvider(samples));
-  auto gpuPred0 = gpuCore->predict(samples[0].input);
-  auto gpuPred1 = gpuCore->predict(samples[1].input);
+  auto gpuPred0 = gpuCore->predict(samples[0].input).output;
+  auto gpuPred1 = gpuCore->predict(samples[1].input).output;
 
   std::cout << "  CPU pred: " << cpuPred0[0] << ", " << cpuPred1[0] << std::endl;
   std::cout << "  GPU pred: " << gpuPred0[0] << ", " << gpuPred1[0] << std::endl;
@@ -152,14 +152,14 @@ static void testGPUGlobalDualPoolCPUGPUParity()
   auto cpuConfig = makeConfig(CNN::DeviceType::CPU);
   auto cpuCore = CNN::Core<float>::makeCore(cpuConfig);
   cpuCore->train(samples.size(), CNN::makeSampleProvider(samples));
-  auto cpuPred0 = cpuCore->predict(samples[0].input);
-  auto cpuPred1 = cpuCore->predict(samples[1].input);
+  auto cpuPred0 = cpuCore->predict(samples[0].input).output;
+  auto cpuPred1 = cpuCore->predict(samples[1].input).output;
 
   auto gpuConfig = makeConfig(CNN::DeviceType::GPU);
   auto gpuCore = CNN::Core<float>::makeCore(gpuConfig);
   gpuCore->train(samples.size(), CNN::makeSampleProvider(samples));
-  auto gpuPred0 = gpuCore->predict(samples[0].input);
-  auto gpuPred1 = gpuCore->predict(samples[1].input);
+  auto gpuPred0 = gpuCore->predict(samples[0].input).output;
+  auto gpuPred1 = gpuCore->predict(samples[1].input).output;
 
   std::cout << "  CPU pred: " << cpuPred0[0] << ", " << cpuPred1[0] << std::endl;
   std::cout << "  GPU pred: " << gpuPred0[0] << ", " << gpuPred1[0] << std::endl;
@@ -169,7 +169,6 @@ static void testGPUGlobalDualPoolCPUGPUParity()
 }
 
 //===================================================================================================================//
-
 
 //===================================================================================================================//
 

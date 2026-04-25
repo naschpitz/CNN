@@ -101,7 +101,7 @@ TrainingMetadata<T> Core<T>::trainingEnd()
 //===================================================================================================================//
 
 template <typename T>
-Output<T> Core<T>::predict(const Input<T>& input)
+PredictResult<T> Core<T>::predict(const Input<T>& input)
 {
   return predict(Inputs<T>{input})[0];
 }

@@ -127,15 +127,18 @@ ANN::CoreConfig<T> CoreCPUWorker<T>::buildANNConfig(const CoreConfig<T>& cnnConf
 //===================================================================================================================//
 
 template <typename T>
-Output<T> CoreCPUWorker<T>::predict(const Input<T>& input)
+PredictResult<T> CoreCPUWorker<T>::predict(const Input<T>& input)
 {
   Tensor3D<T> cnnOut = this->propagateCNN(input);
   Tensor1D<T> flatInput = Flatten<T>::propagate(cnnOut);
 
   ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-  ANN::Output<T> annOutput = this->annCore->predict(annInput);
+  ANN::PredictResult<T> annResult = this->annCore->predict(annInput);
 
-  return Output<T>(annOutput.begin(), annOutput.end());
+  PredictResult<T> result;
+  result.output = Output<T>(annResult.output.begin(), annResult.output.end());
+  result.logits = Logits<T>(annResult.logits.begin(), annResult.logits.end());
+  return result;
 }
 
 //===================================================================================================================//
@@ -149,9 +152,9 @@ T CoreCPUWorker<T>::processSample(const Input<T>& input, const Output<T>& expect
   Tensor3D<T> cnnOut = this->propagateCNN(input, true, &intermediates, &poolMaxIndices);
   Tensor1D<T> flatInput = Flatten<T>::propagate(cnnOut);
 
-  // ANN propagate
+  // ANN propagate (training path: only the activations are needed for loss)
   ANN::Input<T> annInput(flatInput.begin(), flatInput.end());
-  ANN::Output<T> annOutput = this->annCore->predict(annInput);
+  ANN::Output<T> annOutput = this->annCore->predict(annInput).output;
   Output<T> predicted(annOutput.begin(), annOutput.end());
 
   // Loss

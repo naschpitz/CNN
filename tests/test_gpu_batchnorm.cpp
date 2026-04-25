@@ -142,8 +142,8 @@ static void testGPUTrueBNvsCPUParity()
   }
 
   // Also check predictions match
-  auto gpuPred = gpuCore->predict(samples[0].input);
-  auto cpuPred = cpuCore->predict(samples[0].input);
+  auto gpuPred = gpuCore->predict(samples[0].input).output;
+  auto cpuPred = cpuCore->predict(samples[0].input).output;
   CHECK_NEAR(gpuPred[0], cpuPred[0], tol, "GPU-CPU BN parity predict[0]");
   CHECK_NEAR(gpuPred[1], cpuPred[1], tol, "GPU-CPU BN parity predict[1]");
 

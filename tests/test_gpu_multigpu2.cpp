@@ -54,7 +54,7 @@ static void testMultiGPUCrossEntropyTraining()
   CHECK(result.averageLoss >= 0.0f, "multi-GPU CNN CE: loss non-negative");
   CHECK(std::isfinite(result.averageLoss), "multi-GPU CNN CE: loss is finite");
 
-  auto out0 = core->predict(samples[0].input);
+  auto out0 = core->predict(samples[0].input).output;
   float sum0 = out0[0] + out0[1] + out0[2];
   CHECK_NEAR(sum0, 1.0f, 0.01f, "multi-GPU CNN CE: softmax sums to 1");
 
@@ -124,8 +124,8 @@ static void testMultiGPUParameterRoundTrip()
   predictConfig.parameters = params;
 
   auto predictCore = CNN::Core<float>::makeCore(predictConfig);
-  CNN::Output<float> origPred = core->predict(samples[0].input);
-  CNN::Output<float> newPred = predictCore->predict(samples[0].input);
+  CNN::Output<float> origPred = core->predict(samples[0].input).output;
+  CNN::Output<float> newPred = predictCore->predict(samples[0].input).output;
   CHECK_NEAR(origPred[0], newPred[0], 0.01f, "multi-GPU param roundtrip: prediction match");
   std::cout << "  multi-GPU original=" << origPred[0] << "  from_params=" << newPred[0] << std::endl;
 }
@@ -205,8 +205,8 @@ static void testMultiGPUWithPoolLayer()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;

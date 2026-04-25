@@ -78,6 +78,7 @@ add_library(CNN STATIC
   CNN_TrainingProgress.hpp
   CNN_TrainingMetadata.hpp
   CNN_PredictMetadata.hpp
+  CNN_PredictResult.hpp
   CNN_TestResult.hpp
   CNN_Conv2D.hpp CNN_Conv2D.cpp
   CNN_ReLU.hpp CNN_ReLU.cpp

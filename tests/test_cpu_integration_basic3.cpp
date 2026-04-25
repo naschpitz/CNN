@@ -176,8 +176,8 @@ static void testShuffleSamplesTraining()
   for (int attempt = 0; attempt < 5 && !shuffleConverged; ++attempt) {
     auto core = CNN::Core<double>::makeCore(makeConfig(true));
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    auto p0 = core->predict(samples[0].input);
-    auto p1 = core->predict(samples[1].input);
+    auto p0 = core->predict(samples[0].input).output;
+    auto p1 = core->predict(samples[1].input).output;
 
     if (p0[0] > p1[0])
       shuffleConverged = true;
@@ -191,8 +191,8 @@ static void testShuffleSamplesTraining()
   for (int attempt = 0; attempt < 5 && !noShuffleConverged; ++attempt) {
     auto core = CNN::Core<double>::makeCore(makeConfig(false));
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    auto p0 = core->predict(samples[0].input);
-    auto p1 = core->predict(samples[1].input);
+    auto p0 = core->predict(samples[0].input).output;
+    auto p1 = core->predict(samples[1].input).output;
 
     if (p0[0] > p1[0])
       noShuffleConverged = true;

@@ -96,7 +96,7 @@ CoreGPUWorker<T>::CoreGPUWorker(const CoreGPUWorkerConfig<T>& config, OpenCLWrap
 //===================================================================================================================//
 
 template <typename T>
-Output<T> CoreGPUWorker<T>::predict(const Input<T>& input)
+PredictResult<T> CoreGPUWorker<T>::predict(const Input<T>& input)
 {
   // Set up predict kernels if needed (CNN propagate → bridge → ANN propagate)
   if (!this->kernelBuilder->predictKernelsSetup) {
@@ -110,10 +110,14 @@ Output<T> CoreGPUWorker<T>::predict(const Input<T>& input)
   // Single run: CNN propagate → copy_cnn_to_ann → ANN propagate
   this->core->run();
 
-  // Read ANN output
+  // Read ANN output (post-activation) and logits (pre-activation z) of the dense head
   ANN::Output<T> annOutput = this->bufferManager->annGPUWorker->bufferManager->readOutput();
+  ANN::Logits<T> annLogits = this->bufferManager->annGPUWorker->bufferManager->readOutputLogits();
 
-  return Output<T>(annOutput.begin(), annOutput.end());
+  PredictResult<T> result;
+  result.output = Output<T>(annOutput.begin(), annOutput.end());
+  result.logits = Logits<T>(annLogits.begin(), annLogits.end());
+  return result;
 }
 
 //===================================================================================================================//
@@ -364,7 +368,7 @@ std::pair<T, ulong> CoreGPUWorker<T>::testSubset(const Samples<T>& samples, ulon
   ulong subsetCorrect = 0;
 
   for (ulong s = startIdx; s < endIdx; s++) {
-    Output<T> predicted = this->predict(samples[s].input);
+    Output<T> predicted = this->predict(samples[s].input).output;
     subsetLoss += this->calculateLoss(predicted, samples[s].output);
 
     // Accuracy: compare argmax of predicted vs expected
@@ -384,26 +388,26 @@ std::pair<T, ulong> CoreGPUWorker<T>::testSubset(const Samples<T>& samples, ulon
 //===================================================================================================================//
 
 template <typename T>
-Outputs<T> CoreGPUWorker<T>::predictSubset(const Inputs<T>& inputs, ulong startIdx, ulong endIdx,
-                                           const ProgressCallback& callback)
+PredictResults<T> CoreGPUWorker<T>::predictSubset(const Inputs<T>& inputs, ulong startIdx, ulong endIdx,
+                                                  const ProgressCallback& callback)
 {
   // Set up predict kernels if needed (CNN propagate → bridge → ANN propagate)
   if (!this->kernelBuilder->predictKernelsSetup) {
     this->kernelBuilder->setupPredictKernels();
   }
 
-  Outputs<T> outputs;
-  outputs.reserve(endIdx - startIdx);
+  PredictResults<T> results;
+  results.reserve(endIdx - startIdx);
 
   for (ulong i = startIdx; i < endIdx; i++) {
-    Output<T> predicted = this->predict(inputs[i]);
-    outputs.push_back(std::move(predicted));
+    PredictResult<T> r = this->predict(inputs[i]);
+    results.push_back(std::move(r));
 
     if (callback)
       callback(i - startIdx + 1, endIdx - startIdx);
   }
 
-  return outputs;
+  return results;
 }
 
 //===================================================================================================================//

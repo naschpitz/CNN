@@ -53,8 +53,8 @@ static void testGPUMultipleOutputNeurons()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;

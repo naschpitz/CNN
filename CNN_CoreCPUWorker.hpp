@@ -21,7 +21,8 @@ namespace CNN
                     bool allocateTraining);
 
       //-- Predict (inference only — no intermediates saved) --//
-      Output<T> predict(const Input<T>& input);
+      // Returns post-activation output and pre-activation logits of the dense head.
+      PredictResult<T> predict(const Input<T>& input);
 
       //-- Full propagate+backpropagate+accumulate for one training sample --//
       T processSample(const Input<T>& input, const Output<T>& expected);

@@ -63,8 +63,8 @@ static void testResidualIdentityEndToEnd()
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;
@@ -130,8 +130,8 @@ static void testResidualParametersEndToEnd()
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;
@@ -191,8 +191,8 @@ static void testResidualMixedIdentityProjectionEndToEnd()
   flattenLayer.config = CNN::FlattenLayerConfig{};
 
   // stem → identity res block → pool → projection res block → GAP → flatten
-  config.layersConfig.cnnLayers = {stem, relu, resStart, conv4, relu, resEnd, pool, resStart, conv8, relu, resEnd,
-                                   gapLayer, flattenLayer};
+  config.layersConfig.cnnLayers = {stem,     relu,  resStart, conv4,  relu,     resEnd,      pool,
+                                   resStart, conv8, relu,     resEnd, gapLayer, flattenLayer};
   config.layersConfig.denseLayers = {{1, ANN::ActvFuncType::SIGMOID}};
   config.trainingConfig.numEpochs = 200;
   config.trainingConfig.learningRate = 0.5;
@@ -210,8 +210,8 @@ static void testResidualMixedIdentityProjectionEndToEnd()
   for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;

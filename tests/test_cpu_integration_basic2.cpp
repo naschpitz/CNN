@@ -79,8 +79,8 @@ static void testParameterRoundTrip()
   CHECK(predictCore != nullptr, "param roundtrip predict core creation");
 
   // Predictions should match
-  CNN::Output<double> origPred = core->predict(samples[0].input);
-  CNN::Output<double> newPred = predictCore->predict(samples[0].input);
+  CNN::Output<double> origPred = core->predict(samples[0].input).output;
+  CNN::Output<double> newPred = predictCore->predict(samples[0].input).output;
   CHECK_NEAR(origPred[0], newPred[0], 1e-9, "param roundtrip prediction match");
   std::cout << "  original=" << origPred[0] << "  from_params=" << newPred[0] << std::endl;
 }
@@ -217,8 +217,8 @@ static void testMultipleOutputNeurons()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<double>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;

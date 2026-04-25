@@ -119,8 +119,8 @@ static void testGPUMultiChannelInput()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;
@@ -209,8 +209,8 @@ static void testGPUParameterRoundTrip()
   auto predictCore = CNN::Core<float>::makeCore(predictConfig);
   CHECK(predictCore != nullptr, "GPU param roundtrip predict core creation");
 
-  CNN::Output<float> origPred = core->predict(samples[0].input);
-  CNN::Output<float> newPred = predictCore->predict(samples[0].input);
+  CNN::Output<float> origPred = core->predict(samples[0].input).output;
+  CNN::Output<float> newPred = predictCore->predict(samples[0].input).output;
   CHECK_NEAR(origPred[0], newPred[0], 0.01f, "GPU param roundtrip prediction match");
   std::cout << "  GPU original=" << origPred[0] << "  from_params=" << newPred[0] << std::endl;
 }

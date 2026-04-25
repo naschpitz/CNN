@@ -174,14 +174,23 @@ CNN::Input&lt;<span class="type">float</span>&gt; input({<span class="number">1<
     val = <span class="keyword">static_cast</span>&lt;<span class="type">float</span>&gt;(<span class="func">rand</span>()) / RAND_MAX;
 }
 
-<span class="comment">// Get prediction</span>
-CNN::Output&lt;<span class="type">float</span>&gt; output = core-&gt;<span class="func">predict</span>(input);
+<span class="comment">// Get prediction. predict() returns PredictResult&lt;T&gt;:</span>
+<span class="comment">//   .output — post-activation values (e.g. softmax probabilities)</span>
+<span class="comment">//   .logits — pre-activation z of the dense head's last layer (for OOD detection)</span>
+CNN::PredictResult&lt;<span class="type">float</span>&gt; result = core-&gt;<span class="func">predict</span>(input);
+<span class="keyword">const</span> <span class="keyword">auto</span>&amp; output = result.output;
+<span class="keyword">const</span> <span class="keyword">auto</span>&amp; logits = result.logits;
 
 <span class="comment">// Print results (10 output neurons)</span>
 <span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; output.size(); ++i) {
-    std::cout &lt;&lt; <span class="string">"Class "</span> &lt;&lt; i &lt;&lt; <span class="string">": "</span> &lt;&lt; output[i] &lt;&lt; std::endl;
+    std::cout &lt;&lt; <span class="string">"Class "</span> &lt;&lt; i &lt;&lt; <span class="string">": prob="</span> &lt;&lt; output[i]
+              &lt;&lt; <span class="string">"  logit="</span> &lt;&lt; logits[i] &lt;&lt; std::endl;
 }
 </code></pre>
+
+<div class="info-box">
+  <strong>Why both?</strong> Softmax is shift-invariant: <code>softmax(z) = softmax(z + c)</code>, so two very different logit vectors (e.g. <code>[-50, 50]</code> and <code>[-0.2, 0.4]</code>) can produce the same probabilities. The first is "confidently picking class 1"; the second is "barely picking class 1". Logits expose this magnitude information, enabling OOD-detection scores like max-logit, logit-norm, and free-energy <code>E(x) = −log Σ exp(zᵢ)</code>.
+</div>
 
 <h2 id="test">4. Testing</h2>
 

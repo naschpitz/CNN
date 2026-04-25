@@ -121,8 +121,8 @@ static void testGPUTrueBNConvergence()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > 0.6f && pred1[0] < 0.4f)
       converged = true;
@@ -188,10 +188,10 @@ static void testGPUTrueBNExactMultiSample()
              "GPU-CPU exact BN 2-sample runningVar");
 
   // Verify predictions match
-  auto gpuPred0 = gpuCore->predict(samples[0].input);
-  auto cpuPred0 = cpuCore->predict(samples[0].input);
-  auto gpuPred1 = gpuCore->predict(samples[1].input);
-  auto cpuPred1 = cpuCore->predict(samples[1].input);
+  auto gpuPred0 = gpuCore->predict(samples[0].input).output;
+  auto cpuPred0 = cpuCore->predict(samples[0].input).output;
+  auto gpuPred1 = gpuCore->predict(samples[1].input).output;
+  auto cpuPred1 = cpuCore->predict(samples[1].input).output;
 
   CHECK_NEAR(gpuPred0[0], cpuPred0[0], tol, "GPU-CPU exact BN 2-sample pred0[0]");
   CHECK_NEAR(gpuPred0[1], cpuPred0[1], tol, "GPU-CPU exact BN 2-sample pred0[1]");

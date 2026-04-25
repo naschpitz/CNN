@@ -42,10 +42,10 @@ CoreGPU<T>::CoreGPU(const CoreConfig<T>& coreConfig) : Core<T>(coreConfig)
 //===================================================================================================================//
 
 template <typename T>
-Outputs<T> CoreGPU<T>::predict(const Inputs<T>& inputs)
+PredictResults<T> CoreGPU<T>::predict(const Inputs<T>& inputs)
 {
   ulong numInputs = inputs.size();
-  Outputs<T> outputs(numInputs);
+  PredictResults<T> results(numInputs);
 
   // Distribute inputs across GPUs
   ulong inputsPerGPU = numInputs / this->numGPUs;
@@ -67,11 +67,11 @@ Outputs<T> CoreGPU<T>::predict(const Inputs<T>& inputs)
       workItems.append({gpuIdx, startIdx, endIdx});
   }
 
-  std::vector<Outputs<T>> gpuOutputs(this->numGPUs);
+  std::vector<PredictResults<T>> gpuResults(this->numGPUs);
   std::atomic<ulong> completedInputs{0};
 
   QtConcurrent::blockingMap(
-    workItems, [this, &inputs, &gpuOutputs, &completedInputs, numInputs](const GPUWorkItem& item) {
+    workItems, [this, &inputs, &gpuResults, &completedInputs, numInputs](const GPUWorkItem& item) {
       ProgressCallback callback;
 
       if (this->progressCallback) {
@@ -81,19 +81,19 @@ Outputs<T> CoreGPU<T>::predict(const Inputs<T>& inputs)
         };
       }
 
-      gpuOutputs[item.gpuIdx] =
+      gpuResults[item.gpuIdx] =
         this->gpuWorkers[item.gpuIdx]->predictSubset(inputs, item.startIdx, item.endIdx, callback);
     });
 
-  // Merge GPU outputs into final result
+  // Merge per-GPU results into final result
   for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
     ulong startIdx = gpuIdx * inputsPerGPU + std::min(gpuIdx, remainder);
 
-    for (ulong i = 0; i < gpuOutputs[gpuIdx].size(); i++)
-      outputs[startIdx + i] = std::move(gpuOutputs[gpuIdx][i]);
+    for (ulong i = 0; i < gpuResults[gpuIdx].size(); i++)
+      results[startIdx + i] = std::move(gpuResults[gpuIdx][i]);
   }
 
-  return outputs;
+  return results;
 }
 
 //===================================================================================================================//

@@ -61,8 +61,8 @@ static void testGPUEndToEnd()
       std::cout << "  retry #" << attempt << std::endl;
     core = CNN::Core<float>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > 0.7f && pred1[0] < 0.3f)
       converged = true;
@@ -147,10 +147,10 @@ static void testGPUPredictOnly()
 
   auto gpuCore = CNN::Core<float>::makeCore(gpuConfig);
 
-  CNN::Output<float> cpuPred0 = cpuCore->predict(samples[0].input);
-  CNN::Output<float> gpuPred0 = gpuCore->predict(samples[0].input);
-  CNN::Output<float> cpuPred1 = cpuCore->predict(samples[1].input);
-  CNN::Output<float> gpuPred1 = gpuCore->predict(samples[1].input);
+  CNN::Output<float> cpuPred0 = cpuCore->predict(samples[0].input).output;
+  CNN::Output<float> gpuPred0 = gpuCore->predict(samples[0].input).output;
+  CNN::Output<float> cpuPred1 = cpuCore->predict(samples[1].input).output;
+  CNN::Output<float> gpuPred1 = gpuCore->predict(samples[1].input).output;
 
   std::cout << "  CPU bright=" << cpuPred0[0] << "  GPU bright=" << gpuPred0[0] << std::endl;
   std::cout << "  CPU dark=" << cpuPred1[0] << "  GPU dark=" << gpuPred1[0] << std::endl;
@@ -237,8 +237,8 @@ static void testGPUWithPoolLayer()
       std::cout << "  retry #" << attempt << std::endl;
     auto core = CNN::Core<float>::makeCore(config);
     core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input);
-    pred1 = core->predict(samples[1].input);
+    pred0 = core->predict(samples[0].input).output;
+    pred1 = core->predict(samples[1].input).output;
 
     if (pred0[0] > pred1[0])
       converged = true;
@@ -249,7 +249,6 @@ static void testGPUWithPoolLayer()
 }
 
 //===================================================================================================================//
-
 
 //===================================================================================================================//
 

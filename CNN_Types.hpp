@@ -18,16 +18,18 @@ namespace CNN
   template <typename T>
   using Input = Tensor3D<T>;
 
+  template <typename T>
+  using Inputs = std::vector<Input<T>>;
+
   // Output from the CNN is a 1D vector (from dense layers)
   template <typename T>
   using Output = std::vector<T>;
 
-  // Batch types
+  // Pre-activation values (z) of the ANN dense head's last layer.
+  // Useful for OOD-detection scores (max-logit, logit-norm, free-energy)
+  // that softmax discards.
   template <typename T>
-  using Inputs = std::vector<Input<T>>;
-
-  template <typename T>
-  using Outputs = std::vector<Output<T>>;
+  using Logits = std::vector<T>;
 }
 
 //===================================================================================================================//

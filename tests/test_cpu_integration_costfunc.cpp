@@ -204,7 +204,7 @@ static void testCrossEntropyTraining()
 
     CNN::TestResult<double> result = core->test(samples.size(), CNN::makeSampleProvider(samples));
 
-    auto out0 = core->predict(samples[0].input);
+    auto out0 = core->predict(samples[0].input).output;
     double sum0 = out0[0] + out0[1] + out0[2];
 
     bool lossOk = result.averageLoss < 1.0 && std::isfinite(result.averageLoss);

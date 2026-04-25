@@ -29,8 +29,8 @@ namespace CNN
       // loadSources(), allocateBuffers() manually.
       CoreGPUWorker(const CoreGPUWorkerConfig<T>& workerConfig, OpenCLWrapper::Core& sharedCore);
 
-      //-- Predict --//
-      Output<T> predict(const Input<T>& input);
+      //-- Predict (returns post-activation output and dense-head logits) --//
+      PredictResult<T> predict(const Input<T>& input);
 
       //-- Training (called by CoreGPU orchestrator) --//
       T trainSubset(const Samples<T>& batchSamples, ulong totalSamples, ulong epoch, ulong totalEpochs,
@@ -40,8 +40,8 @@ namespace CNN
       std::pair<T, ulong> testSubset(const Samples<T>& samples, ulong startIdx, ulong endIdx);
 
       //-- Batch predict (called by CoreGPU orchestrator) --//
-      Outputs<T> predictSubset(const Inputs<T>& inputs, ulong startIdx, ulong endIdx,
-                               const ProgressCallback& callback = nullptr);
+      PredictResults<T> predictSubset(const Inputs<T>& inputs, ulong startIdx, ulong endIdx,
+                                      const ProgressCallback& callback = nullptr);
 
       //-- Step-by-step training methods (for external orchestration) --//
       void backpropagateSample(const Input<T>& input, const Output<T>& expected);

@@ -111,11 +111,20 @@
   <tr><th>Type</th><th>Definition</th><th>Description</th></tr>
   <tr><td><code>Tensor1D&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>1D tensor</td></tr>
   <tr><td><code>Input&lt;T&gt;</code></td><td><code>Tensor3D&lt;T&gt;</code></td><td>Network input (3D image tensor)</td></tr>
-  <tr><td><code>Output&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>Network output (1D classification vector)</td></tr>
   <tr><td><code>Inputs&lt;T&gt;</code></td><td><code>std::vector&lt;Input&lt;T&gt;&gt;</code></td><td>Batch of inputs</td></tr>
-  <tr><td><code>Outputs&lt;T&gt;</code></td><td><code>std::vector&lt;Output&lt;T&gt;&gt;</code></td><td>Batch of outputs</td></tr>
+  <tr><td><code>Output&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>Network output (1D classification vector — post-activation of the dense head)</td></tr>
+  <tr><td><code>Logits&lt;T&gt;</code></td><td><code>std::vector&lt;T&gt;</code></td><td>Pre-activation values (z) of the dense head's last layer — input to the final activation function</td></tr>
+  <tr><td><code>PredictResults&lt;T&gt;</code></td><td><code>std::vector&lt;PredictResult&lt;T&gt;&gt;</code></td><td>Batch of predict results</td></tr>
   <tr><td><code>Sample&lt;T&gt;</code></td><td>struct { Input&lt;T&gt; input; Output&lt;T&gt; output; }</td><td>Training/test sample</td></tr>
   <tr><td><code>Samples&lt;T&gt;</code></td><td><code>std::vector&lt;Sample&lt;T&gt;&gt;</code></td><td>Collection of samples</td></tr>
+</table>
+
+<h3>PredictResult&lt;T&gt; <span class="badge badge-blue">CNN_PredictResult.hpp</span></h3>
+<p>Returned by <code>predict()</code>. Carries both the post-activation output and the pre-activation (z) values of the ANN dense head's last layer. Logits enable calibration / out-of-distribution detection scores (max-logit, logit-norm, free-energy <code>−log Σ exp(zᵢ)</code>) that softmax discards because softmax is shift-invariant: <code>softmax(z) = softmax(z + c)</code>.</p>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>output</code></td><td><code>Output&lt;T&gt;</code></td><td>Post-activation values of the dense head's last layer (e.g. softmax probabilities)</td></tr>
+  <tr><td><code>logits</code></td><td><code>Logits&lt;T&gt;</code></td><td>Pre-activation values (z) of the dense head's last layer</td></tr>
 </table>
 
 <div class="info-box">
@@ -333,8 +342,8 @@
 <table>
   <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
   <tr><td><code>makeCore(config)</code></td><td><code>unique_ptr&lt;Core&lt;T&gt;&gt;</code></td><td><strong>Factory:</strong> creates CoreCPU or CoreGPU</td></tr>
-  <tr><td><code>predict(inputs)</code></td><td><code>Outputs&lt;T&gt;</code></td><td><strong>Virtual:</strong> batch propagation — distributes inputs across threads/GPUs. Output order matches input order.</td></tr>
-  <tr><td><code>predict(input)</code></td><td><code>Output&lt;T&gt;</code></td><td>Single-input prediction. The underlying ANN sub-core uses the step worker directly (no threading) to avoid deadlocks when called from within CNN's thread pool.</td></tr>
+  <tr><td><code>predict(inputs)</code></td><td><code>PredictResults&lt;T&gt;</code></td><td><strong>Virtual:</strong> batch propagation — distributes inputs across threads/GPUs. Output order matches input order. Each result carries both <code>output</code> (post-activation) and <code>logits</code> (pre-activation z of the dense head's last layer).</td></tr>
+  <tr><td><code>predict(input)</code></td><td><code>PredictResult&lt;T&gt;</code></td><td>Single-input prediction. The underlying ANN sub-core uses the step worker directly (no threading) to avoid deadlocks when called from within CNN's thread pool.</td></tr>
   <tr><td><code>train(numSamples, sampleProvider)</code></td><td><code>void</code></td><td>Full training loop with SGD</td></tr>
   <tr><td><code>test(numSamples, sampleProvider)</code></td><td><code>TestResult&lt;T&gt;</code></td><td>Evaluate loss on a test set using on-demand sample loading</td></tr>
   <tr><td><code>setTrainingCallback(cb)</code></td><td><code>void</code></td><td>Attach progress callback</td></tr>
@@ -370,8 +379,8 @@
 <h3>CoreGPUWorker&lt;T&gt;</h3>
 <table>
   <tr><th>Method</th><th>Description</th></tr>
-  <tr><td><code>predict(input)</code></td><td>Single-sample inference on GPU</td></tr>
-  <tr><td><code>predictSubset(inputs, start, end)</code></td><td>Batch inference on a range of inputs (called by CoreGPU)</td></tr>
+  <tr><td><code>predict(input)</code></td><td>Single-sample inference on GPU. Returns <code>PredictResult&lt;T&gt;</code>.</td></tr>
+  <tr><td><code>predictSubset(inputs, start, end)</code></td><td>Batch inference on a range of inputs (called by CoreGPU). Returns <code>PredictResults&lt;T&gt;</code>.</td></tr>
   <tr><td><code>trainSubset(samples, start, end, ...)</code></td><td>Train on a range of samples</td></tr>
   <tr><td><code>testSubset(samples, start, end)</code></td><td>Evaluate a range of samples</td></tr>
   <tr><td><code>readAccumulatedGradients()</code></td><td>Read gradient buffers from GPU</td></tr>
