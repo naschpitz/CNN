@@ -17,12 +17,12 @@ namespace CNN
 {
   // Convolution layer configuration
   struct ConvLayerConfig {
-    ulong numFilters;
-    ulong filterH;
-    ulong filterW;
-    ulong strideY;
-    ulong strideX;
-    SlidingStrategyType slidingStrategy;
+      ulong numFilters;
+      ulong filterH;
+      ulong filterW;
+      ulong strideY;
+      ulong strideX;
+      SlidingStrategyType slidingStrategy;
   };
 
   // ReLU layer configuration (no parameters)
@@ -31,11 +31,11 @@ namespace CNN
 
   // Pooling layer configuration
   struct PoolLayerConfig {
-    PoolTypeEnum poolType;
-    ulong poolH;
-    ulong poolW;
-    ulong strideY;
-    ulong strideX;
+      PoolTypeEnum poolType;
+      ulong poolH;
+      ulong poolW;
+      ulong strideY;
+      ulong strideX;
   };
 
   // Flatten layer configuration (no parameters, auto-inserted before dense)
@@ -52,8 +52,8 @@ namespace CNN
 
   // Batch normalization layer configuration
   struct NormLayerConfig {
-    float epsilon = 1e-5f; // Small constant for numerical stability
-    float momentum = 0.1f; // Momentum for running mean/variance update
+      float epsilon = 1e-5f; // Small constant for numerical stability
+      float momentum = 0.1f; // Momentum for running mean/variance update
   };
 
   // Residual block markers (no parameters — projection weights handled separately)
@@ -78,28 +78,28 @@ namespace CNN
   };
 
   struct CNNLayerConfig {
-    LayerType type;
-    std::variant<ConvLayerConfig, ReLULayerConfig, PoolLayerConfig, FlattenLayerConfig, GlobalAvgPoolLayerConfig,
-                 GlobalDualPoolLayerConfig, NormLayerConfig, ResidualStartConfig, ResidualEndConfig>
-      config;
+      LayerType type;
+      std::variant<ConvLayerConfig, ReLULayerConfig, PoolLayerConfig, FlattenLayerConfig, GlobalAvgPoolLayerConfig,
+                   GlobalDualPoolLayerConfig, NormLayerConfig, ResidualStartConfig, ResidualEndConfig>
+        config;
   };
 
   // Dense layer configuration (delegates to ANN)
   struct DenseLayerConfig {
-    ulong numNeurons;
-    ANN::ActvFuncType actvFuncType;
+      ulong numNeurons;
+      ANN::ActvFuncType actvFuncType;
   };
 
   // Full CNN layers configuration
   class LayersConfig
   {
-  public:
-    std::vector<CNNLayerConfig> cnnLayers;
-    std::vector<DenseLayerConfig> denseLayers;
+    public:
+      std::vector<CNNLayerConfig> cnnLayers;
+      std::vector<DenseLayerConfig> denseLayers;
 
-    // Validate layer-by-layer shape compatibility
-    // Returns the output shape of the CNN portion (before flatten)
-    Shape3D validateShapes(const Shape3D& inputShape) const;
+      // Validate layer-by-layer shape compatibility
+      // Returns the output shape of the CNN portion (before flatten)
+      Shape3D validateShapes(const Shape3D& inputShape) const;
   };
 }
 

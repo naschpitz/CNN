@@ -17,9 +17,9 @@ namespace CNN
 
   class Device
   {
-  public:
-    static DeviceType nameToType(const std::string& name);
-    static std::string typeToName(const DeviceType& deviceType);
+    public:
+      static DeviceType nameToType(const std::string& name);
+      static std::string typeToName(const DeviceType& deviceType);
   };
 }
 

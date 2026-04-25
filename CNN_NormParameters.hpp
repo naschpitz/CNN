@@ -14,11 +14,11 @@ namespace CNN
   // runningMean and runningVar are accumulated during training, used at inference
   template <typename T>
   struct NormParameters {
-    std::vector<T> gamma; // Scale: [numChannels]
-    std::vector<T> beta; // Shift: [numChannels]
-    std::vector<T> runningMean; // Running mean: [numChannels]
-    std::vector<T> runningVar; // Running variance: [numChannels]
-    ulong numChannels = 0;
+      std::vector<T> gamma; // Scale: [numChannels]
+      std::vector<T> beta; // Shift: [numChannels]
+      std::vector<T> runningMean; // Running mean: [numChannels]
+      std::vector<T> runningVar; // Running variance: [numChannels]
+      ulong numChannels = 0;
   };
 }
 

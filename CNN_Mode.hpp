@@ -18,9 +18,9 @@ namespace CNN
 
   class Mode
   {
-  public:
-    static ModeType nameToType(const std::string& name);
-    static std::string typeToName(const ModeType& modeType);
+    public:
+      static ModeType nameToType(const std::string& name);
+      static std::string typeToName(const ModeType& modeType);
   };
 }
 

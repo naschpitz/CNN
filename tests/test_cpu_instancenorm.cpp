@@ -12,7 +12,8 @@ static void testInstanceNormInference()
 
   CNN::Shape3D shape{2, 2, 2};
   CNN::Tensor3D<double> input(shape);
-  input.data = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+  input.data = {1.0, 2.0, 3.0, 4.0,
+                5.0, 6.0, 7.0, 8.0};
 
   CNN::NormParameters<double> params;
   params.numChannels = 2;
@@ -51,7 +52,8 @@ static void testInstanceNormTraining()
 
   CNN::Shape3D shape{2, 2, 2};
   CNN::Tensor3D<double> input(shape);
-  input.data = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+  input.data = {1.0, 2.0, 3.0, 4.0,
+                5.0, 6.0, 7.0, 8.0};
 
   CNN::NormParameters<double> params;
   params.numChannels = 2;
@@ -89,6 +91,8 @@ static void testInstanceNormTraining()
   CHECK_NEAR(params.runningMean[1], 0.65, 1e-7, "instancenorm train runningMean updated ch1");
   CHECK_NEAR(params.runningVar[0], 1.025, 1e-7, "instancenorm train runningVar updated ch0");
 }
+
+
 
 //===================================================================================================================//
 

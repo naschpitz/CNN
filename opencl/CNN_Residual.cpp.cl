@@ -29,9 +29,10 @@ kernel void residual_add(global TYPE* actvs, ulong outOffset, ulong skipOffset, 
 //===================================================================================================================//
 
 // Projection shortcut: 1x1 conv. One work-item per output element (oc, s).
-kernel void residual_add_proj(global TYPE* actvs, ulong outOffset, ulong skipOffset, global const TYPE* projW,
-                              global const TYPE* projB, ulong wOffset, ulong bOffset, ulong inC, ulong outC,
-                              ulong spatialSize)
+kernel void residual_add_proj(global TYPE* actvs, ulong outOffset, ulong skipOffset,
+                              global const TYPE* projW, global const TYPE* projB,
+                              ulong wOffset, ulong bOffset,
+                              ulong inC, ulong outC, ulong spatialSize)
 {
   size_t gid = get_global_id(0);
   ulong totalOut = outC * spatialSize;
@@ -69,8 +70,10 @@ kernel void residual_bwd(global TYPE* grads, ulong dSkipOffset, ulong dOutOffset
 //===================================================================================================================//
 
 // Projection backward: compute dSkip = W^T * dOut. One work-item per skip element (ic, s).
-kernel void residual_bwd_proj_dskip(global TYPE* grads, global const TYPE* projW, ulong wOffset, ulong dSkipOffset,
-                                    ulong dOutOffset, ulong inC, ulong outC, ulong spatialSize)
+kernel void residual_bwd_proj_dskip(global TYPE* grads, global const TYPE* projW,
+                                     ulong wOffset,
+                                     ulong dSkipOffset, ulong dOutOffset,
+                                     ulong inC, ulong outC, ulong spatialSize)
 {
   size_t gid = get_global_id(0);
   ulong totalIn = inC * spatialSize;
@@ -92,9 +95,11 @@ kernel void residual_bwd_proj_dskip(global TYPE* grads, global const TYPE* projW
 //===================================================================================================================//
 
 // Projection backward: accumulate weight gradients. One work-item per weight (oc, ic).
-kernel void residual_bwd_proj_dw(global const TYPE* grads, global const TYPE* actvs, global TYPE* dProjW,
-                                 global TYPE* dProjB, ulong wOffset, ulong bOffset, ulong dOutOffset, ulong skipOffset,
-                                 ulong inC, ulong outC, ulong spatialSize)
+kernel void residual_bwd_proj_dw(global const TYPE* grads, global const TYPE* actvs,
+                                  global TYPE* dProjW, global TYPE* dProjB,
+                                  ulong wOffset, ulong bOffset,
+                                  ulong dOutOffset, ulong skipOffset,
+                                  ulong inC, ulong outC, ulong spatialSize)
 {
   size_t gid = get_global_id(0);
 
@@ -125,3 +130,4 @@ kernel void residual_bwd_proj_dw(global const TYPE* grads, global const TYPE* ac
 //===================================================================================================================//
 
 #endif // CNN_RESIDUAL_CPP_CL
+

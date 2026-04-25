@@ -43,7 +43,8 @@ void GlobalDualPool<T>::propagate(Tensor3D<T>& input, const Shape3D& inputShape)
 // Avg path: gradient distributed uniformly (1/spatialSize).
 // Max path: gradient flows only to the first max element.
 template <typename T>
-void GlobalDualPool<T>::backpropagate(Tensor3D<T>& gradOutput, const Tensor3D<T>& layerInput, const Shape3D& inputShape)
+void GlobalDualPool<T>::backpropagate(Tensor3D<T>& gradOutput, const Tensor3D<T>& layerInput,
+                                     const Shape3D& inputShape)
 {
   ulong C = inputShape.c;
   ulong spatialSize = inputShape.h * inputShape.w;
@@ -93,3 +94,4 @@ void GlobalDualPool<T>::backpropagate(Tensor3D<T>& gradOutput, const Tensor3D<T>
 template class GlobalDualPool<int>;
 template class GlobalDualPool<float>;
 template class GlobalDualPool<double>;
+

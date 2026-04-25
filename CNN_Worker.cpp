@@ -222,7 +222,8 @@ void Worker<T>::initializeResidualParams(const LayersConfig& layersConfig, const
       if (skipShape.c != currentShape.c) {
         // Channel mismatch — need a 1×1 projection
         // Check if already loaded
-        if (residualIdx < parameters.residualParams.size() && !parameters.residualParams[residualIdx].weights.empty()) {
+        if (residualIdx < parameters.residualParams.size() &&
+            !parameters.residualParams[residualIdx].weights.empty()) {
           residualIdx++;
           break;
         }

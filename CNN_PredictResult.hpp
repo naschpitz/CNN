@@ -18,8 +18,8 @@ namespace CNN
   // softmax(z) == softmax(z + c).
   template <typename T>
   struct PredictResult {
-    Output<T> output;
-    Logits<T> logits;
+      Output<T> output;
+      Logits<T> logits;
   };
 
   template <typename T>

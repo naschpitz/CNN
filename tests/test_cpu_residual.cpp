@@ -136,6 +136,8 @@ static void testResidualParametersBackward()
   }
 }
 
+
+
 //===================================================================================================================//
 
 static void testResidualGradientCheck()

@@ -8,10 +8,10 @@
 namespace CNN
 {
   struct ValidationConfig {
-    bool enabled = true;
-    bool autoSize = true;
-    float size = 0.15f;
-    ulong checkInterval = 1;
+      bool enabled = true;
+      bool autoSize = true;
+      float size = 0.15f;
+      ulong checkInterval = 1;
   };
 }
 

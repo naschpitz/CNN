@@ -10,7 +10,8 @@ static void testGlobalDualPoolPropagate()
 
   CNN::Shape3D shape{2, 2, 3};
   CNN::Tensor3D<double> input(shape);
-  input.data = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0};
+  input.data = {1.0, 2.0, 3.0, 4.0,  5.0,  6.0,
+                7.0, 8.0, 9.0, 10.0, 11.0, 12.0};
 
   CNN::GlobalDualPool<double>::propagate(input, shape);
 
@@ -32,7 +33,8 @@ static void testGlobalDualPoolBackpropagate()
   ulong spatialSize = 6;
 
   CNN::Tensor3D<double> layerInput(inputShape);
-  layerInput.data = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0};
+  layerInput.data = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0,
+                     7.0, 8.0, 9.0, 10.0, 11.0, 12.0};
 
   CNN::Tensor3D<double> gradOutput({4, 1, 1});
   gradOutput.data = {1.2, 0.6, 0.5, 0.3};
@@ -126,6 +128,7 @@ static void testGlobalDualPoolLargeSpatial()
   CHECK_NEAR(input.data[0], 4999.5, 1e-6, "gdp large avg");
   CHECK_NEAR(input.data[1], 9999.0, 1e-9, "gdp large max");
 }
+
 
 //===================================================================================================================//
 
