@@ -19,8 +19,8 @@ namespace CNN
       CoreCPU(const CoreConfig<T>& config);
 
       //-- Core interface --//
-      using Core<T>::predict; // Bring in the single-input convenience wrapper
-      PredictResults<T> predict(const Inputs<T>& inputs) override;
+      using Core<T>::predict; // Bring in the eager Inputs<T> + single-input wrappers
+      PredictResults<T> predict(ulong numSamples, const InputProvider<T>& provider) override;
       void train(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
       TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) override;
 

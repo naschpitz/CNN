@@ -94,60 +94,79 @@ CoreCPU<T>::CoreCPU(const CoreConfig<T>& config) : Core<T>(config)
 //===================================================================================================================//
 
 template <typename T>
-PredictResults<T> CoreCPU<T>::predict(const Inputs<T>& inputs)
+PredictResults<T> CoreCPU<T>::predict(ulong numSamples, const InputProvider<T>& provider)
 {
   int numThreads = this->numThreads;
 
   if (numThreads <= 0)
     numThreads = QThreadPool::globalInstance()->maxThreadCount();
 
-  // Build a config snapshot with current trained parameters so fresh workers get the right weights
+  // Build a config snapshot with current trained parameters so fresh workers
+  // get the right weights. Workers are allocated once and reused across
+  // batches.
   CoreConfig<T> predictConfig = this->coreConfig;
   predictConfig.parameters = this->parameters;
 
-  // Create per-thread workers (predict-only, no training buffers)
   std::vector<std::unique_ptr<CoreCPUWorker<T>>> workers;
 
   for (int i = 0; i < numThreads; i++) {
     workers.push_back(std::make_unique<CoreCPUWorker<T>>(predictConfig, this->layersConfig, this->parameters, false));
   }
 
-  ulong numInputs = inputs.size();
-  PredictResults<T> results(numInputs);
+  PredictResults<T> results;
+  results.reserve(numSamples);
 
-  // Distribute inputs across workers
-  std::vector<ulong> workerInputCounts(numThreads);
-
-  for (int i = 0; i < numThreads; i++)
-    workerInputCounts[i] = numInputs / static_cast<ulong>(numThreads) +
-                           (static_cast<ulong>(i) < numInputs % static_cast<ulong>(numThreads) ? 1 : 0);
-
-  // Each worker predicts its chunk in parallel
-  QVector<int> workerIndices(numThreads);
-
-  for (int i = 0; i < numThreads; i++)
-    workerIndices[i] = i;
-
+  // Match the test() pattern: pull batches from the provider and process each
+  // with QtConcurrent across the worker pool. Bounded memory regardless of
+  // total dataset size.
+  ulong batchSize = std::max<ulong>(static_cast<ulong>(numThreads), this->testConfig.batchSize);
+  ulong numBatches = (numSamples + batchSize - 1) / batchSize;
   std::atomic<ulong> completedInputs{0};
 
-  QtConcurrent::blockingMap(workerIndices, [&](int workerIdx) {
-    CoreCPUWorker<T>& worker = *workers[workerIdx];
+  for (ulong batchIndex = 0; batchIndex < numBatches; batchIndex++) {
+    Inputs<T> batch = provider(batchSize, batchIndex);
+    ulong batchN = batch.size();
 
-    ulong workerLocalStart = 0;
+    if (batchN == 0)
+      break;
 
-    for (int i = 0; i < workerIdx; i++)
-      workerLocalStart += workerInputCounts[i];
-    ulong workerLocalEnd = workerLocalStart + workerInputCounts[workerIdx];
+    PredictResults<T> batchResults(batchN);
 
-    for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
-      results[s] = worker.predict(inputs[s]);
+    // Distribute this batch across workers.
+    std::vector<ulong> workerInputCounts(numThreads);
 
-      ulong completed = ++completedInputs;
+    for (int i = 0; i < numThreads; i++)
+      workerInputCounts[i] = batchN / static_cast<ulong>(numThreads) +
+                             (static_cast<ulong>(i) < batchN % static_cast<ulong>(numThreads) ? 1 : 0);
 
-      if (this->progressCallback)
-        this->progressCallback(completed, numInputs);
-    }
-  });
+    QVector<int> workerIndices(numThreads);
+
+    for (int i = 0; i < numThreads; i++)
+      workerIndices[i] = i;
+
+    QtConcurrent::blockingMap(workerIndices, [&](int workerIdx) {
+      CoreCPUWorker<T>& worker = *workers[workerIdx];
+
+      ulong workerLocalStart = 0;
+
+      for (int i = 0; i < workerIdx; i++)
+        workerLocalStart += workerInputCounts[i];
+
+      ulong workerLocalEnd = workerLocalStart + workerInputCounts[workerIdx];
+
+      for (ulong s = workerLocalStart; s < workerLocalEnd; s++) {
+        batchResults[s] = worker.predict(batch[s]);
+
+        ulong completed = ++completedInputs;
+
+        if (this->progressCallback)
+          this->progressCallback(completed, numSamples);
+      }
+    });
+
+    for (auto& r : batchResults)
+      results.push_back(std::move(r));
+  }
 
   return results;
 }

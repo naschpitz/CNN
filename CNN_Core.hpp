@@ -27,11 +27,16 @@ namespace CNN
       static std::unique_ptr<Core<T>> makeCore(const CoreConfig<T>& config);
 
       //-- Core interface --//
-      // predict returns both the post-activation output and the pre-activation (z) of the
-      // ANN dense head's last layer, so callers can compute calibration / OOD-detection
-      // scores (max-logit, logit-norm, free-energy) that softmax discards.
-      virtual PredictResults<T> predict(const Inputs<T>& inputs) = 0;
-      PredictResult<T> predict(const Input<T>& input); // Convenience wrapper for the multi-input version
+      // Streaming predict: pulls inputs in batches from `provider`. Lets
+      // callers score arbitrarily large datasets without holding the full
+      // Inputs<T> in memory. Eager overloads below wrap this one.
+      virtual PredictResults<T> predict(ulong numSamples, const InputProvider<T>& provider) = 0;
+      // Eager overloads (concrete wrappers around the streaming version).
+      // Each result carries .output (post-activation, e.g. softmax probs)
+      // and .logits (pre-activation z of the dense head's last layer, used
+      // for calibration / OOD scores that softmax discards).
+      PredictResults<T> predict(const Inputs<T>& inputs);
+      PredictResult<T> predict(const Input<T>& input);
       virtual void train(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
       virtual TestResult<T> test(ulong numSamples, const SampleProvider<T>& sampleProvider) = 0;
 

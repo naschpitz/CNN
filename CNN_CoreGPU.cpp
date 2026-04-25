@@ -42,14 +42,17 @@ CoreGPU<T>::CoreGPU(const CoreConfig<T>& coreConfig) : Core<T>(coreConfig)
 //===================================================================================================================//
 
 template <typename T>
-PredictResults<T> CoreGPU<T>::predict(const Inputs<T>& inputs)
+PredictResults<T> CoreGPU<T>::predict(ulong numSamples, const InputProvider<T>& provider)
 {
-  ulong numInputs = inputs.size();
-  PredictResults<T> results(numInputs);
+  // Pull batches from the provider; for each batch, fan out across the
+  // worker GPUs. Bounded host memory regardless of total dataset size —
+  // only one batch lives in host RAM at a time.
+  PredictResults<T> results;
+  results.reserve(numSamples);
 
-  // Distribute inputs across GPUs
-  ulong inputsPerGPU = numInputs / this->numGPUs;
-  ulong remainder = numInputs % this->numGPUs;
+  ulong batchSize = std::max<ulong>(this->numGPUs, this->testConfig.batchSize);
+  ulong numBatches = (numSamples + batchSize - 1) / batchSize;
+  std::atomic<ulong> completedInputs{0};
 
   struct GPUWorkItem {
       size_t gpuIdx;
@@ -57,40 +60,49 @@ PredictResults<T> CoreGPU<T>::predict(const Inputs<T>& inputs)
       ulong endIdx;
   };
 
-  QVector<GPUWorkItem> workItems;
+  for (ulong batchIndex = 0; batchIndex < numBatches; batchIndex++) {
+    Inputs<T> batch = provider(batchSize, batchIndex);
+    ulong batchN = batch.size();
 
-  for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-    ulong startIdx = gpuIdx * inputsPerGPU + std::min(gpuIdx, remainder);
-    ulong endIdx = startIdx + inputsPerGPU + (gpuIdx < remainder ? 1 : 0);
+    if (batchN == 0)
+      break;
 
-    if (startIdx < endIdx)
-      workItems.append({gpuIdx, startIdx, endIdx});
-  }
+    // Split this batch across GPUs.
+    ulong perGPU = batchN / this->numGPUs;
+    ulong remainder = batchN % this->numGPUs;
 
-  std::vector<PredictResults<T>> gpuResults(this->numGPUs);
-  std::atomic<ulong> completedInputs{0};
+    QVector<GPUWorkItem> workItems;
 
-  QtConcurrent::blockingMap(
-    workItems, [this, &inputs, &gpuResults, &completedInputs, numInputs](const GPUWorkItem& item) {
-      ProgressCallback callback;
+    for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
+      ulong startIdx = gpuIdx * perGPU + std::min(gpuIdx, remainder);
+      ulong endIdx = startIdx + perGPU + (gpuIdx < remainder ? 1 : 0);
 
-      if (this->progressCallback) {
-        callback = [this, &completedInputs, numInputs](ulong /*current*/, ulong /*total*/) {
-          ulong completed = ++completedInputs;
-          this->progressCallback(completed, numInputs);
-        };
-      }
+      if (startIdx < endIdx)
+        workItems.append({gpuIdx, startIdx, endIdx});
+    }
 
-      gpuResults[item.gpuIdx] =
-        this->gpuWorkers[item.gpuIdx]->predictSubset(inputs, item.startIdx, item.endIdx, callback);
-    });
+    std::vector<PredictResults<T>> gpuResults(this->numGPUs);
 
-  // Merge per-GPU results into final result
-  for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
-    ulong startIdx = gpuIdx * inputsPerGPU + std::min(gpuIdx, remainder);
+    QtConcurrent::blockingMap(
+      workItems, [this, &batch, &gpuResults, &completedInputs, numSamples](const GPUWorkItem& item) {
+        ProgressCallback callback;
 
-    for (ulong i = 0; i < gpuResults[gpuIdx].size(); i++)
-      results[startIdx + i] = std::move(gpuResults[gpuIdx][i]);
+        if (this->progressCallback) {
+          callback = [this, &completedInputs, numSamples](ulong /*current*/, ulong /*total*/) {
+            ulong completed = ++completedInputs;
+            this->progressCallback(completed, numSamples);
+          };
+        }
+
+        gpuResults[item.gpuIdx] =
+          this->gpuWorkers[item.gpuIdx]->predictSubset(batch, item.startIdx, item.endIdx, callback);
+      });
+
+    // Append per-GPU results in input order.
+    for (size_t gpuIdx = 0; gpuIdx < this->numGPUs; gpuIdx++) {
+      for (auto& r : gpuResults[gpuIdx])
+        results.push_back(std::move(r));
+    }
   }
 
   return results;
