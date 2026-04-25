@@ -140,7 +140,8 @@ void CoreGPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   // Sample index indirection for shuffling
   std::vector<ulong> sampleIndices(numSamples);
   std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
-  std::mt19937 rng(std::random_device{}());
+  // Reproducible when trainingConfig.shuffleSeed != 0; non-deterministic otherwise.
+  std::mt19937 rng(this->trainingConfig.shuffleSeed != 0 ? this->trainingConfig.shuffleSeed : std::random_device{}());
 
   // Saved training kernels per GPU — populated after first trainSubset
   std::vector<std::vector<std::vector<OpenCLWrapper::Kernel>>> savedKernels(this->numGPUs);

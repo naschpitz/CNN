@@ -200,6 +200,8 @@ static void testMultipleOutputNeurons()
 
   config.trainingConfig.numEpochs = 500;
   config.trainingConfig.learningRate = 0.5f;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
+  config.numThreads = 1; // Single-threaded — parallel batch reduction order is FP-non-deterministic.
   config.progressReports = 0;
 
   CNN::Samples<double> samples(2);
@@ -208,25 +210,14 @@ static void testMultipleOutputNeurons()
   samples[1].input = CNN::Tensor3D<double>({1, 8, 8}, 0.0);
   samples[1].output = {0.0, 1.0, 0.0}; // target: [0, 1, 0]
 
-  // Retry up to 5 times to handle random ANN weight initialization
-  CNN::Output<double> pred0, pred1;
-  bool converged = false;
+  auto core = CNN::Core<double>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<double> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<double> pred1 = core->predict(samples[1].input).output;
 
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    auto core = CNN::Core<double>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > pred1[0])
-      converged = true;
-  }
-
-  CHECK(pred0.size() == 3, "multi-output size");
   std::cout << "  pred(bright)=[" << pred0[0] << "," << pred0[1] << "," << pred0[2] << "]" << std::endl;
-  CHECK(converged, "multi-output[0] bright > dark (5 attempts)");
+  CHECK(pred0.size() == 3, "multi-output size");
+  CHECK(pred0[0] > pred1[0], "multi-output[0] bright > dark");
 }
 
 //===================================================================================================================//

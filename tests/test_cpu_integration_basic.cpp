@@ -40,6 +40,7 @@ static void testEndToEnd()
 
   config.trainingConfig.numEpochs = 100;
   config.trainingConfig.learningRate = 0.5f;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.progressReports = 0;
 
   // "bright" (gradient-fill) → 1, "dark" (all 0s) → 0
@@ -49,28 +50,16 @@ static void testEndToEnd()
   samples[1].input = CNN::Tensor3D<double>({1, 5, 5}, 0.0);
   samples[1].output = {0.0};
 
-  // Retry up to 5 times to handle random ANN weight initialization
-  std::unique_ptr<CNN::Core<double>> core;
-  CNN::Output<double> pred0, pred1;
-  bool converged = false;
-
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    core = CNN::Core<double>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > pred1[0])
-      converged = true;
-  }
+  auto core = CNN::Core<double>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<double> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<double> pred1 = core->predict(samples[1].input).output;
 
   CHECK(core != nullptr, "core creation");
   CHECK(pred0.size() == 1, "predict output size 0");
   CHECK(pred1.size() == 1, "predict output size 1");
   std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
-  CHECK(converged, "bright > dark after training (5 attempts)");
+  CHECK(pred0[0] > pred1[0], "bright > dark after training");
 
   // Test method
   CNN::TestResult<double> result = core->test(samples.size(), CNN::makeSampleProvider(samples));
@@ -137,6 +126,7 @@ static void testMultiConvStack()
   config.parameters.convParams = {initConv1, initConv2};
   config.trainingConfig.numEpochs = 500;
   config.trainingConfig.learningRate = 0.5f;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.progressReports = 0;
 
   CNN::Samples<double> samples(2);
@@ -145,24 +135,13 @@ static void testMultiConvStack()
   samples[1].input = CNN::Tensor3D<double>({1, 8, 8}, 0.0);
   samples[1].output = {0.0};
 
-  // Retry up to 5 times to handle random ANN weight initialization
-  CNN::Output<double> pred0, pred1;
-  bool converged = false;
-
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    auto core = CNN::Core<double>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > pred1[0])
-      converged = true;
-  }
+  auto core = CNN::Core<double>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<double> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<double> pred1 = core->predict(samples[1].input).output;
 
   std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
-  CHECK(converged, "multi-conv bright > dark (5 attempts)");
+  CHECK(pred0[0] > pred1[0], "multi-conv bright > dark");
 }
 
 static void testConvPoolConv()
@@ -222,6 +201,7 @@ static void testConvPoolConv()
   config.parameters.convParams = {initConv1, initConv2};
   config.trainingConfig.numEpochs = 500;
   config.trainingConfig.learningRate = 0.5f;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.progressReports = 0;
 
   CNN::Samples<double> samples(2);
@@ -230,24 +210,13 @@ static void testConvPoolConv()
   samples[1].input = CNN::Tensor3D<double>({1, 10, 10}, 0.0);
   samples[1].output = {0.0};
 
-  // Retry up to 5 times to handle random ANN weight initialization
-  CNN::Output<double> pred0, pred1;
-  bool converged = false;
-
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    auto core = CNN::Core<double>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > pred1[0])
-      converged = true;
-  }
+  auto core = CNN::Core<double>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<double> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<double> pred1 = core->predict(samples[1].input).output;
 
   std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
-  CHECK(converged, "conv-pool-conv bright > dark (5 attempts)");
+  CHECK(pred0[0] > pred1[0], "conv-pool-conv bright > dark");
 }
 
 //===================================================================================================================//
@@ -289,6 +258,7 @@ static void testMultiChannelInput()
 
   config.trainingConfig.numEpochs = 200;
   config.trainingConfig.learningRate = 0.1f;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.progressReports = 0;
 
   CNN::Samples<double> samples(2);
@@ -297,24 +267,13 @@ static void testMultiChannelInput()
   samples[1].input = CNN::Tensor3D<double>({3, 6, 6}, 0.0);
   samples[1].output = {0.0};
 
-  // Retry up to 5 times to handle random ANN weight initialization
-  CNN::Output<double> pred0, pred1;
-  bool converged = false;
-
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    auto core = CNN::Core<double>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > pred1[0])
-      converged = true;
-  }
+  auto core = CNN::Core<double>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<double> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<double> pred1 = core->predict(samples[1].input).output;
 
   std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
-  CHECK(converged, "multichannel bright > dark (5 attempts)");
+  CHECK(pred0[0] > pred1[0], "multichannel bright > dark");
 }
 
 //===================================================================================================================//
@@ -358,6 +317,7 @@ static void testBatchPredict()
 
   config.trainingConfig.numEpochs = 100;
   config.trainingConfig.learningRate = 0.5;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.progressReports = 0;
 
   // "bright" → 1, "dark" → 0
@@ -367,40 +327,28 @@ static void testBatchPredict()
   samples[1].input = CNN::Tensor3D<double>({1, 5, 5}, 0.0);
   samples[1].output = {0.0};
 
-  std::unique_ptr<CNN::Core<double>> core;
-  bool converged = false;
-  CNN::PredictResults<double> batchResults;
+  auto core = CNN::Core<double>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
 
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
+  // Batch predict both inputs via a slice-and-yield provider.
+  CNN::Inputs<double> inputs = {samples[0].input, samples[1].input};
+  auto sliceProvider = [&inputs](ulong batchSize, ulong batchIndex) {
+    ulong start = batchIndex * batchSize;
+    ulong end = std::min(start + batchSize, static_cast<ulong>(inputs.size()));
 
-    core = CNN::Core<double>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
+    if (start >= end)
+      return CNN::Inputs<double>{};
+    return CNN::Inputs<double>(inputs.begin() + start, inputs.begin() + end);
+  };
 
-    // Batch predict both inputs via a slice-and-yield provider.
-    CNN::Inputs<double> inputs = {samples[0].input, samples[1].input};
-    auto sliceProvider = [&inputs](ulong batchSize, ulong batchIndex) {
-      ulong start = batchIndex * batchSize;
-      ulong end = std::min(start + batchSize, static_cast<ulong>(inputs.size()));
-
-      if (start >= end)
-        return CNN::Inputs<double>{};
-      return CNN::Inputs<double>(inputs.begin() + start, inputs.begin() + end);
-    };
-
-    batchResults = core->predict(inputs.size(), sliceProvider);
-
-    if (batchResults[0].output[0] > batchResults[1].output[0])
-      converged = true;
-  }
+  CNN::PredictResults<double> batchResults = core->predict(inputs.size(), sliceProvider);
 
   CHECK(batchResults.size() == 2, "batch predict returns 2 outputs");
   CHECK(batchResults[0].output.size() == 1, "output[0] size = 1");
   CHECK(batchResults[1].output.size() == 1, "output[1] size = 1");
   CHECK(batchResults[0].logits.size() == batchResults[0].output.size(), "logits[0] size matches output");
   CHECK(batchResults[1].logits.size() == batchResults[1].output.size(), "logits[1] size matches output");
-  CHECK(converged, "batch predict: bright > dark after training");
+  CHECK(batchResults[0].output[0] > batchResults[1].output[0], "batch predict: bright > dark after training");
 
   // Verify batch predict matches single predict
   CNN::Output<double> single0 = core->predict(samples[0].input).output;

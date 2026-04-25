@@ -41,6 +41,7 @@ static void testGPUEndToEnd()
 
   config.trainingConfig.numEpochs = 100;
   config.trainingConfig.learningRate = 0.5f;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.progressReports = 0;
   config.numGPUs = 1;
 
@@ -51,28 +52,17 @@ static void testGPUEndToEnd()
   samples[1].input = CNN::Tensor3D<float>({1, 5, 5}, 0.0f);
   samples[1].output = {0.0f};
 
-  // Retry up to 5 times to handle random ANN weight initialization
-  std::unique_ptr<CNN::Core<float>> core;
-  CNN::Output<float> pred0, pred1;
-  bool converged = false;
-
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    core = CNN::Core<float>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > 0.7f && pred1[0] < 0.3f)
-      converged = true;
-  }
+  auto core = CNN::Core<float>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<float> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<float> pred1 = core->predict(samples[1].input).output;
 
   CHECK(core != nullptr, "GPU core creation");
   CHECK(pred0.size() == 1, "GPU predict output size 0");
   CHECK(pred1.size() == 1, "GPU predict output size 1");
   std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
-  CHECK(converged, "GPU bright > 0.7 & dark < 0.3 after training (5 attempts)");
+  CHECK(pred0[0] > 0.7f, "GPU pred(bright) > 0.7");
+  CHECK(pred1[0] < 0.3f, "GPU pred(dark) < 0.3");
 
   // Test method
   CNN::TestResult<float> result = core->test(samples.size(), CNN::makeSampleProvider(samples));
@@ -219,6 +209,7 @@ static void testGPUWithPoolLayer()
   config.parameters.convParams = {initConv1, initConv2};
   config.trainingConfig.numEpochs = 500;
   config.trainingConfig.learningRate = 0.5f;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.progressReports = 0;
   config.numGPUs = 1;
 
@@ -228,24 +219,13 @@ static void testGPUWithPoolLayer()
   samples[1].input = CNN::Tensor3D<float>({1, 10, 10}, 0.0f);
   samples[1].output = {0.0f};
 
-  // Retry up to 5 times to handle random ANN weight initialization
-  CNN::Output<float> pred0, pred1;
-  bool converged = false;
-
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    auto core = CNN::Core<float>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > pred1[0])
-      converged = true;
-  }
+  auto core = CNN::Core<float>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<float> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<float> pred1 = core->predict(samples[1].input).output;
 
   std::cout << "  pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
-  CHECK(converged, "GPU pool bright > dark (5 attempts)");
+  CHECK(pred0[0] > pred1[0], "GPU pool bright > dark");
 }
 
 //===================================================================================================================//

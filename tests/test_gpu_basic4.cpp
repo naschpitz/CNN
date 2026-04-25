@@ -37,6 +37,7 @@ static void testGPUMultipleOutputNeurons()
 
   config.trainingConfig.numEpochs = 500;
   config.trainingConfig.learningRate = 0.5f;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.progressReports = 0;
 
   CNN::Samples<float> samples(2);
@@ -45,24 +46,14 @@ static void testGPUMultipleOutputNeurons()
   samples[1].input = CNN::Tensor3D<float>({1, 8, 8}, 0.0f);
   samples[1].output = {0.0f, 1.0f, 0.0f};
 
-  CNN::Output<float> pred0, pred1;
-  bool converged = false;
-
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    auto core = CNN::Core<float>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > pred1[0])
-      converged = true;
-  }
+  auto core = CNN::Core<float>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<float> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<float> pred1 = core->predict(samples[1].input).output;
 
   CHECK(pred0.size() == 3, "GPU multi-output size");
   std::cout << "  GPU pred(bright)=[" << pred0[0] << "," << pred0[1] << "," << pred0[2] << "]" << std::endl;
-  CHECK(converged, "GPU multi-output[0] bright > dark (5 attempts)");
+  CHECK(pred0[0] > pred1[0], "GPU multi-output[0] bright > dark");
 }
 
 //===================================================================================================================//

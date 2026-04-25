@@ -98,6 +98,7 @@ static void testGPUTrueBNConvergence()
   config.trainingConfig.batchSize = 4;
   config.trainingConfig.learningRate = 0.01f;
   config.trainingConfig.shuffleSamples = false;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.trainingConfig.optimizer.type = CNN::OptimizerType::ADAM;
   config.progressReports = 0;
   config.costFunctionConfig.type = CNN::CostFunctionType::SQUARED_DIFFERENCE;
@@ -113,23 +114,14 @@ static void testGPUTrueBNConvergence()
   samples[3].input = makeGradientInput<float>({1, 5, 5}, 0.1f, 0.3f);
   samples[3].output = {0.0f};
 
-  CNN::Output<float> pred0, pred1;
-  bool converged = false;
-
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    auto core = CNN::Core<float>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > 0.6f && pred1[0] < 0.4f)
-      converged = true;
-  }
+  auto core = CNN::Core<float>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<float> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<float> pred1 = core->predict(samples[1].input).output;
 
   std::cout << "  GPU true BN pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
-  CHECK(converged, "GPU true BN bright > 0.6 & dark < 0.4 (5 attempts)");
+  CHECK(pred0[0] > 0.6f, "GPU true BN: pred(bright) > 0.6");
+  CHECK(pred1[0] < 0.4f, "GPU true BN: pred(dark) < 0.4");
 }
 
 //===================================================================================================================//

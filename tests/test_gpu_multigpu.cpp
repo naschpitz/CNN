@@ -42,6 +42,7 @@ static void testMultiGPUEndToEnd()
 
   config.trainingConfig.numEpochs = 200;
   config.trainingConfig.learningRate = 0.5f;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.progressReports = 0;
 
   CNN::Samples<float> samples(2);
@@ -50,23 +51,13 @@ static void testMultiGPUEndToEnd()
   samples[1].input = CNN::Tensor3D<float>({1, 5, 5}, 0.0f);
   samples[1].output = {0.0f};
 
-  CNN::Output<float> pred0, pred1;
-  bool converged = false;
-
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    auto core = CNN::Core<float>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > pred1[0])
-      converged = true;
-  }
+  auto core = CNN::Core<float>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<float> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<float> pred1 = core->predict(samples[1].input).output;
 
   std::cout << "  multi-GPU pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
-  CHECK(converged, "multi-GPU CNN: bright > dark (5 attempts)");
+  CHECK(pred0[0] > pred1[0], "multi-GPU CNN: bright > dark");
 }
 
 //===================================================================================================================//
@@ -163,6 +154,7 @@ static void testMultiGPUMultiChannelInput()
 
   config.trainingConfig.numEpochs = 200;
   config.trainingConfig.learningRate = 0.1f;
+  config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
   config.progressReports = 0;
 
   CNN::Samples<float> samples(2);
@@ -171,23 +163,13 @@ static void testMultiGPUMultiChannelInput()
   samples[1].input = CNN::Tensor3D<float>({3, 6, 6}, 0.0f);
   samples[1].output = {0.0f};
 
-  CNN::Output<float> pred0, pred1;
-  bool converged = false;
-
-  for (int attempt = 0; attempt < 5 && !converged; ++attempt) {
-    if (attempt > 0)
-      std::cout << "  retry #" << attempt << std::endl;
-    auto core = CNN::Core<float>::makeCore(config);
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    pred0 = core->predict(samples[0].input).output;
-    pred1 = core->predict(samples[1].input).output;
-
-    if (pred0[0] > pred1[0])
-      converged = true;
-  }
+  auto core = CNN::Core<float>::makeCore(config);
+  core->train(samples.size(), CNN::makeSampleProvider(samples));
+  CNN::Output<float> pred0 = core->predict(samples[0].input).output;
+  CNN::Output<float> pred1 = core->predict(samples[1].input).output;
 
   std::cout << "  multi-GPU multichannel pred(bright)=" << pred0[0] << "  pred(dark)=" << pred1[0] << std::endl;
-  CHECK(converged, "multi-GPU multichannel bright > dark (5 attempts)");
+  CHECK(pred0[0] > pred1[0], "multi-GPU multichannel bright > dark");
 }
 
 //===================================================================================================================//

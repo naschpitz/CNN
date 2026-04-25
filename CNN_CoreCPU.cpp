@@ -480,7 +480,8 @@ void CoreCPU<T>::train(ulong numSamples, const SampleProvider<T>& sampleProvider
   // Sample index indirection for shuffling
   std::vector<ulong> sampleIndices(numSamples);
   std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
-  std::mt19937 rng(std::random_device{}());
+  // Reproducible when trainingConfig.shuffleSeed != 0; non-deterministic otherwise.
+  std::mt19937 rng(this->trainingConfig.shuffleSeed != 0 ? this->trainingConfig.shuffleSeed : std::random_device{}());
 
   // Create training monitor if monitoring is enabled
   const MonitoringConfig& monitoringConfig = this->trainingConfig.monitoringConfig;
@@ -800,7 +801,8 @@ void CoreCPU<T>::trainBatchNorm(ulong numSamples, const SampleProvider<T>& sampl
   // Sample index indirection for shuffling
   std::vector<ulong> sampleIndices(numSamples);
   std::iota(sampleIndices.begin(), sampleIndices.end(), 0);
-  std::mt19937 rng(std::random_device{}());
+  // Reproducible when trainingConfig.shuffleSeed != 0; non-deterministic otherwise.
+  std::mt19937 rng(this->trainingConfig.shuffleSeed != 0 ? this->trainingConfig.shuffleSeed : std::random_device{}());
 
   // Precompute CNN output shape
   Shape3D cnnOutputShape = this->layersConfig.validateShapes(this->inputShape);

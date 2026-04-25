@@ -160,6 +160,7 @@ static void testShuffleSamplesTraining()
     config.trainingConfig.numEpochs = 100;
     config.trainingConfig.learningRate = 0.5f;
     config.trainingConfig.shuffleSamples = shuffle;
+    config.trainingConfig.shuffleSeed = 42; // Fully deterministic — no retry loop.
     config.progressReports = 0;
     return config;
   };
@@ -170,37 +171,20 @@ static void testShuffleSamplesTraining()
   samples[1].input = CNN::Tensor3D<double>({1, 5, 5}, 0.0);
   samples[1].output = {0.0};
 
-  // Shuffle enabled
-  bool shuffleConverged = false;
+  auto shuffleCore = CNN::Core<double>::makeCore(makeConfig(true));
+  shuffleCore->train(samples.size(), CNN::makeSampleProvider(samples));
+  auto sp0 = shuffleCore->predict(samples[0].input).output;
+  auto sp1 = shuffleCore->predict(samples[1].input).output;
+  CHECK(sp0[0] > sp1[0], "CNN shuffle=true: bright > dark");
 
-  for (int attempt = 0; attempt < 5 && !shuffleConverged; ++attempt) {
-    auto core = CNN::Core<double>::makeCore(makeConfig(true));
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    auto p0 = core->predict(samples[0].input).output;
-    auto p1 = core->predict(samples[1].input).output;
+  auto noShuffleCore = CNN::Core<double>::makeCore(makeConfig(false));
+  noShuffleCore->train(samples.size(), CNN::makeSampleProvider(samples));
+  auto np0 = noShuffleCore->predict(samples[0].input).output;
+  auto np1 = noShuffleCore->predict(samples[1].input).output;
+  CHECK(np0[0] > np1[0], "CNN shuffle=false: bright > dark");
 
-    if (p0[0] > p1[0])
-      shuffleConverged = true;
-  }
-
-  CHECK(shuffleConverged, "CNN shuffle=true converged (5 attempts)");
-
-  // Shuffle disabled
-  bool noShuffleConverged = false;
-
-  for (int attempt = 0; attempt < 5 && !noShuffleConverged; ++attempt) {
-    auto core = CNN::Core<double>::makeCore(makeConfig(false));
-    core->train(samples.size(), CNN::makeSampleProvider(samples));
-    auto p0 = core->predict(samples[0].input).output;
-    auto p1 = core->predict(samples[1].input).output;
-
-    if (p0[0] > p1[0])
-      noShuffleConverged = true;
-  }
-
-  CHECK(noShuffleConverged, "CNN shuffle=false converged (5 attempts)");
-
-  std::cout << "  shuffle=true: " << shuffleConverged << "  shuffle=false: " << noShuffleConverged << std::endl;
+  std::cout << "  shuffle=true: bright=" << sp0[0] << " dark=" << sp1[0] << "  shuffle=false: bright=" << np0[0]
+            << " dark=" << np1[0] << std::endl;
 }
 
 void runIntegrationBasicTests3()
