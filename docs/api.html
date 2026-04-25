@@ -120,6 +120,23 @@
   <tr><td><code>Samples&lt;T&gt;</code></td><td><code>std::vector&lt;Sample&lt;T&gt;&gt;</code></td><td>Collection of samples</td></tr>
 </table>
 
+<h3>SampleProvider&lt;T&gt; <span class="badge badge-blue">CNN_SampleProvider.hpp</span></h3>
+<p>Lazy supplier used by <code>train()</code> and <code>test()</code>. Given the full shuffled index array, a batch size, and a 0-based batch index, returns the batch of samples. Lets callers stream data on demand instead of holding the full <code>Samples&lt;T&gt;</code> in memory.</p>
+<pre><code><span class="keyword">template</span> &lt;<span class="keyword">typename</span> <span class="type">T</span>&gt;
+<span class="keyword">using</span> SampleProvider =
+  std::function&lt;Samples&lt;T&gt;(<span class="keyword">const</span> std::vector&lt;<span class="type">ulong</span>&gt;&amp; sampleIndices,
+                          <span class="type">ulong</span> batchSize,
+                          <span class="type">ulong</span> batchIndex)&gt;;
+</code></pre>
+<p>Helper: <code>makeSampleProvider(samples)</code> wraps an in-memory <code>Samples&lt;T&gt;</code> so no prefetching is needed.</p>
+
+<h3>InputProvider&lt;T&gt; <span class="badge badge-blue">CNN_InputProvider.hpp</span></h3>
+<p>Lazy supplier used by the streaming <code>predict()</code>. Mirrors <code>SampleProvider</code> but without the expected-output side, since predict has no labels. The last batch may be shorter than <code>batchSize</code>.</p>
+<pre><code><span class="keyword">template</span> &lt;<span class="keyword">typename</span> <span class="type">T</span>&gt;
+<span class="keyword">using</span> InputProvider =
+  std::function&lt;Inputs&lt;T&gt;(<span class="type">ulong</span> batchSize, <span class="type">ulong</span> batchIndex)&gt;;
+</code></pre>
+
 <h3>PredictResult&lt;T&gt; <span class="badge badge-blue">CNN_PredictResult.hpp</span></h3>
 <p>Returned by <code>predict()</code>. Carries both the post-activation output and the pre-activation (z) values of the ANN dense head's last layer. Logits enable calibration / out-of-distribution detection scores (max-logit, logit-norm, free-energy <code>−log Σ exp(zᵢ)</code>) that softmax discards because softmax is shift-invariant: <code>softmax(z) = softmax(z + c)</code>.</p>
 <table>

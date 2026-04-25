@@ -3,7 +3,9 @@
 
 #include "CNN_Types.hpp"
 #include "CNN_CoreConfig.hpp"
+#include "CNN_InputProvider.hpp"
 #include "CNN_Sample.hpp"
+#include "CNN_SampleProvider.hpp"
 #include "CNN_TrainingProgress.hpp"
 #include "CNN_TrainingMetadata.hpp"
 #include "CNN_PredictMetadata.hpp"

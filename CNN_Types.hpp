@@ -4,7 +4,6 @@
 #include "CNN_Shape3D.hpp"
 #include "CNN_Tensor3D.hpp"
 
-#include <functional>
 #include <sys/types.h>
 #include <vector>
 
@@ -22,14 +21,6 @@ namespace CNN
 
   template <typename T>
   using Inputs = std::vector<Input<T>>;
-
-  // Lazy supplier for streaming predict(): given a batch size and a 0-based
-  // batch index, returns the corresponding chunk of inputs. The last batch
-  // may be shorter than batchSize. Mirrors SampleProvider used by train/test
-  // and lets callers calibrate / score arbitrarily large image sets without
-  // holding everything in host memory.
-  template <typename T>
-  using InputProvider = std::function<Inputs<T>(ulong batchSize, ulong batchIndex)>;
 
   // Output from the CNN is a 1D vector (from dense layers)
   template <typename T>

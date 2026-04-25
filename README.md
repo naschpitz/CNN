@@ -38,6 +38,7 @@ the calling application (e.g. [NN-CLI](https://github.com/naschpitz/NN-CLI)) han
 #include <CNN_Core.hpp>
 #include <CNN_CoreConfig.hpp>
 #include <CNN_Sample.hpp>
+#include <CNN_SampleProvider.hpp>
 
 // Configure
 CNN::CoreConfig<float> config;
