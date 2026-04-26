@@ -250,6 +250,7 @@
   <tr><td><code>learningRate</code></td><td><code>float</code></td><td>Learning rate (default 0.01). Used as the base learning rate α for both SGD and Adam.</td></tr>
   <tr><td><code>batchSize</code></td><td><code>ulong</code></td><td>Mini-batch size (default 64)</td></tr>
   <tr><td><code>shuffleSamples</code></td><td><code>bool</code></td><td>Shuffle sample order each epoch (default true)</td></tr>
+  <tr><td><code>shuffleSeed</code></td><td><code>uint32_t</code></td><td>RNG seed for the per-epoch shuffle. Default <code>0</code> means seed from <code>std::random_device</code> — non-deterministic, what production wants. Set to a non-zero value (e.g. tests use <code>42</code>) and the whole training run reproduces bit-for-bit, including the shuffle order. Only meaningful when <code>shuffleSamples</code> is true.</td></tr>
   <tr><td><code>dropoutRate</code></td><td><code>float</code></td><td>Dropout probability for dense hidden layers during training (default 0.0 = disabled). Uses inverted dropout: activations are scaled by 1/(1−p) during training so no adjustment is needed at inference. Applied only to the dense (fully-connected) layers, not convolutional layers.</td></tr>
   <tr><td><code>optimizer</code></td><td><code>Optimizer&lt;T&gt;</code></td><td>Optimizer configuration (default: SGD)</td></tr>
 </table>
